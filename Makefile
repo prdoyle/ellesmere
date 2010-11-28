@@ -12,6 +12,8 @@ CFLAGS  += -c -Wall -Werror -Wmissing-declarations -g -std=gnu99 -I.
 LD := gcc
 LDFLAGS += -g
 
+CFLAGS += -Wno-unused-function # Remove once things settle down a bit
+
 small: CFLAGS += -Os -DNDEBUG
 
 fast:  CFLAGS += -O3 -DNDEBUG
@@ -42,7 +44,7 @@ merged: _merged.o $(GEN_O_FILES)
 	$(LD) $(LDFLAGS) $^ -o ellesmere -lfl
 
 _merged.c: $(GEN_H_FILES)
-	grep MERGE *.c | sort -t: -n -k3 | awk 'BEGIN{ FS=":" } { print "#include \""$$1"\"" }' > $@
+	grep MERGE *.c | sort -t: -n -k3 | awk 'BEGIN{ FS=":" } { print "#include \""$$1"\" // "$$3 }' > $@
 
 tags: $(C_FILES) $(H_FILES)
 	ctags -R .

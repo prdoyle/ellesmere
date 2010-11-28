@@ -6,6 +6,8 @@
 
 typedef struct st_struct *SymbolTable;
 typedef struct sy_struct *Symbol;
+typedef struct an_struct *Action;
+typedef struct ar_struct *Actor;
 
 typedef enum
 	{
@@ -23,6 +25,13 @@ FUNC SymbolIndex       sy_index ( Symbol sy, SymbolTable st );
 FUNC const const char *sy_name  ( Symbol sy, SymbolTable st );
 FUNC Symbol            sy_byIndex ( SymbolIndex index, SymbolTable st ); // 0 <= index < st_count(st)
 FUNC Symbol            sy_byName  ( const char *name,  SymbolTable st ); // Creates a symbol if none already exists
+
+FUNC Action            sy_immediateAction    ( Symbol sy, SymbolTable st );
+FUNC void              sy_setImmediateAction ( Symbol sy, Action an, SymbolTable st );
+
+typedef Action (*ActionFunction)( Actor ar );
+FUNC Action an_fromFunction( ActionFunction af );
+FUNC Action an_perform( Action an, Actor ar );
 
 #endif
 

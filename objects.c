@@ -4,7 +4,7 @@
 
 struct oh_struct
 	{
-	SymbolTable symbolTable;
+	SymbolTable st;
 	};
 
 typedef enum
@@ -25,9 +25,9 @@ static ObjectKind ob_kind( Object ob )
 FUNC ObjectHeap theObjectHeap()
 	{
 	static struct oh_struct _theObjectHeap = { 0 };
-	if ( !_theObjectHeap.symbolTable )
+	if( !_theObjectHeap.st )
 		{
-		_theObjectHeap.symbolTable = theSymbolTable();
+		_theObjectHeap.st = theSymbolTable();
 		}
 	return &_theObjectHeap;
 	}
@@ -51,7 +51,7 @@ static FieldList fl_new( SymbolIndex si, Object value, FieldList tail )
 
 static FieldList fl_bySymbol( SymbolIndex si, FieldList fl )
 	{
-	if ( fl && fl->si != si )
+	if( fl && fl->si != si )
 		return fl_bySymbol( si, fl->tail );
 	else
 		return fl;
@@ -70,7 +70,7 @@ struct ob_struct
 FUNC Object ob_create( Symbol tag, ObjectHeap heap )
 	{
 	Object result = (Object)malloc( (sizeof(*result)) );
-	result->tag = sy_index( tag, heap->symbolTable );
+	result->tag = sy_index( tag, heap->st );
 	result->data.fields = NULL;
 	assert( ob_kind( result ) == OB_STRUCT );
 	return result;
@@ -116,11 +116,11 @@ FUNC Symbol ob_tag( Object ob, ObjectHeap heap )
 	switch ( ob_kind( ob ) )
 		{
 		case OB_INT:
-			return sy_byIndex( SYM_INT, heap->symbolTable );
+			return sy_byIndex( SYM_INT, heap->st );
 		case OB_STRUCT:
 			break;
 		}
-	return sy_byIndex( ob->tag, heap->symbolTable );
+	return sy_byIndex( ob->tag, heap->st );
 	}
 
 static bool ob_hasItems( Object ob )
@@ -130,7 +130,7 @@ static bool ob_hasItems( Object ob )
 
 static bool ob_hasItem( Object ob, SymbolIndex si )
 	{
-	if ( ob_hasItems(ob) )
+	if( ob_hasItems(ob) )
 		return fl_bySymbol( si, ob->data.fields ) != NULL;
 	else
 		return false;
@@ -148,7 +148,7 @@ static void ob_setItem( Object ob, SymbolIndex si, Object value )
 	{
 	assert( ob_hasItems( ob ) );
 	FieldList fl = fl_bySymbol( si, ob->data.fields );
-	if ( fl )
+	if( fl )
 		fl->value = value;
 	else
 		ob->data.fields = fl_new( si, value, ob->data.fields );
@@ -158,19 +158,19 @@ static void ob_setItem( Object ob, SymbolIndex si, Object value )
 
 FUNC bool ob_hasField( Object ob, Symbol field, ObjectHeap heap )
 	{
-	return ob_hasItem( ob, sy_index( field, heap->symbolTable ) );
+	return ob_hasItem( ob, sy_index( field, heap->st ) );
 	}
 
 FUNC Object ob_getField( Object ob, Symbol field, ObjectHeap heap )
 	{
 	check( ob_hasField( ob, field, heap ) );
-	return ob_getItem( ob, sy_index( field, heap->symbolTable ) );
+	return ob_getItem( ob, sy_index( field, heap->st ) );
 	}
 
 FUNC void ob_setField( Object ob, Symbol field, Object value, ObjectHeap heap )
 	{
 	check( ob_hasItems( ob ) );
-	ob_setItem( ob, sy_index( field, heap->symbolTable ), value );
+	ob_setItem( ob, sy_index( field, heap->st ), value );
 	assert( ob_hasField( ob, field, heap ) );
 	assert( ob_getField( ob, field, heap ) == value );
 	}
@@ -192,6 +192,30 @@ FUNC void ob_setElement( Object ob, int index, Object value, ObjectHeap heap )
 	ob_setItem( ob, (SymbolIndex)index, value );
 	assert( ob_hasElement( ob, index, heap ) );
 	assert( ob_getElement( ob, index, heap ) == value );
+	}
+
+FUNC int ob_sendTo( Object ob, Stream sm, ObjectHeap heap )
+	{
+	int charsSent=0;
+	switch( sy_index( ob_tag(ob,heap), heap->st ) )
+		{
+		case SYM_INT:
+			{
+			sm_write( sm, "%d", ob_toInt(ob,heap) );
+			break;
+			}
+		case SYM_STRING:
+			{
+			sm_write( sm, "\"%s\"", ob_toString(ob,heap) );
+			break;
+			}
+		default:
+			{
+			sm_write( sm, "%s_%p", sy_name( ob_tag(ob,heap), heap->st ), ob );
+			break;
+			}
+		}
+	return charsSent;
 	}
 
 //MERGE:20
