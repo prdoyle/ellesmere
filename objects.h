@@ -25,6 +25,7 @@ FUNC bool   ob_hasField( Object ob, Symbol field, ObjectHeap heap );
 FUNC Object ob_getField( Object ob, Symbol field, ObjectHeap heap );
 FUNC void   ob_setField( Object ob, Symbol field, Object value, ObjectHeap heap );
 
+FUNC bool   ob_hasElement( Object ob, int index, ObjectHeap heap );
 FUNC Object ob_getElement( Object ob, int index, ObjectHeap heap );
 FUNC void   ob_setElement( Object ob, int index, Object value, ObjectHeap heap );
 

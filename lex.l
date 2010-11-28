@@ -7,7 +7,7 @@ static int   _lineNumber = 1;
 static char *_lastString=NULL;
 static int   _lastInt=0;
 
-void setLastString( const char *newString )
+static void setLastString( const char *newString )
 	{
 	if (_lastString)
 		free( _lastString );

@@ -116,11 +116,11 @@ FUNC Symbol ob_tag( Object ob, ObjectHeap heap )
 	switch ( ob_kind( ob ) )
 		{
 		case OB_INT:
-			return st_int( heap->symbolTable );
+			return sy_byIndex( SYM_INT, heap->symbolTable );
 		case OB_STRUCT:
 			break;
 		}
-	return st_byIndex( ob->tag, heap->symbolTable );
+	return sy_byIndex( ob->tag, heap->symbolTable );
 	}
 
 static bool ob_hasItems( Object ob )

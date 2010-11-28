@@ -32,13 +32,13 @@ FUNC SymbolIndex st_count( SymbolTable st )
 	return theSymbolTable()->count;
 	}
 
-FUNC Symbol st_byIndex( SymbolIndex index, SymbolTable st )
+FUNC Symbol sy_byIndex( SymbolIndex index, SymbolTable st )
 	{
 	assert( index < st->count );
 	return st->symbols + index;
 	}
 
-FUNC Symbol st_byName( const char *name, SymbolTable st )
+FUNC Symbol sy_byName( const char *name, SymbolTable st )
 	{
 	Symbol sy;
 	SymbolIndex i;

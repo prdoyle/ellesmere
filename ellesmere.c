@@ -28,7 +28,7 @@ int main(int argc, char **argv)
 				break;
 			case WORD:
 				{
-				Symbol sy = st_byName(lastWord(), st);
+				Symbol sy = sy_byName(lastWord(), st);
 				printf("Word #%d %s\n", sy_index(sy, st), sy_name(sy, st));
 				break;
 				}

@@ -8,7 +8,7 @@ small: merged
 -include *.d
 
 CC := gcc
-CFLAGS  += -c -Wall -Werror -g -std=gnu99 -I.
+CFLAGS  += -c -Wall -Werror -Wmissing-declarations -g -std=gnu99 -I.
 LD := gcc
 LDFLAGS += -g
 
