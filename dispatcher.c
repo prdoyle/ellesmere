@@ -53,16 +53,22 @@ FUNC void di_discard( Dispatcher di, int numSymbols )
 		}
 	}
 
+static int ss_sendTo( SymbolStack ss, SymbolTable st, Stream sm )
+	{
+	int charsSent = 0;
+	if( ss->next )
+		{
+		charsSent += sm_write( sm, ", " );
+		charsSent += ss_sendTo( ss->next, st, sm );
+		}
+	charsSent += sm_write( sm, "%s", sy_name( ss->sy, st ) );
+	return charsSent;
+	}
+
 FUNC int di_sendTo( Dispatcher di, Stream sm )
 	{
-	SymbolStack ss;
 	int charsSent = sm_write( sm, "_Dispatcher_%p{ ", di );
-	char *sep = "";
-	for( ss = di->stack; ss; ss = ss->next )
-		{
-		charsSent += sm_write( sm, "%s%s", sep, sy_name( ss->sy, di->st ) );
-		sep = ", ";
-		}
+	charsSent += ss_sendTo( di->stack, di->st, sm );
 	charsSent += sm_write( sm, " }" );
 	return charsSent;
 	}

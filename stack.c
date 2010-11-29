@@ -61,7 +61,7 @@ FUNC int sk_sendTo( Stack sk, Stream sm, ObjectHeap heap )
 	int i;
 	int charsSent = sm_write( sm, "_Stack_%p{ ", sk );
 	char *sep = "";
-	for( i=0; i < sk_depth(sk); i++ )
+	for( i = sk_depth(sk) - 1; i >= 0; i-- )
 		{
 		charsSent += sm_write( sm, "%s", sep );
 		sep = ", ";
