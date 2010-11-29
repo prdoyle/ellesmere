@@ -114,27 +114,27 @@ int main(int argc, char **argv)
 			{
 			case ERROR:
 			case NUM_TOKENS:
-				printf( "Error: <<%s>>\n", lastString() );
+				fprintf( stderr, "Error: <<%s>>\n", lastString() );
 				break;
 			case NO_TOKEN:
-				printf( "No token!\n" );
+				fprintf( stderr, "No token!\n" );
 				break;
 			case INT:
 				{
-				trace("Int: %d\n", lastInt());
+				fprintf( stderr, "Int: %d\n", lastInt());
 				push( ob_fromInt( lastInt(), heap ) );
 				break;
 				}
 			case STRING:
 				{
-				printf( "String: %s\n", lastString() );
+				fprintf( stderr, "String: %s\n", lastString() );
 				push( ob_fromString( lastString(), heap ) );
 				break;
 				}
 			case WORD:
 				{
 				Symbol sy = sy_byName(lastWord(), st);
-				printf( "Word #%d %s\n", sy_index(sy, st), sy_name(sy, st) );
+				fprintf( stderr, "Word #%d %s\n", sy_index(sy, st), sy_name(sy, st) );
 				Action an = di_action( di, sy );
 				if( an )
 					{
@@ -151,12 +151,10 @@ int main(int argc, char **argv)
 				break;
 				}
 			}
-		sk_sendTo( stack, stdout, heap );
-		printf("\n");
-		/*
-		di_sendTo( di, stdout );
-		printf("\n");
-		*/
+		sk_sendTo( stack, stderr, heap );
+		fprintf( stderr,"\n");
+		di_sendTo( di, stderr );
+		fprintf( stderr,"\n");
 		token = nextToken();
 		}
 	}

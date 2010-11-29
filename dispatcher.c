@@ -58,8 +58,8 @@ static int ss_sendTo( SymbolStack ss, SymbolTable st, Stream sm )
 	int charsSent = 0;
 	if( ss->next )
 		{
-		charsSent += sm_write( sm, ", " );
 		charsSent += ss_sendTo( ss->next, st, sm );
+		charsSent += sm_write( sm, ", " );
 		}
 	charsSent += sm_write( sm, "%s", sy_name( ss->sy, st ) );
 	return charsSent;
@@ -68,7 +68,8 @@ static int ss_sendTo( SymbolStack ss, SymbolTable st, Stream sm )
 FUNC int di_sendTo( Dispatcher di, Stream sm )
 	{
 	int charsSent = sm_write( sm, "_Dispatcher_%p{ ", di );
-	charsSent += ss_sendTo( di->stack, di->st, sm );
+	if( di->stack )
+		charsSent += ss_sendTo( di->stack, di->st, sm );
 	charsSent += sm_write( sm, " }" );
 	return charsSent;
 	}
