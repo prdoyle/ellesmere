@@ -102,6 +102,9 @@ static SymbolTable populateSymbolTable( SymbolTable st )
 
 int main(int argc, char **argv)
 	{
+	FILE *diagnostics = fdopen( 3, "wt" );
+	if( !diagnostics )
+		diagnostics = fopen( "/dev/null", "wt" );
 	SymbolTable st = populateSymbolTable( theSymbolTable() );
 	di = di_new( st, NULL );
 	heap = theObjectHeap();
@@ -114,27 +117,27 @@ int main(int argc, char **argv)
 			{
 			case ERROR:
 			case NUM_TOKENS:
-				fprintf( stderr, "Error: <<%s>>\n", lastString() );
+				fprintf( diagnostics, "Error: <<%s>>\n", lastString() );
 				break;
 			case NO_TOKEN:
-				fprintf( stderr, "No token!\n" );
+				fprintf( diagnostics, "No token!\n" );
 				break;
 			case INT:
 				{
-				fprintf( stderr, "Int: %d\n", lastInt());
+				fprintf( diagnostics, "Int: %d\n", lastInt());
 				push( ob_fromInt( lastInt(), heap ) );
 				break;
 				}
 			case STRING:
 				{
-				fprintf( stderr, "String: %s\n", lastString() );
+				fprintf( diagnostics, "String: %s\n", lastString() );
 				push( ob_fromString( lastString(), heap ) );
 				break;
 				}
 			case WORD:
 				{
 				Symbol sy = sy_byName(lastWord(), st);
-				fprintf( stderr, "Word #%d %s\n", sy_index(sy, st), sy_name(sy, st) );
+				fprintf( diagnostics, "Word #%d %s\n", sy_index(sy, st), sy_name(sy, st) );
 				Action an = di_action( di, sy );
 				if( an )
 					{
@@ -151,10 +154,10 @@ int main(int argc, char **argv)
 				break;
 				}
 			}
-		sk_sendTo( stack, stderr, heap );
-		fprintf( stderr,"\n");
-		di_sendTo( di, stderr );
-		fprintf( stderr,"\n");
+		sk_sendTo( stack, diagnostics, heap );
+		fprintf( diagnostics,"\n");
+		di_sendTo( di, diagnostics );
+		fprintf( diagnostics,"\n");
 		token = nextToken();
 		}
 	}
