@@ -1,11 +1,18 @@
+# three = 1+2
 1 2 add
 	dup print
-	global three set
-integer new
-	global myInt set
-123 myInt value set
-myInt value get
+	global Three set
+
+# MyInt = new Integer
+Integer new
+	global MyInt set
+
+# MyInt.Value = 123
+123
+	MyInt Value set
+
+# print Three + MyInt.Value
+MyInt Value get
 	dup print
-three add
-	dup print
+	Three add print
 
