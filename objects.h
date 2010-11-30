@@ -22,6 +22,10 @@ FUNC Object      ob_fromString( const char *value, ObjectHeap heap );
 FUNC bool        ob_isString( Object ob, ObjectHeap heap );
 FUNC const char *ob_toString( Object ob, ObjectHeap heap );
 
+FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy );
+FUNC bool   ob_isToken( Object ob, ObjectHeap heap );
+FUNC Symbol ob_toSymbol( Object ob, ObjectHeap heap );
+
 FUNC bool   ob_hasField( Object ob, Symbol field, ObjectHeap heap );
 FUNC Object ob_getField( Object ob, Symbol field, ObjectHeap heap );
 FUNC void   ob_setField( Object ob, Symbol field, Object value, ObjectHeap heap );

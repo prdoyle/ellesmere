@@ -70,7 +70,7 @@ static Action global( Actor ar )
 static Action set( Actor ar )
 	{
 	assert( di == di_fromActor( ar ) );
-	Symbol field  = ob_tag( pop(), heap );
+	Symbol field  = ob_toSymbol( pop(), heap );
 	Object ob     = pop();
 	Object value  = pop();
 	ob_setField( ob, field, value, heap );
@@ -80,9 +80,16 @@ static Action set( Actor ar )
 static Action get( Actor ar )
 	{
 	assert( di == di_fromActor( ar ) );
-	Symbol field  = ob_tag( pop(), heap );
+	Symbol field  = ob_toSymbol( pop(), heap );
 	Object ob     = pop();
 	return push( ob_getField( ob, field, heap ) );
+	}
+
+static Action new( Actor ar )
+	{
+	assert( di == di_fromActor( ar ) );
+	Symbol tag = ob_toSymbol( pop(), heap );
+	return push( ob_create( tag, heap ) );
 	}
 
 static SymbolTable populateSymbolTable( SymbolTable st )
@@ -95,6 +102,7 @@ static SymbolTable populateSymbolTable( SymbolTable st )
 	sy_setImmediateAction( sy_byName( "global", st ), an_fromFunction( global ), st );
 	sy_setImmediateAction( sy_byName( "set", st ), an_fromFunction( set ), st );
 	sy_setImmediateAction( sy_byName( "get", st ), an_fromFunction( get ), st );
+	sy_setImmediateAction( sy_byName( "new", st ), an_fromFunction( new ), st );
 	return st;
 	}
 
@@ -150,7 +158,7 @@ int main(int argc, char **argv)
 					push( ob_getField( globals, sy, heap ) );
 					}
 				else
-					sk_push( stack, ob_create( sy, heap ) );
+					sk_push( stack, oh_symbolToken( heap, sy ) );
 				break;
 				}
 			}

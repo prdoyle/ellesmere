@@ -1,12 +1,8 @@
 
 #include "symbols.h"
+#include "objects.h"
+#include "symbols_impl.h"
 #include <string.h>
-
-struct sy_struct
-	{
-	const char *name;
-	Action immediateAction;
-	};
 
 struct st_struct
 	{
@@ -26,6 +22,7 @@ FUNC SymbolTable theSymbolTable()
 		{ "NO_SYMBOL" },
 		{ "INT" },
 		{ "STRING" },
+		{ "TOKEN" },
 		}
 		};
 	assert(  _theSymbolTable.symbols[ _theSymbolTable.count-1 ].name );
@@ -90,7 +87,6 @@ FUNC Action an_perform( Action an, Actor ar )
 	assert( an && ar );
 	return an->function( ar );
 	}
-
 
 //MERGE:10
 

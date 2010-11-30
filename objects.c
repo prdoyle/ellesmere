@@ -64,6 +64,7 @@ struct ob_struct
 		{
 		FieldList   fields;
 		const char *characters;
+		Symbol      symbol;
 		} data;
 	};
 
@@ -95,9 +96,11 @@ FUNC int ob_toInt( Object ob, ObjectHeap heap )
 
 FUNC Object ob_fromString( const char *value, ObjectHeap heap )
 	{
-	assert( ((intptr_t)value & OB_KIND_MASK) == 0 );
-	intptr_t packed = ((intptr_t)value << OB_KIND_BITS) | OB_INT;
-	return (Object)packed;
+	Object result = (Object)malloc( (sizeof(*result)) );
+	result->tag = SYM_STRING;
+	result->data.characters = value;
+	assert( ob_kind( result ) == OB_STRUCT );
+	return result;
 	}
 
 FUNC bool ob_isString( Object ob, ObjectHeap heap )
@@ -109,6 +112,17 @@ FUNC const char *ob_toString( Object ob, ObjectHeap heap )
 	{
 	assert( ob_isString( ob, heap ) );
 	return ob->data.characters;
+	}
+
+FUNC bool ob_isToken( Object ob, ObjectHeap heap )
+	{
+	return ob_kind( ob ) == OB_STRUCT && ob->tag == SYM_TOKEN;
+	}
+
+FUNC Symbol ob_toSymbol( Object ob, ObjectHeap heap )
+	{
+	assert( ob_isToken( ob, heap ) );
+	return ob->data.symbol;
 	}
 
 FUNC Symbol ob_tag( Object ob, ObjectHeap heap )
@@ -125,7 +139,7 @@ FUNC Symbol ob_tag( Object ob, ObjectHeap heap )
 
 static bool ob_hasItems( Object ob )
 	{
-	return ob_kind(ob) != OB_INT && ob->tag != SYM_STRING;
+	return ob_kind(ob) != OB_INT && ob->tag >= NUM_PREDEFINED_SYMBOLS;
 	}
 
 static bool ob_hasItem( Object ob, SymbolIndex si )
@@ -216,6 +230,18 @@ FUNC int ob_sendTo( Object ob, Stream sm, ObjectHeap heap )
 			}
 		}
 	return charsSent;
+	}
+
+#include "symbols_impl.h"
+
+FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy )
+	{
+	if( !sy->token )
+		{
+		sy->token = ob_create( sy_byIndex( SYM_TOKEN, heap->st ), heap );
+		sy->token->data.symbol = sy;
+		}
+	return sy->token;
 	}
 
 //MERGE:20
