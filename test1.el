@@ -1,4 +1,6 @@
-# three = 1+2
+"Hello, world!" print
+
+# Three = 1+2
 1 2 add
 	dup print
 	global Three set

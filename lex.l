@@ -7,11 +7,19 @@ static int   _lineNumber = 1;
 static char *_lastString=NULL;
 static int   _lastInt=0;
 
-static void setLastString( const char *newString )
+static void setLastWord( const char *newString )
 	{
 	if (_lastString)
 		free( _lastString );
 	_lastString = strdup( newString );
+	}
+
+static void setLastString( const char *newString )
+	{
+	if (_lastString)
+		free( _lastString );
+	_lastString = strdup( newString+1 );
+	_lastString[ strlen(_lastString) - 1 ] = 0;
 	}
 
 int         currentLineNumber() { return _lineNumber; }
@@ -40,14 +48,14 @@ WS          [ \t\r]
 
 {DIGIT}+              { _lastInt = atoi(yytext); return INT; }
 
-{ALPHA}{ALNUM}*       { setLastString(yytext); return WORD; }
-{OPER}+_{ALNUM}*      { setLastString(yytext); return WORD; }
-{ALONE}               { setLastString(yytext); return WORD; }
-{OPER}+               { setLastString(yytext); return WORD; }
+{ALPHA}{ALNUM}*       { setLastWord(yytext); return WORD; }
+{OPER}+_{ALNUM}*      { setLastWord(yytext); return WORD; }
+{ALONE}               { setLastWord(yytext); return WORD; }
+{OPER}+               { setLastWord(yytext); return WORD; }
 
 \"[^"]*(\\\"[^"]*)*\" { setLastString(yytext); return STRING; }
 
-.                     { setLastString(yytext); return ERROR; }
+.                     { setLastWord(yytext); return ERROR; }
 
 %%
 

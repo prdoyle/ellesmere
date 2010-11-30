@@ -1,6 +1,7 @@
 
 #include "objects.h"
 #include <stdint.h>
+#include <string.h>
 
 struct oh_struct
 	{
@@ -98,7 +99,7 @@ FUNC Object ob_fromString( const char *value, ObjectHeap heap )
 	{
 	Object result = (Object)malloc( (sizeof(*result)) );
 	result->tag = SYM_STRING;
-	result->data.characters = value;
+	result->data.characters = strdup( value );
 	assert( ob_kind( result ) == OB_STRUCT );
 	return result;
 	}
