@@ -92,6 +92,31 @@ static Action new( Actor ar )
 	return push( ob_create( tag, heap ) );
 	}
 
+static Action ifzero( Actor ar )
+	{
+	assert( di == di_fromActor( ar ) );
+	Symbol target = ob_toSymbol( pop(), heap );
+	int    flag   = ob_toInt( pop(), heap );
+	if( flag )
+		return NULL;
+	token_t token = nextToken();
+	while( token )
+		{
+		if( token == WORD && sy_byName(lastWord(), theSymbolTable()) == target )
+			break;
+		else
+			token = nextToken();
+		}
+	return NULL;
+	}
+
+static Action hop( Actor ar )
+	{
+	assert( di == di_fromActor( ar ) );
+	nextToken();
+	return NULL;
+	}
+
 static SymbolTable populateSymbolTable( SymbolTable st )
 	{
 	sy_setImmediateAction( sy_byName( "pop", st ), an_fromFunction( popAction ), st );
@@ -103,6 +128,8 @@ static SymbolTable populateSymbolTable( SymbolTable st )
 	sy_setImmediateAction( sy_byName( "set", st ), an_fromFunction( set ), st );
 	sy_setImmediateAction( sy_byName( "get", st ), an_fromFunction( get ), st );
 	sy_setImmediateAction( sy_byName( "new", st ), an_fromFunction( new ), st );
+	sy_setImmediateAction( sy_byName( "ifzero", st ), an_fromFunction( ifzero ), st );
+	sy_setImmediateAction( sy_byName( "hop", st ), an_fromFunction( hop ), st );
 	return st;
 	}
 

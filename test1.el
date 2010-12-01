@@ -18,3 +18,16 @@ MyInt Value get
 	dup print
 	Three add print
 
+# if Three != 0 print "Not zero"
+Three
+| ifzero
+	"Not zero" print
+	hop
+|
+
+# if Three - 3 != 0 print "Not three"
+Three -3 add
+| ifzero
+	"Not three" print
+	hop
+|

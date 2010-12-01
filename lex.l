@@ -46,7 +46,7 @@ WS          [ \t\r]
 #.*$                  { ; /* comment */ }
 \n                    { ++_lineNumber; }
 
-{DIGIT}+              { _lastInt = atoi(yytext); return INT; }
+-?{DIGIT}+            { _lastInt = atoi(yytext); return INT; }
 
 {ALPHA}{ALNUM}*       { setLastWord(yytext); return WORD; }
 {OPER}+_{ALNUM}*      { setLastWord(yytext); return WORD; }
