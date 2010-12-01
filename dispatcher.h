@@ -3,7 +3,7 @@
 #define DISPATCHER_H
 
 #include "symbols.h"
-#include "stream.h"
+#include "file.h"
 
 typedef struct di_struct *Dispatcher;
 
@@ -14,7 +14,7 @@ FUNC void di_discard( Dispatcher di, int numSymbols ); // pops them from the sta
 static inline Actor      di_actor( Dispatcher di ){ return (Actor)di; }
 static inline Dispatcher di_fromActor( Actor ar ){ return (Dispatcher)ar; }
 
-FUNC int di_sendTo( Dispatcher di, Stream sm );
+FUNC int di_sendTo( Dispatcher di, File fl );
 
 #endif
 

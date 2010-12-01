@@ -14,7 +14,7 @@ FUNC void   sk_popN   ( Stack sk, int count );
 static inline Object sk_top( Stack sk ){ return sk_item( sk, 0 ); }
 static inline Object sk_pop( Stack sk ){ Object result = sk_top(sk); sk_popN( sk, 1 ); return result; }
 
-FUNC int sk_sendTo( Stack sk, Stream sm, ObjectHeap heap );
+FUNC int sk_sendTo( Stack sk, File fl, ObjectHeap heap );
 
 #endif
 

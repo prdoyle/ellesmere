@@ -4,7 +4,7 @@
 
 #include "base.h"
 #include "symbols.h"
-#include "stream.h"
+#include "file.h"
 
 typedef struct oh_struct *ObjectHeap;
 typedef struct ob_struct *Object;
@@ -34,7 +34,7 @@ FUNC bool   ob_hasElement( Object ob, int index, ObjectHeap heap );
 FUNC Object ob_getElement( Object ob, int index, ObjectHeap heap );
 FUNC void   ob_setElement( Object ob, int index, Object value, ObjectHeap heap );
 
-FUNC int ob_sendTo( Object ob, Stream sm, ObjectHeap heap );
+FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap );
 
 #endif
 

@@ -56,18 +56,18 @@ FUNC void sk_popN( Stack sk, int count )
 		sk->top = sk->top->next;
 	}
 
-FUNC int sk_sendTo( Stack sk, Stream sm, ObjectHeap heap )
+FUNC int sk_sendTo( Stack sk, File fl, ObjectHeap heap )
 	{
 	int i;
-	int charsSent = sm_write( sm, "_Stack_%p{ ", sk );
+	int charsSent = fl_write( fl, "_Stack_%p{ ", sk );
 	char *sep = "";
 	for( i = sk_depth(sk) - 1; i >= 0; i-- )
 		{
-		charsSent += sm_write( sm, "%s", sep );
+		charsSent += fl_write( fl, "%s", sep );
 		sep = ", ";
-		charsSent += ob_sendTo( sk_item( sk, i ), sm, heap );
+		charsSent += ob_sendTo( sk_item( sk, i ), fl, heap );
 		}
-	charsSent += sm_write( sm, " }" );
+	charsSent += fl_write( fl, " }" );
 	return charsSent;
 	}
 

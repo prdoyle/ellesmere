@@ -53,24 +53,24 @@ FUNC void di_discard( Dispatcher di, int numSymbols )
 		}
 	}
 
-static int ss_sendTo( SymbolStack ss, SymbolTable st, Stream sm )
+static int ss_sendTo( SymbolStack ss, SymbolTable st, File fl )
 	{
 	int charsSent = 0;
 	if( ss->next )
 		{
-		charsSent += ss_sendTo( ss->next, st, sm );
-		charsSent += sm_write( sm, ", " );
+		charsSent += ss_sendTo( ss->next, st, fl );
+		charsSent += fl_write( fl, ", " );
 		}
-	charsSent += sm_write( sm, "%s", sy_name( ss->sy, st ) );
+	charsSent += fl_write( fl, "%s", sy_name( ss->sy, st ) );
 	return charsSent;
 	}
 
-FUNC int di_sendTo( Dispatcher di, Stream sm )
+FUNC int di_sendTo( Dispatcher di, File fl )
 	{
-	int charsSent = sm_write( sm, "_Dispatcher_%p{ ", di );
+	int charsSent = fl_write( fl, "_Dispatcher_%p{ ", di );
 	if( di->stack )
-		charsSent += ss_sendTo( di->stack, di->st, sm );
-	charsSent += sm_write( sm, " }" );
+		charsSent += ss_sendTo( di->stack, di->st, fl );
+	charsSent += fl_write( fl, " }" );
 	return charsSent;
 	}
 

@@ -209,24 +209,24 @@ FUNC void ob_setElement( Object ob, int index, Object value, ObjectHeap heap )
 	assert( ob_getElement( ob, index, heap ) == value );
 	}
 
-FUNC int ob_sendTo( Object ob, Stream sm, ObjectHeap heap )
+FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 	{
 	int charsSent=0;
 	switch( sy_index( ob_tag(ob,heap), heap->st ) )
 		{
 		case SYM_INT:
 			{
-			sm_write( sm, "%d", ob_toInt(ob,heap) );
+			fl_write( fl, "%d", ob_toInt(ob,heap) );
 			break;
 			}
 		case SYM_STRING:
 			{
-			sm_write( sm, "\"%s\"", ob_toString(ob,heap) );
+			fl_write( fl, "\"%s\"", ob_toString(ob,heap) );
 			break;
 			}
 		default:
 			{
-			sm_write( sm, "%s_%p", sy_name( ob_tag(ob,heap), heap->st ), ob );
+			fl_write( fl, "%s_%p", sy_name( ob_tag(ob,heap), heap->st ), ob );
 			break;
 			}
 		}
