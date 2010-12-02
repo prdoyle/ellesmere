@@ -3,13 +3,13 @@
 #include "lex.l.h"
 #include "stack.h"
 #include "dispatcher.h"
+#include "tokens.h"
 
-static token_t nextToken(){ return (token_t)yylex(); }
-
-static Stack      stack;
-static ObjectHeap heap;
-static Dispatcher di;
-static Object     globals;
+static TokenStream tokenStream;
+static Stack       stack;
+static ObjectHeap  heap;
+static Dispatcher  di;
+static Object      globals;
 
 static Action push( Object ob )
 	{
@@ -99,13 +99,14 @@ static Action ifzero( Actor ar )
 	int    flag   = ob_toInt( pop(), heap );
 	if( flag )
 		return NULL;
-	token_t token = nextToken();
-	while( token )
+	Object ob = ts_next( tokenStream );
+	while( ob )
 		{
-		if( token == WORD && sy_byName(lastWord(), theSymbolTable()) == target )
+		if(   ob_tag(ob, heap) == sy_byIndex( SYM_TOKEN, theSymbolTable() )
+			&& ob_toSymbol(ob, heap) == target )
 			break;
 		else
-			token = nextToken();
+			ob = ts_next( tokenStream );
 		}
 	return NULL;
 	}
@@ -113,25 +114,78 @@ static Action ifzero( Actor ar )
 static Action hop( Actor ar )
 	{
 	assert( di == di_fromActor( ar ) );
-	nextToken();
+	ts_next( tokenStream );
 	return NULL;
 	}
 
+static Action block( Actor ar )
+	{
+	assert( di == di_fromActor( ar ) );
+	Symbol terminator = ob_toSymbol( pop(), heap );
+	TokenBlock tb = ts_recordUntil( tokenStream, terminator );
+	return push( ob_fromTokenBlock( tb, heap ) );
+	}
+
+static Action call( Actor ar )
+	{
+	Action result;
+	assert( di == di_fromActor( ar ) );
+	TokenBlock block = ob_toTokenBlock( pop(), heap );
+	result = push( ob_fromTokenStream( tokenStream, heap ) );
+	tokenStream = ts_fromBlock( block, heap );
+	return result;
+	}
+
+static Action gotoAction( Actor ar )
+	{
+	assert( di == di_fromActor( ar ) );
+	TokenBlock block = ob_toTokenBlock( pop(), heap );
+	tokenStream = ts_fromBlock( block, heap );
+	return NULL;
+	}
+
+static Action returnAction( Actor ar )
+	{
+	assert( di == di_fromActor( ar ) );
+	tokenStream = ob_toTokenStream( pop(), heap );
+	return NULL;
+	}
+
+static struct ist_struct
+	{
+	char *name;
+	ActionFunction function;
+	} initialSymbolTable [] =
+	{
+	{ "add",                   add                     },
+	{ "block",                 block                   },
+	{ "call",                  call                    },
+	{ "deep",                  deep                    },
+	{ "dup",                   dupAction               },
+	{ "get",                   get                     },
+	{ "global",                global                  },
+	{ "goto",                  gotoAction              },
+	{ "hop",                   hop                     },
+	{ "ifzero",                ifzero                  },
+	{ "new",                   new                     },
+	{ "pop",                   popAction               },
+	{ "print",                 print                   },
+	{ "return",                returnAction            },
+	{ "set",                   set                     },
+	};
+
 static SymbolTable populateSymbolTable( SymbolTable st )
 	{
-	sy_setImmediateAction( sy_byName( "pop", st ), an_fromFunction( popAction ), st );
-	sy_setImmediateAction( sy_byName( "dup", st ), an_fromFunction( dupAction ), st );
-	sy_setImmediateAction( sy_byName( "deep", st ), an_fromFunction( deep ), st );
-	sy_setImmediateAction( sy_byName( "print", st ), an_fromFunction( print ), st );
-	sy_setImmediateAction( sy_byName( "add", st ),   an_fromFunction( add ),   st );
-	sy_setImmediateAction( sy_byName( "global", st ), an_fromFunction( global ), st );
-	sy_setImmediateAction( sy_byName( "set", st ), an_fromFunction( set ), st );
-	sy_setImmediateAction( sy_byName( "get", st ), an_fromFunction( get ), st );
-	sy_setImmediateAction( sy_byName( "new", st ), an_fromFunction( new ), st );
-	sy_setImmediateAction( sy_byName( "ifzero", st ), an_fromFunction( ifzero ), st );
-	sy_setImmediateAction( sy_byName( "hop", st ), an_fromFunction( hop ), st );
+	int i;
+	for( i=0; i < sizeof( initialSymbolTable ) / sizeof( initialSymbolTable[0] ); i++ )
+		{
+		struct ist_struct *entry = initialSymbolTable + i;
+		sy_setImmediateAction( sy_byName( entry->name, st ), an_fromFunction( entry->function ), st );
+		}
 	return st;
 	}
+
+static token_t nextToken(){ return (token_t)yylex(); }
 
 #define trace printf
 
@@ -145,34 +199,18 @@ int main(int argc, char **argv)
 	heap = theObjectHeap();
 	globals = ob_create( sy_byName( "$GLOBALS", st ), heap );
 	stack = sk_new();
-	token_t token = nextToken();
-	while( token )
+	tokenStream = theLexTokenStream( heap, st );
+	Object ob = ts_next( tokenStream );
+	while( ob )
 		{
-		switch( token )
+		fprintf( diagnostics, "TOKEN IS ");
+		ob_sendTo( ob, diagnostics, heap );
+		fprintf( diagnostics, "\n");
+		switch( sy_index( ob_tag(ob, heap), st ) )
 			{
-			case ERROR:
-			case NUM_TOKENS:
-				fprintf( diagnostics, "Error: <<%s>>\n", lastString() );
-				break;
-			case NO_TOKEN:
-				fprintf( diagnostics, "No token!\n" );
-				break;
-			case INT:
+			case SYM_TOKEN:
 				{
-				fprintf( diagnostics, "Int: %d\n", lastInt());
-				push( ob_fromInt( lastInt(), heap ) );
-				break;
-				}
-			case STRING:
-				{
-				fprintf( diagnostics, "String: %s\n", lastString() );
-				push( ob_fromString( lastString(), heap ) );
-				break;
-				}
-			case WORD:
-				{
-				Symbol sy = sy_byName(lastWord(), st);
-				fprintf( diagnostics, "Word #%d %s\n", sy_index(sy, st), sy_name(sy, st) );
+				Symbol sy = ob_toSymbol( ob, heap );
 				Action an = di_action( di, sy );
 				if( an )
 					{
@@ -188,12 +226,15 @@ int main(int argc, char **argv)
 					sk_push( stack, oh_symbolToken( heap, sy ) );
 				break;
 				}
+			default:
+				push( ob );
+				break;
 			}
 		sk_sendTo( stack, diagnostics, heap );
-		fprintf( diagnostics,"\n");
+		fprintf( diagnostics, "\n");
 		di_sendTo( di, diagnostics );
-		fprintf( diagnostics,"\n");
-		token = nextToken();
+		fprintf( diagnostics, "\n");
+		ob = ts_next( tokenStream );
 		}
 	}
 

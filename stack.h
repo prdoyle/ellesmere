@@ -4,8 +4,6 @@
 
 #include "objects.h"
 
-typedef struct sk_struct *Stack;
-
 FUNC Stack  sk_new();
 FUNC int    sk_depth  ( Stack sk );
 FUNC void   sk_push   ( Stack sk, Object ob );

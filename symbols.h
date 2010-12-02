@@ -4,17 +4,14 @@
 
 #include "base.h"
 
-typedef struct st_struct *SymbolTable;
-typedef struct sy_struct *Symbol;
-typedef struct an_struct *Action;
-typedef struct ar_struct *Actor;
-
 typedef enum
 	{
 	NO_SYMBOL_INDEX=0,
 	SYM_INT,
 	SYM_STRING,
 	SYM_TOKEN,
+	SYM_TOKEN_BLOCK,
+	SYM_TOKEN_STREAM,
 
 	NUM_PREDEFINED_SYMBOLS
 	} SymbolIndex;

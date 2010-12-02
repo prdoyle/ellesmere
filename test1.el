@@ -31,3 +31,20 @@ Three -3 add
 	"Not three" print
 	hop
 |
+
+| block
+	"Ran func1" print
+	return
+| global Func1 set
+
+Func1 call
+Func1 call
+
+| block
+	add print
+	return
+| global PrintSum set
+
+# These don't work because the arguments get buried under the return address
+#1 2 PrintSum call
+#123 456 PrintSum call

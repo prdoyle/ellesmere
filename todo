@@ -1,0 +1,5 @@
+- "Block" should push a token block, not a token stream
+
+DONE
+- Enhance token streams to record symbols / strings / ints too
+- Use that as the only interface from ellesmere.c

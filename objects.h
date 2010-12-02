@@ -6,9 +6,6 @@
 #include "symbols.h"
 #include "file.h"
 
-typedef struct oh_struct *ObjectHeap;
-typedef struct ob_struct *Object;
-
 FUNC ObjectHeap theObjectHeap();
 
 FUNC Object ob_create( Symbol tag, ObjectHeap heap );
@@ -25,6 +22,14 @@ FUNC const char *ob_toString( Object ob, ObjectHeap heap );
 FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy );
 FUNC bool   ob_isToken( Object ob, ObjectHeap heap );
 FUNC Symbol ob_toSymbol( Object ob, ObjectHeap heap );
+
+FUNC Object     ob_fromTokenBlock( TokenBlock tb, ObjectHeap heap );
+FUNC bool       ob_isTokenBlock( Object ob, ObjectHeap heap );
+FUNC TokenBlock ob_toTokenBlock( Object ob, ObjectHeap heap );
+
+FUNC Object      ob_fromTokenStream( TokenStream ts, ObjectHeap heap );
+FUNC bool        ob_isTokenStream( Object ob, ObjectHeap heap );
+FUNC TokenStream ob_toTokenStream( Object ob, ObjectHeap heap );
 
 FUNC bool   ob_hasField( Object ob, Symbol field, ObjectHeap heap );
 FUNC Object ob_getField( Object ob, Symbol field, ObjectHeap heap );

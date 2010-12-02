@@ -19,10 +19,12 @@ FUNC SymbolTable theSymbolTable()
 	{
 	static struct st_struct _theSymbolTable = { NUM_PREDEFINED_SYMBOLS,
 		{
-		{ "NO_SYMBOL" },
-		{ "INT" },
-		{ "STRING" },
-		{ "TOKEN" },
+		{ "$NO_SYMBOL" },
+		{ "$INT" },
+		{ "$STRING" },
+		{ "$TOKEN" },
+		{ "$TOKEN_BLOCK" },
+		{ "$TOKEN_STREAM" },
 		}
 		};
 	assert(  _theSymbolTable.symbols[ _theSymbolTable.count-1 ].name );
