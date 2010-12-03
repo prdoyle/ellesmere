@@ -10,6 +10,7 @@ static Stack       stack;
 static ObjectHeap  heap;
 static Dispatcher  di;
 static Object      globals;
+FILE *diagnostics;
 
 static Action push( Object ob )
 	{
@@ -30,18 +31,25 @@ static Action popAction( Actor ar )
 	return NULL;
 	}
 
+static Action pop2( Actor ar )
+	{
+	assert( di == di_fromActor( ar ) );
+	Object keeper = pop();
+	pop();
+	return push( keeper );
+	}
+
 static Action dupAction( Actor ar )
 	{
 	assert( di == di_fromActor( ar ) );
-	push( sk_top(stack) );
-	return NULL;
+	return push( sk_top(stack) );
 	}
 
 static Action deep( Actor ar )
 	{
 	assert( di == di_fromActor( ar ) );
-	int distance = ob_toInt( pop(), heap );
-	push( sk_item( stack, distance ) );
+	int depth = ob_toInt( pop(), heap );
+	push( sk_item( stack, depth ) );
 	return NULL;
 	}
 
@@ -59,6 +67,14 @@ static Action add( Actor ar )
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
 	return push( ob_fromInt( left + right, heap ) );
+	}
+
+static Action sub( Actor ar )
+	{
+	assert( di == di_fromActor( ar ) );
+	int right = ob_toInt( pop(), heap );
+	int left  = ob_toInt( pop(), heap );
+	return push( ob_fromInt( left - right, heap ) );
 	}
 
 static Action global( Actor ar )
@@ -92,23 +108,93 @@ static Action new( Actor ar )
 	return push( ob_create( tag, heap ) );
 	}
 
-static Action ifzero( Actor ar )
+static Action eatUntilObject( Object target )
 	{
-	assert( di == di_fromActor( ar ) );
-	Symbol target = ob_toSymbol( pop(), heap );
-	int    flag   = ob_toInt( pop(), heap );
-	if( flag )
-		return NULL;
+	fprintf( diagnostics, "  eatUntilObject( " );
+	ob_sendTo( target, diagnostics, heap );
+	fprintf( diagnostics, " )\n");
+
 	Object ob = ts_next( tokenStream );
 	while( ob )
 		{
-		if(   ob_tag(ob, heap) == sy_byIndex( SYM_TOKEN, theSymbolTable() )
-			&& ob_toSymbol(ob, heap) == target )
+		if( ob == target )
 			break;
 		else
 			ob = ts_next( tokenStream );
 		}
 	return NULL;
+	}
+
+static Action brancheq( Actor ar )
+	{
+	assert( di == di_fromActor( ar ) );
+	Object target = pop();
+	int right = ob_toInt( pop(), heap );
+	int left  = ob_toInt( pop(), heap );
+	if( left == right )
+		return eatUntilObject( target );
+	else
+		return NULL;
+	}
+
+static Action branchne( Actor ar )
+	{
+	assert( di == di_fromActor( ar ) );
+	Object target = pop();
+	int right = ob_toInt( pop(), heap );
+	int left  = ob_toInt( pop(), heap );
+	if( left != right )
+		return eatUntilObject( target );
+	else
+		return NULL;
+	}
+
+static Action branchlt( Actor ar )
+	{
+	assert( di == di_fromActor( ar ) );
+	Object target = pop();
+	int right = ob_toInt( pop(), heap );
+	int left  = ob_toInt( pop(), heap );
+	if( left < right )
+		return eatUntilObject( target );
+	else
+		return NULL;
+	}
+
+static Action branchle( Actor ar )
+	{
+	assert( di == di_fromActor( ar ) );
+	Object target = pop();
+	int right = ob_toInt( pop(), heap );
+	int left  = ob_toInt( pop(), heap );
+	if( left <= right )
+		return eatUntilObject( target );
+	else
+		return NULL;
+	}
+
+static Action branchgt( Actor ar )
+	{
+	assert( di == di_fromActor( ar ) );
+	Object target = pop();
+	int right = ob_toInt( pop(), heap );
+	int left  = ob_toInt( pop(), heap );
+	if( left > right )
+		return eatUntilObject( target );
+	else
+		return NULL;
+	}
+
+static Action branchge( Actor ar )
+	{
+	assert( di == di_fromActor( ar ) );
+	Object target = pop();
+	int right = ob_toInt( pop(), heap );
+	int left  = ob_toInt( pop(), heap );
+	if( left >= right )
+		return eatUntilObject( target );
+	else
+		return NULL;
 	}
 
 static Action hop( Actor ar )
@@ -158,6 +244,12 @@ static struct ist_struct
 	{
 	{ "add",                   add                     },
 	{ "block",                 block                   },
+	{ "brancheq",              brancheq                },
+	{ "branchge",              branchge                },
+	{ "branchgt",              branchgt                },
+	{ "branchle",              branchle                },
+	{ "branchlt",              branchlt                },
+	{ "branchne",              branchne                },
 	{ "call",                  call                    },
 	{ "deep",                  deep                    },
 	{ "dup",                   dupAction               },
@@ -165,12 +257,13 @@ static struct ist_struct
 	{ "global",                global                  },
 	{ "goto",                  gotoAction              },
 	{ "hop",                   hop                     },
-	{ "ifzero",                ifzero                  },
 	{ "new",                   new                     },
 	{ "pop",                   popAction               },
+	{ "pop2",                  pop2                    },
 	{ "print",                 print                   },
 	{ "return",                returnAction            },
 	{ "set",                   set                     },
+	{ "sub",                   sub                     },
 	};
 
 static SymbolTable populateSymbolTable( SymbolTable st )
@@ -190,7 +283,7 @@ static token_t nextToken(){ return (token_t)yylex(); }
 
 int main(int argc, char **argv)
 	{
-	FILE *diagnostics = fdopen( 3, "wt" );
+	diagnostics = fdopen( 3, "wt" );
 	if( !diagnostics )
 		diagnostics = fopen( "/dev/null", "wt" );
 	SymbolTable st = populateSymbolTable( theSymbolTable() );
@@ -202,9 +295,9 @@ int main(int argc, char **argv)
 	Object ob = ts_next( tokenStream );
 	while( ob )
 		{
-		fprintf( diagnostics, "== Token from %p is ", tokenStream );
+		fprintf( diagnostics, "# Token from %p is ", tokenStream );
 		ob_sendTo( ob, diagnostics, heap );
-		fprintf( diagnostics, " ==\n");
+		fprintf( diagnostics, "\n");
 		switch( sy_index( ob_tag(ob, heap), st ) )
 			{
 			case SYM_TOKEN:
