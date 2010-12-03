@@ -40,8 +40,9 @@ static TokenBlock tb_realloc( TokenBlock tb, int count )
 
 struct ts_struct
 	{
-	StreamKind kind;
-	ObjectHeap heap;
+	StreamKind  kind;
+	ObjectHeap  heap;
+	TokenStream caller;
 	union
 		{
 		struct
@@ -59,17 +60,19 @@ struct ts_struct
 FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st )
 	{
 	TokenStream result = (TokenStream)malloc(sizeof(*result));
-	result->kind = LEX;
-	result->heap = heap;
-	result->data.lex.st   = st;
+	result->kind   = LEX;
+	result->heap   = heap;
+	result->caller = NULL;
+	result->data.lex.st = st;
 	return result;
 	}
 
-FUNC TokenStream ts_fromBlock( TokenBlock block, ObjectHeap heap )
+FUNC TokenStream ts_fromBlock( TokenBlock block, ObjectHeap heap, TokenStream caller )
 	{
 	TokenStream result = (TokenStream)malloc(sizeof(*result));
-	result->kind = BLOCK;
-	result->heap = heap;
+	result->kind   = BLOCK;
+	result->heap   = heap;
+	result->caller = caller;
 	result->data.block.tb    = block;
 	result->data.block.index = 0;
 	return result;
@@ -101,6 +104,11 @@ FUNC Object ts_next( TokenStream ts )
 			break;
 		}
 	return NULL;
+	}
+
+FUNC TokenStream ts_caller ( TokenStream ts )
+	{
+	return ts->caller;
 	}
 
 FUNC TokenBlock ts_recordUntil( TokenStream ts, Symbol terminator )

@@ -45,6 +45,5 @@ Func1 call
 	return
 | global PrintSum set
 
-# These don't work because the arguments get buried under the return address
-#1 2 PrintSum call
-#123 456 PrintSum call
+1 2 PrintSum call
+123 456 PrintSum call

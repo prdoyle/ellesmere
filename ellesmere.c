@@ -128,26 +128,25 @@ static Action block( Actor ar )
 
 static Action call( Actor ar )
 	{
-	Action result;
 	assert( di == di_fromActor( ar ) );
 	TokenBlock block = ob_toTokenBlock( pop(), heap );
-	result = push( ob_fromTokenStream( tokenStream, heap ) );
-	tokenStream = ts_fromBlock( block, heap );
-	return result;
+	tokenStream = ts_fromBlock( block, heap, tokenStream );
+	return NULL;
 	}
 
 static Action gotoAction( Actor ar )
 	{
 	assert( di == di_fromActor( ar ) );
 	TokenBlock block = ob_toTokenBlock( pop(), heap );
-	tokenStream = ts_fromBlock( block, heap );
+	tokenStream = ts_fromBlock( block, heap, ts_caller( tokenStream ) );
 	return NULL;
 	}
 
 static Action returnAction( Actor ar )
 	{
 	assert( di == di_fromActor( ar ) );
-	tokenStream = ob_toTokenStream( pop(), heap );
+	check( ts_caller( tokenStream ) != NULL );
+	tokenStream = ts_caller( tokenStream );
 	return NULL;
 	}
 
@@ -203,9 +202,9 @@ int main(int argc, char **argv)
 	Object ob = ts_next( tokenStream );
 	while( ob )
 		{
-		fprintf( diagnostics, "TOKEN IS ");
+		fprintf( diagnostics, "== Token from %p is ", tokenStream );
 		ob_sendTo( ob, diagnostics, heap );
-		fprintf( diagnostics, "\n");
+		fprintf( diagnostics, " ==\n");
 		switch( sy_index( ob_tag(ob, heap), st ) )
 			{
 			case SYM_TOKEN:
@@ -230,8 +229,9 @@ int main(int argc, char **argv)
 				push( ob );
 				break;
 			}
+		fprintf( diagnostics, "  ");
 		sk_sendTo( stack, diagnostics, heap );
-		fprintf( diagnostics, "\n");
+		fprintf( diagnostics, "\n  ");
 		di_sendTo( di, diagnostics );
 		fprintf( diagnostics, "\n");
 		ob = ts_next( tokenStream );
