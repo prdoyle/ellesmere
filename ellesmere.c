@@ -34,62 +34,62 @@ static Action push( Object ob )
 
 static Object pop()
 	{
-	di_discard( di, 1 );
+	//di_discard( di, 1 );
 	return sk_pop( stack );
 	}
 
-static Action popAction()
+static Action popAction( Symbol sy, SymbolTable st )
 	{
 	pop();
 	return NULL;
 	}
 
-static Action pop2()
+static Action pop2( Symbol sy, SymbolTable st )
 	{
 	Object keeper = pop();
 	pop();
 	return push( keeper );
 	}
 
-static Action dupAction()
+static Action dupAction( Symbol sy, SymbolTable st )
 	{
 	return push( sk_top(stack) );
 	}
 
-static Action deep()
+static Action deep( Symbol sy, SymbolTable st )
 	{
 	int depth = ob_toInt( pop(), heap );
 	push( sk_item( stack, depth ) );
 	return NULL;
 	}
 
-static Action print()
+static Action print( Symbol sy, SymbolTable st )
 	{
 	ob_sendTo( pop(), stdout, heap );
 	printf("\n");
 	return NULL;
 	}
 
-static Action add()
+static Action add( Symbol sy, SymbolTable st )
 	{
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
 	return push( ob_fromInt( left + right, heap ) );
 	}
 
-static Action sub()
+static Action sub( Symbol sy, SymbolTable st )
 	{
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
 	return push( ob_fromInt( left - right, heap ) );
 	}
 
-static Action global()
+static Action global( Symbol sy, SymbolTable st )
 	{
 	return push( globals );
 	}
 
-static Action set()
+static Action set( Symbol sy, SymbolTable st )
 	{
 	Symbol field  = ob_toSymbol( pop(), heap );
 	Object ob     = pop();
@@ -98,14 +98,14 @@ static Action set()
 	return NULL;
 	}
 
-static Action get()
+static Action get( Symbol sy, SymbolTable st )
 	{
 	Symbol field  = ob_toSymbol( pop(), heap );
 	Object ob     = pop();
 	return push( ob_getField( ob, field, heap ) );
 	}
 
-static Action new()
+static Action new( Symbol sy, SymbolTable st )
 	{
 	Symbol tag = ob_toSymbol( pop(), heap );
 	return push( ob_create( tag, heap ) );
@@ -128,7 +128,7 @@ static Action eatUntilObject( Object target )
 	return NULL;
 	}
 
-static Action brancheq()
+static Action brancheq( Symbol sy, SymbolTable st )
 	{
 	Object target = pop();
 	int right = ob_toInt( pop(), heap );
@@ -139,7 +139,7 @@ static Action brancheq()
 		return NULL;
 	}
 
-static Action branchne()
+static Action branchne( Symbol sy, SymbolTable st )
 	{
 	Object target = pop();
 	int right = ob_toInt( pop(), heap );
@@ -150,7 +150,7 @@ static Action branchne()
 		return NULL;
 	}
 
-static Action branchlt()
+static Action branchlt( Symbol sy, SymbolTable st )
 	{
 	Object target = pop();
 	int right = ob_toInt( pop(), heap );
@@ -161,7 +161,7 @@ static Action branchlt()
 		return NULL;
 	}
 
-static Action branchle()
+static Action branchle( Symbol sy, SymbolTable st )
 	{
 	Object target = pop();
 	int right = ob_toInt( pop(), heap );
@@ -172,7 +172,7 @@ static Action branchle()
 		return NULL;
 	}
 
-static Action branchgt()
+static Action branchgt( Symbol sy, SymbolTable st )
 	{
 	Object target = pop();
 	int right = ob_toInt( pop(), heap );
@@ -183,7 +183,7 @@ static Action branchgt()
 		return NULL;
 	}
 
-static Action branchge()
+static Action branchge( Symbol sy, SymbolTable st )
 	{
 	Object target = pop();
 	int right = ob_toInt( pop(), heap );
@@ -194,34 +194,34 @@ static Action branchge()
 		return NULL;
 	}
 
-static Action hop()
+static Action hop( Symbol sy, SymbolTable st )
 	{
 	ts_next( tokenStream );
 	return NULL;
 	}
 
-static Action block()
+static Action block( Symbol sy, SymbolTable st )
 	{
 	Symbol terminator = ob_toSymbol( pop(), heap );
 	TokenBlock tb = ts_recordUntil( tokenStream, terminator );
 	return push( ob_fromTokenBlock( tb, heap ) );
 	}
 
-static Action call()
+static Action call( Symbol sy, SymbolTable st )
 	{
 	TokenBlock block = ob_toTokenBlock( pop(), heap );
 	tokenStream = ts_fromBlock( block, heap, tokenStream );
 	return NULL;
 	}
 
-static Action gotoAction()
+static Action gotoAction( Symbol sy, SymbolTable st )
 	{
 	TokenBlock block = ob_toTokenBlock( pop(), heap );
 	tokenStream = ts_fromBlock( block, heap, ts_caller( tokenStream ) );
 	return NULL;
 	}
 
-static Action returnAction()
+static Action returnAction( Symbol sy, SymbolTable st )
 	{
 	check( ts_caller( tokenStream ) != NULL );
 	tokenStream = ts_caller( tokenStream );
@@ -298,11 +298,11 @@ int main(int argc, char **argv)
 				if( an )
 					{
 					while( an )
-						an = an_perform( an );
+						an = an_perform( an, sy, st );
 					}
 				else if( ob_hasField( globals, sy, heap ) )
 					{
-					di_discard( di, 1 );
+					//di_discard( di, 1 );
 					push( ob_getField( globals, sy, heap ) );
 					}
 				else

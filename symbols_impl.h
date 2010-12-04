@@ -8,6 +8,7 @@ struct sy_struct
 	{
 	const char *name;
 	Action immediateAction;
+	int arity;
 	Object token;
 	};
 

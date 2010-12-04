@@ -4,13 +4,16 @@
 typedef struct ss_struct
 	{
 	Symbol sy;
+	int argsRemaining;
 	struct ss_struct *next;
-	} *SymbolStack;
+	} *StateStack;
 
-static SymbolStack ss_new( Symbol sy, SymbolStack next )
+static StateStack ss_new( Symbol sy, int argsRemaining, StateStack next )
 	{
-	SymbolStack result = (SymbolStack)malloc( sizeof(*result) );
+	assert( argsRemaining >= 1 );
+	StateStack result = (StateStack)malloc( sizeof(*result) );
 	result->sy = sy;
+	result->argsRemaining = argsRemaining;
 	result->next = next;
 	return result;
 	}
@@ -18,7 +21,7 @@ static SymbolStack ss_new( Symbol sy, SymbolStack next )
 struct di_struct
 	{
 	SymbolTable st;
-	SymbolStack stack;
+	StateStack  stack;
 	Action      undecidedAction;
 	};
 
@@ -34,26 +37,22 @@ FUNC Dispatcher di_new( SymbolTable st, Action undecidedAction )
 FUNC Action di_action( Dispatcher di, Symbol sy )
 	{
 	if( sy_immediateAction( sy, di->st ) )
-		return sy_immediateAction( sy, di->st );
-	else
 		{
-		di->stack = ss_new( sy, di->stack );
-		return di->undecidedAction;
+		if( sy_arity( sy, di->st ) == 0 )
+			return sy_immediateAction( sy, di->st );
+		else
+			di->stack = ss_new( sy, sy_arity( sy, di->st ), di->stack );
 		}
+	else if( di->stack && ( --di->stack->argsRemaining == 0 ) )
+		{
+		Action result = sy_immediateAction( di->stack->sy, di->st );
+		di->stack = di->stack->next;
+		return result;
+		}
+	return di->undecidedAction;
 	}
 
-FUNC void di_discard( Dispatcher di, int numSymbols )
-	{
-	while( numSymbols-- >= 1 )
-		{
-		SymbolStack old = di->stack;
-		assert( old );
-		di->stack = old->next;
-		free( old );
-		}
-	}
-
-static int ss_sendTo( SymbolStack ss, SymbolTable st, File fl )
+static int ss_sendTo( StateStack ss, SymbolTable st, File fl )
 	{
 	int charsSent = 0;
 	if( ss->next )
@@ -61,7 +60,7 @@ static int ss_sendTo( SymbolStack ss, SymbolTable st, File fl )
 		charsSent += ss_sendTo( ss->next, st, fl );
 		charsSent += fl_write( fl, ", " );
 		}
-	charsSent += fl_write( fl, "%s", sy_name( ss->sy, st ) );
+	charsSent += fl_write( fl, "%s-%d", sy_name( ss->sy, st ), ss->argsRemaining );
 	return charsSent;
 	}
 

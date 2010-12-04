@@ -24,12 +24,16 @@ FUNC const const char *sy_name  ( Symbol sy, SymbolTable st );
 FUNC Symbol            sy_byIndex ( SymbolIndex index, SymbolTable st ); // 0 <= index < st_count(st)
 FUNC Symbol            sy_byName  ( const char *name, SymbolTable st ); // Creates a symbol if none already exists
 
+// Attributes of symbols
 FUNC Action            sy_immediateAction    ( Symbol sy, SymbolTable st );
 FUNC void              sy_setImmediateAction ( Symbol sy, Action an, SymbolTable st );
+FUNC int               sy_arity              ( Symbol sy, SymbolTable st );
+FUNC void              sy_setArity           ( Symbol sy, int arity, SymbolTable st );
 
-typedef Action (*ActionFunction)();
+// Action handling
+typedef Action (*ActionFunction)( Symbol sy, SymbolTable st );
 FUNC Action an_fromFunction( ActionFunction af );
-FUNC Action an_perform( Action an );
+FUNC Action an_perform( Action an, Symbol sy, SymbolTable st );
 
 #endif
 

@@ -52,6 +52,7 @@ FUNC Symbol sy_byName( const char *name, SymbolTable st )
 			return st->symbols+i;
 	assert( st->count < sizeof(st->symbols) / sizeof(st->symbols[0]) );
 	sy = st->symbols + st->count++;
+	memset( sy, 0, sizeof(*sy) );
 	sy->name = strdup( name );
 	return sy;
 	}
@@ -77,6 +78,16 @@ FUNC void sy_setImmediateAction ( Symbol sy, Action an, SymbolTable st )
 	sy->immediateAction = an;
 	}
 
+FUNC int sy_arity( Symbol sy, SymbolTable st )
+	{
+	return sy->arity;
+	}
+
+FUNC void sy_setArity( Symbol sy, int arity, SymbolTable st )
+	{
+	sy->arity = arity;
+	}
+
 FUNC Action an_fromFunction( ActionFunction af )
 	{
 	Action result = (Action)malloc( sizeof(*result) );
@@ -84,10 +95,10 @@ FUNC Action an_fromFunction( ActionFunction af )
 	return result;
 	}
 
-FUNC Action an_perform( Action an )
+FUNC Action an_perform( Action an, Symbol sy, SymbolTable st )
 	{
-	assert( an );
-	return an->function();
+	assert( an && sy && st );
+	return an->function( sy, st );
 	}
 
 //MERGE:10
