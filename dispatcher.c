@@ -67,11 +67,16 @@ static int ss_sendTo( SymbolStack ss, SymbolTable st, File fl )
 
 FUNC int di_sendTo( Dispatcher di, File fl )
 	{
-	int charsSent = fl_write( fl, "_Dispatcher_%p{ ", di );
-	if( di->stack )
-		charsSent += ss_sendTo( di->stack, di->st, fl );
-	charsSent += fl_write( fl, " }" );
-	return charsSent;
+	if( !fl )
+		return 0;
+	else
+		{
+		int charsSent = fl_write( fl, "_Dispatcher_%p{ ", di );
+		if( di->stack )
+			charsSent += ss_sendTo( di->stack, di->st, fl );
+		charsSent += fl_write( fl, " }" );
+		return charsSent;
+		}
 	}
 
 //MERGE:15

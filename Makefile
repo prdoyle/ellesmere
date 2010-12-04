@@ -2,6 +2,7 @@
 all: tags ellesmere
 32bit: all
 fast: merged
+prof: merged
 small: merged
 	strip ellesmere
 
@@ -14,9 +15,13 @@ LDFLAGS += -g
 
 CFLAGS += -Wno-unused-function # Remove once things settle down a bit
 
-small: CFLAGS += -Os -DNDEBUG
-
-fast:  CFLAGS += -O3 -DNDEBUG
+small: CFLAGS    += -Os -DNDEBUG
+small: LEXFLAGS  += -Cem
+fast:  CFLAGS    += -O3 -DNDEBUG
+fast:  LEXFLAGS  += --Fast
+prof:  CFLAGS    += -pg -O3 -DNDEBUG -fprofile-arcs
+prof:  LDFLAGS   += -pg -fprofile-arcs
+prof:  LEXFLAGS  += --Fast
 
 32bit: CFLAGS += -m32
 32bit: LDFLAGS += -m32
@@ -30,6 +35,7 @@ GEN_C_FILES := $(patsubst %.l,%.l.c,$(L_FILES)) $(patsubst %.y,%.y.c,$(Y_FILES))
 
 small: GEN_C_FILES += _merged.c
 fast:  GEN_C_FILES += _merged.c
+prof:  GEN_C_FILES += _merged.c
 
 GEN_O_FILES := $(patsubst %.c,%.o,$(GEN_C_FILES))
 C_FILES     := $(sort $(GEN_C_FILES) $(wildcard *.c))
@@ -67,6 +73,6 @@ lex.l.c: lex.l
 	flex -o $@ --header-file=lex.l.h $<
 
 clean:
-	rm -f ellesmere tags _merged.c $(GEN_C_FILES) $(GEN_H_FILES) $(O_FILES) $(I_FILES) $(D_FILES)
+	rm -f ellesmere tags _merged.c gmon.out $(GEN_C_FILES) $(GEN_H_FILES) $(O_FILES) $(I_FILES) $(D_FILES)
 
 .PHONY: all merged

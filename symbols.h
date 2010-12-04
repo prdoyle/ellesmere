@@ -27,9 +27,9 @@ FUNC Symbol            sy_byName  ( const char *name, SymbolTable st ); // Creat
 FUNC Action            sy_immediateAction    ( Symbol sy, SymbolTable st );
 FUNC void              sy_setImmediateAction ( Symbol sy, Action an, SymbolTable st );
 
-typedef Action (*ActionFunction)( Actor ar );
+typedef Action (*ActionFunction)();
 FUNC Action an_fromFunction( ActionFunction af );
-FUNC Action an_perform( Action an, Actor ar );
+FUNC Action an_perform( Action an );
 
 #endif
 

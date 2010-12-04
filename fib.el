@@ -1,7 +1,6 @@
 
 | block # n -> fib(n)
-	dup 2
-	recurse branchge
+	dup 2 recurse branchge
 		pop
 		1 return
 	recurse
@@ -19,5 +18,7 @@
 | block # block n -> print fib(n) then re-run block with n+1
 	dup fib call print
 	1 add
+	dup 30 quit branchge
 	1 deep goto
+	quit
 | 0 1 deep goto

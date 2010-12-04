@@ -84,10 +84,10 @@ FUNC Action an_fromFunction( ActionFunction af )
 	return result;
 	}
 
-FUNC Action an_perform( Action an, Actor ar )
+FUNC Action an_perform( Action an )
 	{
-	assert( an && ar );
-	return an->function( ar );
+	assert( an );
+	return an->function();
 	}
 
 //MERGE:10

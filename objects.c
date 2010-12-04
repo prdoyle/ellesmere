@@ -254,7 +254,7 @@ FUNC void ob_setElement( Object ob, int index, Object value, ObjectHeap heap )
 FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 	{
 	int charsSent=0;
-	switch( sy_index( ob_tag(ob,heap), heap->st ) )
+	if( fl ) switch( sy_index( ob_tag(ob,heap), heap->st ) )
 		{
 		case SYM_INT:
 			{

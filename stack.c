@@ -58,17 +58,22 @@ FUNC void sk_popN( Stack sk, int count )
 
 FUNC int sk_sendTo( Stack sk, File fl, ObjectHeap heap )
 	{
-	int i;
-	int charsSent = fl_write( fl, "_Stack_%p{ ", sk );
-	char *sep = "";
-	for( i = sk_depth(sk) - 1; i >= 0; i-- )
+	if( !fl )
+		return 0;
+	else
 		{
-		charsSent += fl_write( fl, "%s", sep );
-		sep = ", ";
-		charsSent += ob_sendTo( sk_item( sk, i ), fl, heap );
+		int i;
+		int charsSent = fl_write( fl, "_Stack_%p{ ", sk );
+		char *sep = "";
+		for( i = sk_depth(sk) - 1; i >= 0; i-- )
+			{
+			charsSent += fl_write( fl, "%s", sep );
+			sep = ", ";
+			charsSent += ob_sendTo( sk_item( sk, i ), fl, heap );
+			}
+		charsSent += fl_write( fl, " }" );
+		return charsSent;
 		}
-	charsSent += fl_write( fl, " }" );
-	return charsSent;
 	}
 
 //MERGE:25

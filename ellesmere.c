@@ -4,6 +4,7 @@
 #include "stack.h"
 #include "dispatcher.h"
 #include "tokens.h"
+#include <stdarg.h>
 
 static TokenStream tokenStream;
 static Stack       stack;
@@ -11,6 +12,19 @@ static ObjectHeap  heap;
 static Dispatcher  di;
 static Object      globals;
 FILE *diagnostics;
+
+static int trace( FILE *file, const char *format, ... )
+	{
+	if( !file )
+		return 0;
+
+	int result;
+	va_list args;
+	va_start( args, format );
+	result = fl_vwrite( file, format, args );
+	va_end( args );
+	return result;
+	}
 
 static Action push( Object ob )
 	{
@@ -24,68 +38,59 @@ static Object pop()
 	return sk_pop( stack );
 	}
 
-static Action popAction( Actor ar )
+static Action popAction()
 	{
-	assert( di == di_fromActor( ar ) );
 	pop();
 	return NULL;
 	}
 
-static Action pop2( Actor ar )
+static Action pop2()
 	{
-	assert( di == di_fromActor( ar ) );
 	Object keeper = pop();
 	pop();
 	return push( keeper );
 	}
 
-static Action dupAction( Actor ar )
+static Action dupAction()
 	{
-	assert( di == di_fromActor( ar ) );
 	return push( sk_top(stack) );
 	}
 
-static Action deep( Actor ar )
+static Action deep()
 	{
-	assert( di == di_fromActor( ar ) );
 	int depth = ob_toInt( pop(), heap );
 	push( sk_item( stack, depth ) );
 	return NULL;
 	}
 
-static Action print( Actor ar )
+static Action print()
 	{
-	assert( di == di_fromActor( ar ) );
 	ob_sendTo( pop(), stdout, heap );
 	printf("\n");
 	return NULL;
 	}
 
-static Action add( Actor ar )
+static Action add()
 	{
-	assert( di == di_fromActor( ar ) );
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
 	return push( ob_fromInt( left + right, heap ) );
 	}
 
-static Action sub( Actor ar )
+static Action sub()
 	{
-	assert( di == di_fromActor( ar ) );
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
 	return push( ob_fromInt( left - right, heap ) );
 	}
 
-static Action global( Actor ar )
+static Action global()
 	{
-	assert( di == di_fromActor( ar ) );
 	return push( globals );
 	}
 
-static Action set( Actor ar )
+static Action set()
 	{
-	assert( di == di_fromActor( ar ) );
 	Symbol field  = ob_toSymbol( pop(), heap );
 	Object ob     = pop();
 	Object value  = pop();
@@ -93,26 +98,24 @@ static Action set( Actor ar )
 	return NULL;
 	}
 
-static Action get( Actor ar )
+static Action get()
 	{
-	assert( di == di_fromActor( ar ) );
 	Symbol field  = ob_toSymbol( pop(), heap );
 	Object ob     = pop();
 	return push( ob_getField( ob, field, heap ) );
 	}
 
-static Action new( Actor ar )
+static Action new()
 	{
-	assert( di == di_fromActor( ar ) );
 	Symbol tag = ob_toSymbol( pop(), heap );
 	return push( ob_create( tag, heap ) );
 	}
 
 static Action eatUntilObject( Object target )
 	{
-	fprintf( diagnostics, "  eatUntilObject( " );
+	trace( diagnostics, "  eatUntilObject( " );
 	ob_sendTo( target, diagnostics, heap );
-	fprintf( diagnostics, " )\n");
+	trace( diagnostics, " )\n");
 
 	Object ob = ts_next( tokenStream );
 	while( ob )
@@ -125,9 +128,8 @@ static Action eatUntilObject( Object target )
 	return NULL;
 	}
 
-static Action brancheq( Actor ar )
+static Action brancheq()
 	{
-	assert( di == di_fromActor( ar ) );
 	Object target = pop();
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
@@ -137,9 +139,8 @@ static Action brancheq( Actor ar )
 		return NULL;
 	}
 
-static Action branchne( Actor ar )
+static Action branchne()
 	{
-	assert( di == di_fromActor( ar ) );
 	Object target = pop();
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
@@ -149,9 +150,8 @@ static Action branchne( Actor ar )
 		return NULL;
 	}
 
-static Action branchlt( Actor ar )
+static Action branchlt()
 	{
-	assert( di == di_fromActor( ar ) );
 	Object target = pop();
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
@@ -161,9 +161,8 @@ static Action branchlt( Actor ar )
 		return NULL;
 	}
 
-static Action branchle( Actor ar )
+static Action branchle()
 	{
-	assert( di == di_fromActor( ar ) );
 	Object target = pop();
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
@@ -173,9 +172,8 @@ static Action branchle( Actor ar )
 		return NULL;
 	}
 
-static Action branchgt( Actor ar )
+static Action branchgt()
 	{
-	assert( di == di_fromActor( ar ) );
 	Object target = pop();
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
@@ -185,9 +183,8 @@ static Action branchgt( Actor ar )
 		return NULL;
 	}
 
-static Action branchge( Actor ar )
+static Action branchge()
 	{
-	assert( di == di_fromActor( ar ) );
 	Object target = pop();
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
@@ -197,40 +194,35 @@ static Action branchge( Actor ar )
 		return NULL;
 	}
 
-static Action hop( Actor ar )
+static Action hop()
 	{
-	assert( di == di_fromActor( ar ) );
 	ts_next( tokenStream );
 	return NULL;
 	}
 
-static Action block( Actor ar )
+static Action block()
 	{
-	assert( di == di_fromActor( ar ) );
 	Symbol terminator = ob_toSymbol( pop(), heap );
 	TokenBlock tb = ts_recordUntil( tokenStream, terminator );
 	return push( ob_fromTokenBlock( tb, heap ) );
 	}
 
-static Action call( Actor ar )
+static Action call()
 	{
-	assert( di == di_fromActor( ar ) );
 	TokenBlock block = ob_toTokenBlock( pop(), heap );
 	tokenStream = ts_fromBlock( block, heap, tokenStream );
 	return NULL;
 	}
 
-static Action gotoAction( Actor ar )
+static Action gotoAction()
 	{
-	assert( di == di_fromActor( ar ) );
 	TokenBlock block = ob_toTokenBlock( pop(), heap );
 	tokenStream = ts_fromBlock( block, heap, ts_caller( tokenStream ) );
 	return NULL;
 	}
 
-static Action returnAction( Actor ar )
+static Action returnAction()
 	{
-	assert( di == di_fromActor( ar ) );
 	check( ts_caller( tokenStream ) != NULL );
 	tokenStream = ts_caller( tokenStream );
 	return NULL;
@@ -279,13 +271,9 @@ static SymbolTable populateSymbolTable( SymbolTable st )
 
 static token_t nextToken(){ return (token_t)yylex(); }
 
-#define trace printf
-
 int main(int argc, char **argv)
 	{
 	diagnostics = fdopen( 3, "wt" );
-	if( !diagnostics )
-		diagnostics = fopen( "/dev/null", "wt" );
 	SymbolTable st = populateSymbolTable( theSymbolTable() );
 	di = di_new( st, NULL );
 	heap = theObjectHeap();
@@ -295,9 +283,12 @@ int main(int argc, char **argv)
 	Object ob = ts_next( tokenStream );
 	while( ob )
 		{
-		fprintf( diagnostics, "# Token from %p is ", tokenStream );
-		ob_sendTo( ob, diagnostics, heap );
-		fprintf( diagnostics, "\n");
+		if( diagnostics )
+			{
+			trace( diagnostics, "# Token from %p is ", tokenStream );
+			ob_sendTo( ob, diagnostics, heap );
+			trace( diagnostics, "\n");
+			}
 		switch( sy_index( ob_tag(ob, heap), st ) )
 			{
 			case SYM_TOKEN:
@@ -307,7 +298,7 @@ int main(int argc, char **argv)
 				if( an )
 					{
 					while( an )
-						an = an_perform( an, di_actor(di) );
+						an = an_perform( an );
 					}
 				else if( ob_hasField( globals, sy, heap ) )
 					{
@@ -322,11 +313,14 @@ int main(int argc, char **argv)
 				push( ob );
 				break;
 			}
-		fprintf( diagnostics, "  ");
-		sk_sendTo( stack, diagnostics, heap );
-		fprintf( diagnostics, "\n  ");
-		di_sendTo( di, diagnostics );
-		fprintf( diagnostics, "\n");
+		if( diagnostics )
+			{
+			trace( diagnostics, "  ");
+			sk_sendTo( stack, diagnostics, heap );
+			trace( diagnostics, "\n  ");
+			di_sendTo( di, diagnostics );
+			trace( diagnostics, "\n");
+			}
 		ob = ts_next( tokenStream );
 		}
 	}

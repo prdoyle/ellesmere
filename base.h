@@ -18,7 +18,6 @@ static inline void check( int condition ){ assert( condition ); }
 #endif
 
 typedef struct an_struct *Action;
-typedef struct ar_struct *Actor;
 typedef struct di_struct *Dispatcher;
 typedef struct ob_struct *Object;
 typedef struct oh_struct *ObjectHeap;
