@@ -1,5 +1,6 @@
 
 #include "objects.h"
+#include "memory.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -42,7 +43,7 @@ typedef struct fl_struct
 
 static FieldList fl_new( SymbolIndex si, Object value, FieldList tail )
 	{
-	FieldList result = (FieldList)malloc( sizeof(*result) );
+	FieldList result = (FieldList)mem_alloc( sizeof(*result) );
 	assert(( (intptr_t)result & OB_KIND_MASK ) == 0);
 	result->si    = si;
 	result->value = value;
@@ -73,7 +74,7 @@ struct ob_struct
 
 FUNC Object ob_create( Symbol tag, ObjectHeap heap )
 	{
-	Object result = (Object)malloc( (sizeof(*result)) );
+	Object result = (Object)mem_alloc( (sizeof(*result)) );
 	result->tag = sy_index( tag, heap->st );
 	result->data.fields = NULL;
 	assert( ob_kind( result ) == OB_STRUCT );
@@ -99,7 +100,7 @@ FUNC int ob_toInt( Object ob, ObjectHeap heap )
 
 FUNC Object ob_fromString( const char *value, ObjectHeap heap )
 	{
-	Object result = (Object)malloc( (sizeof(*result)) );
+	Object result = (Object)mem_alloc( (sizeof(*result)) );
 	result->tag = SYM_STRING;
 	result->data.characters = strdup( value );
 	assert( ob_kind( result ) == OB_STRUCT );
@@ -130,7 +131,7 @@ FUNC Symbol ob_toSymbol( Object ob, ObjectHeap heap )
 
 FUNC Object ob_fromTokenBlock( TokenBlock tb, ObjectHeap heap )
 	{
-	Object result = (Object)malloc( (sizeof(*result)) );
+	Object result = (Object)mem_alloc( (sizeof(*result)) );
 	result->tag = SYM_TOKEN_BLOCK;
 	result->data.tokenBlock = tb;
 	assert( ob_kind( result ) == OB_STRUCT );
@@ -150,7 +151,7 @@ FUNC TokenBlock ob_toTokenBlock( Object ob, ObjectHeap heap )
 
 FUNC Object ob_fromTokenStream( TokenStream ts, ObjectHeap heap )
 	{
-	Object result = (Object)malloc( (sizeof(*result)) );
+	Object result = (Object)mem_alloc( (sizeof(*result)) );
 	result->tag = SYM_TOKEN_STREAM;
 	result->data.tokenStream = ts;
 	assert( ob_kind( result ) == OB_STRUCT );

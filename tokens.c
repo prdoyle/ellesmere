@@ -1,5 +1,6 @@
 
 #include "tokens.h"
+#include "memory.h"
 #include "lex.h"
 #include "lex.l.h"
 
@@ -26,14 +27,14 @@ static int tb_size( int count )
 
 static TokenBlock tb_alloc( int count )
 	{
-	TokenBlock result = (TokenBlock)malloc( tb_size(count) );
+	TokenBlock result = (TokenBlock)mem_alloc( tb_size(count) );
 	result->count = count;
 	return result;
 	}
 
 static TokenBlock tb_realloc( TokenBlock tb, int count )
 	{
-	TokenBlock result = (TokenBlock)realloc( tb, tb_size(count) );
+	TokenBlock result = (TokenBlock)mem_realloc( tb, tb_size(count) );
 	result->count = count;
 	return result;
 	}
@@ -59,7 +60,7 @@ struct ts_struct
 
 FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st )
 	{
-	TokenStream result = (TokenStream)malloc(sizeof(*result));
+	TokenStream result = (TokenStream)mem_alloc(sizeof(*result));
 	result->kind   = LEX;
 	result->heap   = heap;
 	result->caller = NULL;
@@ -69,7 +70,7 @@ FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st )
 
 FUNC TokenStream ts_fromBlock( TokenBlock block, ObjectHeap heap, TokenStream caller )
 	{
-	TokenStream result = (TokenStream)malloc(sizeof(*result));
+	TokenStream result = (TokenStream)mem_alloc(sizeof(*result));
 	result->kind   = BLOCK;
 	result->heap   = heap;
 	result->caller = caller;

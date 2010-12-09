@@ -1,6 +1,7 @@
 
 #include "symbols.h"
 #include "objects.h"
+#include "memory.h"
 #include "symbols_impl.h"
 #include <string.h>
 #include <stdint.h>
@@ -82,7 +83,7 @@ typedef struct sdl_struct
 
 static SymbolDefList sdl_new( Symbol sy, Action immediateAction, int arity, bool isSymbolic, Object value, SymbolDefList next )
 	{
-	SymbolDefList result = (SymbolDefList)malloc( sizeof(*result) );
+	SymbolDefList result = (SymbolDefList)mem_alloc( sizeof(*result) );
 	result->sy = sy;
 	result->immediateAction = immediateAction;
 	result->arity = arity;
@@ -113,7 +114,7 @@ struct sc_struct
 FUNC Scope st_outermostScope( SymbolTable st )
 	{
 	// TODO: Shouldn't this always return the same Scope given the same st?
-	Scope result = (Scope)malloc( sizeof(*result) );
+	Scope result = (Scope)mem_alloc( sizeof(*result) );
 	result->defs = NULL;
 	result->data.st = ((intptr_t)st) | 1;
 	return result;
@@ -121,7 +122,7 @@ FUNC Scope st_outermostScope( SymbolTable st )
 
 FUNC Scope sc_new( Scope outer )
 	{
-	Scope result = (Scope)malloc( sizeof(*result) );
+	Scope result = (Scope)mem_alloc( sizeof(*result) );
 	result->defs = NULL;
 	result->data.outer = outer;
 	return result;
@@ -250,7 +251,7 @@ FUNC Action an_perform( Action an, Scope sc )
 
 FUNC Action an_fromFunctionAndSymbol( ActionFunction af, Symbol sy )
 	{
-	Action result = (Action)malloc( sizeof(*result) );
+	Action result = (Action)mem_alloc( sizeof(*result) );
 	result->function = af;
 	result->sy       = sy;
 	return result;

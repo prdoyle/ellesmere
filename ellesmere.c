@@ -4,6 +4,7 @@
 #include "stack.h"
 #include "dispatcher.h"
 #include "tokens.h"
+#include "memory.h"
 #include <stdarg.h>
 
 static TokenStream tokenStream;
@@ -11,7 +12,6 @@ static Stack       stack;
 static Scope       currentScope;
 static ObjectHeap  heap;
 static Dispatcher  di;
-static Object      globals;
 FILE *diagnostics;
 
 static int trace( FILE *file, const char *format, ... )
@@ -327,7 +327,6 @@ int main(int argc, char **argv)
 	currentScope = sc_new( populateScope( st_outermostScope( st ) ) );
 	heap = theObjectHeap();
 	di = di_new( heap, st, NULL, diagnostics );
-	globals = ob_create( sy_byName( "$GLOBALS", st ), heap );
 	stack = sk_new();
 	tokenStream = theLexTokenStream( heap, st );
 	Object ob = ts_next( tokenStream );
@@ -355,6 +354,7 @@ int main(int argc, char **argv)
 			}
 		ob = ts_next( tokenStream );
 		}
+	mem_report();
 	}
 
 //MERGE:30

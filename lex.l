@@ -34,7 +34,7 @@ const char *lastWord()          { return _lastString; }
 %option   nodebug
 
 DIGIT       [0-9]
-ALPHA       [A-Za-z_]
+ALPHA       [A-Za-z_$]
 ALNUM       [0-9A-Za-z_]
 OPER        [~!@$%^&*-+=<>|:,.?/]
 ALONE       [(){}]|\[|\]|[;]

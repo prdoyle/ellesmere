@@ -1,5 +1,6 @@
 
 #include "dispatcher.h"
+#include "memory.h"
 
 typedef struct ss_struct
 	{
@@ -12,7 +13,7 @@ typedef struct ss_struct
 static StateStack ss_new( Symbol dispatchee, int argsRemaining, int tokensRemaining, StateStack next )
 	{
 	assert( argsRemaining >= 1 );
-	StateStack result = (StateStack)malloc( sizeof(*result) );
+	StateStack result = (StateStack)mem_alloc( sizeof(*result) );
 	result->dispatchee = dispatchee;
 	result->argsRemaining = argsRemaining;
 	result->tokensRemaining = tokensRemaining;
@@ -31,7 +32,7 @@ struct di_struct
 
 FUNC Dispatcher di_new( ObjectHeap heap, SymbolTable st, Action shiftAction, File diagnostics )
 	{
-	Dispatcher result = (Dispatcher)malloc( sizeof(*result) );
+	Dispatcher result = (Dispatcher)mem_alloc( sizeof(*result) );
 	result->heap = heap;
 	result->st = st;
 	result->stack = NULL;

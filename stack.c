@@ -1,5 +1,6 @@
 
 #include "stack.h"
+#include "memory.h"
 
 typedef struct ski_struct
 	{
@@ -9,7 +10,7 @@ typedef struct ski_struct
 
 static StackItem ski_new( Object value, StackItem next )
 	{
-	StackItem result = (StackItem)malloc( sizeof(*result) );
+	StackItem result = (StackItem)mem_alloc( sizeof(*result) );
 	result->value = value;
 	result->next = next;
 	return result;
@@ -22,7 +23,7 @@ struct sk_struct
 
 FUNC Stack sk_new()
 	{
-	Stack result = (Stack)malloc( sizeof(*result) );
+	Stack result = (Stack)mem_alloc( sizeof(*result) );
 	result->top = NULL;
 	return result;
 	}
