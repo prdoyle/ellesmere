@@ -13,5 +13,7 @@ FUNC ObjectHeap  ts_heap   ( TokenStream ts );
 
 FUNC TokenBlock ts_recordUntil( TokenStream ts, Symbol terminator );
 
+FUNC TokenStream ts_close( TokenStream ts ); // Returns ts_caller
+
 #endif
 

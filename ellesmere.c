@@ -248,7 +248,7 @@ static Action returnAction( Action an, Context cx )
 	{
 	popToken();
 	check( ts_caller( tokenStream ) != NULL );
-	tokenStream = ts_caller( tokenStream );
+	tokenStream = ts_close( tokenStream );
 	currentScope = cx_outer( currentScope );
 	return NULL;
 	}

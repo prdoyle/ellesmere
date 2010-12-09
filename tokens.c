@@ -44,6 +44,7 @@ struct ts_struct
 	StreamKind  kind;
 	ObjectHeap  heap;
 	TokenStream caller;
+	TokenStream free; // A TokenStream that could be used for caller
 	union
 		{
 		struct
@@ -65,12 +66,20 @@ FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st )
 	result->heap   = heap;
 	result->caller = NULL;
 	result->data.lex.st = st;
+	result->free   = NULL;
 	return result;
 	}
 
 FUNC TokenStream ts_fromBlock( TokenBlock block, ObjectHeap heap, TokenStream caller )
 	{
-	TokenStream result = (TokenStream)mem_alloc(sizeof(*result));
+	TokenStream result;
+	if( caller && caller->free )
+		{
+		result = caller->free;
+		caller->free = NULL;
+		}
+	else
+		result = (TokenStream)mem_alloc(sizeof(*result));
 	result->kind   = BLOCK;
 	result->heap   = heap;
 	result->caller = caller;
@@ -88,7 +97,8 @@ FUNC Object ts_next( TokenStream ts )
 				{
 				case NUM_TOKENS:
 				case ERROR:
-					check(false);
+					check(!"Error token!");
+					// fall through
 				case NO_TOKEN:
 					break;
 				case INT:
@@ -110,6 +120,16 @@ FUNC Object ts_next( TokenStream ts )
 FUNC TokenStream ts_caller ( TokenStream ts )
 	{
 	return ts->caller;
+	}
+
+FUNC TokenStream ts_close( TokenStream ts )
+	{
+	TokenStream result = ts->caller;
+	if( result->free == NULL )
+		result->free = ts;
+	else
+		free( ts );
+	return result;
 	}
 
 FUNC TokenBlock ts_recordUntil( TokenStream ts, Symbol terminator )
