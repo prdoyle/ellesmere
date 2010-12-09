@@ -2,59 +2,54 @@
 #include "stack.h"
 #include "memory.h"
 
-typedef struct ski_struct
-	{
-	Object value;
-	struct ski_struct *next;
-	} *StackItem;
-
-static StackItem ski_new( Object value, StackItem next )
-	{
-	StackItem result = (StackItem)mem_alloc( sizeof(*result) );
-	result->value = value;
-	result->next = next;
-	return result;
-	}
-
 struct sk_struct
 	{
-	StackItem top;
+	int depth;
+	int capacity;
+	Object *items;
 	};
+
+#define INITIAL_CAPACITY 20
 
 FUNC Stack sk_new()
 	{
 	Stack result = (Stack)mem_alloc( sizeof(*result) );
-	result->top = NULL;
+	result->depth = 0;
+	result->capacity = INITIAL_CAPACITY;
+	result->items = (Object*)mem_alloc( result->capacity * sizeof( result->items[0] ) );
 	return result;
 	}
 
 FUNC int sk_depth( Stack sk )
 	{
-	int result=0;
-	for( StackItem i = sk->top; i; i = i->next )
-		result += 1;
-	return result;
+	return sk->depth;
 	}
 
 FUNC void sk_push( Stack sk, Object ob )
 	{
-	sk->top = ski_new( ob, sk->top );
+	if( sk->depth >= sk->capacity )
+		{
+		sk->capacity *= 2;
+		sk->items = mem_realloc( sk->items, sk->capacity * sizeof( sk->items[0] ) );
+		}
+	sk->items[ sk->depth++ ] = ob;
 	}
 
 FUNC Object sk_item( Stack sk, int depth )
 	{
 	assert( depth < sk_depth(sk) );
-	StackItem ski = sk->top;
-	while( depth-- > 0 )
-		ski = ski->next;
-	return ski->value;
+	return sk->items[ sk->depth-1 - depth ];
 	}
 
 FUNC void sk_popN( Stack sk, int count )
 	{
 	assert( count <= sk_depth(sk) );
-	while( count-- > 0 )
-		sk->top = sk->top->next;
+	sk->depth -= count;
+	if( sk->depth < sk->capacity / 4 )
+		{
+		sk->capacity /= 2;
+		sk->items = mem_realloc( sk->items, sk->capacity * sizeof( sk->items[0] ) );
+		}
 	}
 
 FUNC int sk_sendTo( Stack sk, File fl, ObjectHeap heap )
