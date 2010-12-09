@@ -11,7 +11,7 @@ typedef char bool;
 
 // assert is used to catch internal errors
 // check is used to catch user errors
-static inline void check( int condition ){ assert( condition ); }
+#define check assert
 
 #ifndef FUNC
 #define FUNC
@@ -21,6 +21,7 @@ typedef struct an_struct *Action;
 typedef struct di_struct *Dispatcher;
 typedef struct ob_struct *Object;
 typedef struct oh_struct *ObjectHeap;
+typedef struct sc_struct *Scope;
 typedef struct sk_struct *Stack;
 typedef struct st_struct *SymbolTable;
 typedef struct sy_struct *Symbol;

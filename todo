@@ -1,5 +1,10 @@
-- "Block" should push a token block, not a token stream
+- Must reimplement globals.  Dispatcher needs to be involved I think.  If some other dude replaces them with their values, dispatcher never sees the tokens and can't tell the arity.
+- Maybe a symbol table per scope?  Indexed by the same symbols?
+- Hmm, how can the dispatcher push a new value for a symbol??
+- Gotta fix things so dispatcher is in charge of replacing symbols with value (ie. nullary functions in effect)
+- How does "reduce" remove the token and leave just the args on stack?
 
 DONE
 - Enhance token streams to record symbols / strings / ints too
 - Use that as the only interface from ellesmere.c
+- "Block" should push a token block, not a token stream

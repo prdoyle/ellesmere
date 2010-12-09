@@ -4,11 +4,11 @@
 
 #include "symbols.h"
 
+enum{ MAX_SYMBOLS=500 };
+
 struct sy_struct
 	{
 	const char *name;
-	Action immediateAction;
-	int arity;
 	Object token;
 	};
 

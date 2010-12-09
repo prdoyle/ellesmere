@@ -2,11 +2,11 @@
 #ifndef DISPATCHER_H
 #define DISPATCHER_H
 
-#include "symbols.h"
+#include "objects.h"
 #include "file.h"
 
-FUNC Dispatcher di_new( SymbolTable st, Action undecidedAction );
-FUNC Action di_action( Dispatcher di, Symbol sy );
+FUNC Dispatcher di_new( ObjectHeap heap, SymbolTable st, Action shiftAction, File diagnostics );
+FUNC Action di_action( Dispatcher di, Object ob, Scope sc );
 
 FUNC int di_sendTo( Dispatcher di, File fl );
 

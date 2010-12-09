@@ -1,24 +1,26 @@
 
-| block # n -> fib(n)
-	dup 2 recurse branchge
-		pop
+def fib 1 blockto
+	|
+	pop n
+	pop _
+	branchge recurse n 2
 		1 return
 	recurse
-	# n
-	dup 1 sub fib call
-	# n fib(n-1)
-	1 deep 2 sub fib call
-	# n fib(n-1) fib(n-2)
 	add
-	# n fib(n)
-	pop2
+		fib sub n 1
+		fib sub n 2
 	return
-| global fib set
+	|
 
-| block # block n -> print fib(n) then re-run block with n+1
-	dup fib call print
-	1 add
-	dup 30 quit branchge
-	1 deep goto
+blockto
+	|
+	pop n
+	n print
+	fib n print
+	add n 1 pop n
+	branchge quit n 26
+		n goto mainloop
 	quit
-| 0 1 deep goto
+	| pop mainloop
+
+0 goto mainloop

@@ -3,54 +3,112 @@
 
 typedef struct ss_struct
 	{
-	Symbol sy;
-	int argsRemaining;
 	struct ss_struct *next;
+	Symbol  dispatchee;
+	int argsRemaining;
+	int tokensRemaining;
 	} *StateStack;
 
-static StateStack ss_new( Symbol sy, int argsRemaining, StateStack next )
+static StateStack ss_new( Symbol dispatchee, int argsRemaining, int tokensRemaining, StateStack next )
 	{
 	assert( argsRemaining >= 1 );
 	StateStack result = (StateStack)malloc( sizeof(*result) );
-	result->sy = sy;
+	result->dispatchee = dispatchee;
 	result->argsRemaining = argsRemaining;
+	result->tokensRemaining = tokensRemaining;
 	result->next = next;
 	return result;
 	}
 
 struct di_struct
 	{
+	ObjectHeap  heap;
 	SymbolTable st;
 	StateStack  stack;
-	Action      undecidedAction;
+	Action      shiftAction;
+	File        diagnostics;
 	};
 
-FUNC Dispatcher di_new( SymbolTable st, Action undecidedAction )
+FUNC Dispatcher di_new( ObjectHeap heap, SymbolTable st, Action shiftAction, File diagnostics )
 	{
 	Dispatcher result = (Dispatcher)malloc( sizeof(*result) );
+	result->heap = heap;
 	result->st = st;
 	result->stack = NULL;
-	result->undecidedAction = undecidedAction;
+	result->shiftAction = shiftAction;
+	result->diagnostics = diagnostics;
 	return result;
 	}
 
-FUNC Action di_action( Dispatcher di, Symbol sy )
+static int instrumented_if( int cond, char *condStr, char *file, int line, Dispatcher di )
 	{
-	if( sy_immediateAction( sy, di->st ) )
-		{
-		if( sy_arity( sy, di->st ) == 0 )
-			return sy_immediateAction( sy, di->st );
-		else
-			di->stack = ss_new( sy, sy_arity( sy, di->st ), di->stack );
-		}
-	else if( di->stack && ( --di->stack->argsRemaining == 0 ) )
-		{
-		Action result = sy_immediateAction( di->stack->sy, di->st );
-		di->stack = di->stack->next;
-		return result;
-		}
-	return di->undecidedAction;
+	fl_write( di->diagnostics, "    if(%d) %s %s:%d\n", cond, condStr, file, line );
+	return cond;
 	}
+
+#define if(c) if(instrumented_if(!!(c), #c, __FILE__, __LINE__, di))
+
+FUNC Action di_action( Dispatcher di, Object ob, Scope sc )
+	{
+	bool tryRunning = true;
+	if( ob_isToken( ob, di->heap ) )
+		{
+		Symbol token = ob_toSymbol( ob, di->heap );
+		if( di->stack )
+			{
+			if( di->stack->tokensRemaining >= 1 )
+				{
+				// Dispatcher is expecting this token
+				di->stack->tokensRemaining--;
+				di->stack->argsRemaining--;
+				tryRunning = false;
+				}
+			else if( sy_immediateAction( token, sc ) == NULL )
+				{
+				// Dispatchee didn't ask for a token but it's getting one because this token has no action
+				di->stack->argsRemaining--;
+				tryRunning = false;
+				}
+			}
+		else if( sy_immediateAction( token, sc ) == NULL )
+			tryRunning = false; // No action to run
+		if( tryRunning )
+			{
+			if( sy_arity( token, sc ) == 0 )
+				{
+				// Token has a known action we can take immediately
+				return sy_immediateAction( token, sc );
+				}
+			else
+				{
+				// Token has a known action we can take after parsing its arguments
+				di->stack = ss_new( token, sy_arity(token,sc), sy_isSymbolic(token,sc)?1:0, di->stack );
+				}
+			}
+		}
+	else
+		{
+		if( di->stack )
+			di->stack->argsRemaining--;
+		}
+
+	if( di->stack )
+		{
+		if( di->stack->argsRemaining == 0 )
+			{
+			Action result = sy_immediateAction( di->stack->dispatchee, sc );
+			di->stack = di->stack->next;
+			return result;
+			}
+		}
+
+	// Returning shiftAction tells the caller we're done with this object.
+	// Otherwise, caller will call di_action again with the same object.
+	//
+	return di->shiftAction;
+	}
+
+#undef if
 
 static int ss_sendTo( StateStack ss, SymbolTable st, File fl )
 	{
@@ -60,7 +118,7 @@ static int ss_sendTo( StateStack ss, SymbolTable st, File fl )
 		charsSent += ss_sendTo( ss->next, st, fl );
 		charsSent += fl_write( fl, ", " );
 		}
-	charsSent += fl_write( fl, "%s-%d", sy_name( ss->sy, st ), ss->argsRemaining );
+	charsSent += fl_write( fl, "%s+%d", sy_name( ss->dispatchee, st ), ss->argsRemaining );
 	return charsSent;
 	}
 
