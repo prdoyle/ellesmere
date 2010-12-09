@@ -9,7 +9,7 @@
 
 static TokenStream tokenStream;
 static Stack       stack;
-static Scope       currentScope;
+static Context     currentScope;
 static ObjectHeap  heap;
 static Dispatcher  di;
 FILE *diagnostics;
@@ -45,29 +45,29 @@ static Symbol popToken()
 	return ob_toSymbol( popped, heap );
 	}
 
-static Action valueof( Action an, Scope sc )
+static Action valueof( Action an, Context cx )
 	{
 	Symbol symbol = ob_toSymbol( pop(), heap );
-	return push( sy_value( symbol, sc ) );
+	return push( sy_value( symbol, cx ) );
 	}
 
-static Action popAction( Action an, Scope sc )
+static Action popAction( Action an, Context cx )
 	{
 	Symbol symbol = ob_toSymbol( pop(), heap );
 	popToken();
-	sy_setValue( symbol, pop(), sc );
-	sy_setImmediateAction( symbol, an_fromFunction( valueof ), sc );
-	trace( diagnostics, "  sy_setValue( %p, %p, %p )\n", symbol, sy_value( symbol, sc ), sc );
+	sy_setValue( symbol, pop(), cx );
+	sy_setImmediateAction( symbol, an_fromFunction( valueof ), cx );
+	trace( diagnostics, "  sy_setValue( %p, %p, %p )\n", symbol, sy_value( symbol, cx ), cx );
 	return NULL;
 	}
 
-static Action dupAction( Action an, Scope sc )
+static Action dupAction( Action an, Context cx )
 	{
 	popToken();
 	return push( sk_top(stack) );
 	}
 
-static Action deep( Action an, Scope sc )
+static Action deep( Action an, Context cx )
 	{
 	int depth = ob_toInt( pop(), heap );
 	popToken();
@@ -75,7 +75,7 @@ static Action deep( Action an, Scope sc )
 	return NULL;
 	}
 
-static Action print( Action an, Scope sc )
+static Action print( Action an, Context cx )
 	{
 	popToken();
 	ob_sendTo( pop(), stdout, heap );
@@ -83,7 +83,7 @@ static Action print( Action an, Scope sc )
 	return NULL;
 	}
 
-static Action add( Action an, Scope sc )
+static Action add( Action an, Context cx )
 	{
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
@@ -91,7 +91,7 @@ static Action add( Action an, Scope sc )
 	return push( ob_fromInt( left + right, heap ) );
 	}
 
-static Action sub( Action an, Scope sc )
+static Action sub( Action an, Context cx )
 	{
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
@@ -99,7 +99,7 @@ static Action sub( Action an, Scope sc )
 	return push( ob_fromInt( left - right, heap ) );
 	}
 
-static Action set( Action an, Scope sc )
+static Action set( Action an, Context cx )
 	{
 	Object value  = pop();
 	Object ob     = pop();
@@ -109,7 +109,7 @@ static Action set( Action an, Scope sc )
 	return NULL;
 	}
 
-static Action get( Action an, Scope sc )
+static Action get( Action an, Context cx )
 	{
 	Object ob     = pop();
 	Symbol field  = ob_toSymbol( pop(), heap );
@@ -117,7 +117,7 @@ static Action get( Action an, Scope sc )
 	return push( ob_getField( ob, field, heap ) );
 	}
 
-static Action new( Action an, Scope sc )
+static Action new( Action an, Context cx )
 	{
 	Symbol tag = ob_toSymbol( pop(), heap );
 	popToken();
@@ -141,7 +141,7 @@ static Action eatUntilObject( Object target )
 	return NULL;
 	}
 
-static Action brancheq( Action an, Scope sc )
+static Action brancheq( Action an, Context cx )
 	{
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
@@ -153,7 +153,7 @@ static Action brancheq( Action an, Scope sc )
 		return NULL;
 	}
 
-static Action branchne( Action an, Scope sc )
+static Action branchne( Action an, Context cx )
 	{
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
@@ -165,7 +165,7 @@ static Action branchne( Action an, Scope sc )
 		return NULL;
 	}
 
-static Action branchlt( Action an, Scope sc )
+static Action branchlt( Action an, Context cx )
 	{
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
@@ -177,7 +177,7 @@ static Action branchlt( Action an, Scope sc )
 		return NULL;
 	}
 
-static Action branchle( Action an, Scope sc )
+static Action branchle( Action an, Context cx )
 	{
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
@@ -189,7 +189,7 @@ static Action branchle( Action an, Scope sc )
 		return NULL;
 	}
 
-static Action branchgt( Action an, Scope sc )
+static Action branchgt( Action an, Context cx )
 	{
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
@@ -201,7 +201,7 @@ static Action branchgt( Action an, Scope sc )
 		return NULL;
 	}
 
-static Action branchge( Action an, Scope sc )
+static Action branchge( Action an, Context cx )
 	{
 	int right = ob_toInt( pop(), heap );
 	int left  = ob_toInt( pop(), heap );
@@ -213,14 +213,14 @@ static Action branchge( Action an, Scope sc )
 		return NULL;
 	}
 
-static Action hop( Action an, Scope sc )
+static Action hop( Action an, Context cx )
 	{
 	popToken();
 	ts_next( tokenStream );
 	return NULL;
 	}
 
-static Action blockto( Action an, Scope sc )
+static Action blockto( Action an, Context cx )
 	{
 	Symbol terminator = ob_toSymbol( pop(), heap );
 	popToken();
@@ -228,7 +228,7 @@ static Action blockto( Action an, Scope sc )
 	return push( ob_fromTokenBlock( tb, heap ) );
 	}
 
-static Action call( Action an, Scope sc )
+static Action call( Action an, Context cx )
 	{
 	TokenBlock block = ob_toTokenBlock( pop(), heap );
 	popToken();
@@ -236,7 +236,7 @@ static Action call( Action an, Scope sc )
 	return NULL;
 	}
 
-static Action gotoAction( Action an, Scope sc )
+static Action gotoAction( Action an, Context cx )
 	{
 	TokenBlock block = ob_toTokenBlock( pop(), heap );
 	popToken();
@@ -244,32 +244,32 @@ static Action gotoAction( Action an, Scope sc )
 	return NULL;
 	}
 
-static Action returnAction( Action an, Scope sc )
+static Action returnAction( Action an, Context cx )
 	{
 	popToken();
 	check( ts_caller( tokenStream ) != NULL );
 	tokenStream = ts_caller( tokenStream );
-	currentScope = sc_outer( currentScope );
+	currentScope = cx_outer( currentScope );
 	return NULL;
 	}
 
-static Action reduce( Action an, Scope sc )
+static Action reduce( Action an, Context cx )
 	{
-	TokenBlock block = ob_toTokenBlock( sy_value( an_symbol(an), sc ), heap );
+	TokenBlock block = ob_toTokenBlock( sy_value( an_symbol(an), cx ), heap );
 	tokenStream = ts_fromBlock( block, heap, tokenStream );
-	currentScope = sc_new( currentScope );
+	currentScope = cx_new( currentScope );
 	return NULL;
 	}
 
-static Action def( Action an, Scope sc )
+static Action def( Action an, Context cx )
 	{
 	TokenBlock block = ob_toTokenBlock( pop(), heap );
 	int        arity = ob_toInt( pop(), heap );
 	Symbol    symbol = ob_toSymbol( pop(), heap );
 	popToken();
-	sy_setImmediateAction( symbol, an_fromFunctionAndSymbol( reduce, symbol ), sc );
-	sy_setArity( symbol, arity, sc );
-	sy_setValue( symbol, ob_fromTokenBlock( block, heap ), sc );
+	sy_setImmediateAction( symbol, an_fromFunctionAndSymbol( reduce, symbol ), cx );
+	sy_setArity( symbol, arity, cx );
+	sy_setValue( symbol, ob_fromTokenBlock( block, heap ), cx );
 	return NULL;
 	}
 
@@ -304,18 +304,18 @@ static struct ist_struct
 	{ "sub",                   sub                ,2   },
 	};
 
-static Scope populateScope( Scope sc )
+static Context populateScope( Context cx )
 	{
 	int i;
 	for( i=0; i < sizeof( initialSymbolTable ) / sizeof( initialSymbolTable[0] ); i++ )
 		{
 		struct ist_struct *entry = initialSymbolTable + i;
-		Symbol sy = sy_byName( entry->name, sc_symbolTable(sc) );
-		sy_setImmediateAction ( sy, an_fromFunction( entry->function ), sc );
-		sy_setArity           ( sy, entry->arity, sc );
-		sy_setIsSymbolic      ( sy, entry->isSymbolic, sc );
+		Symbol sy = sy_byName( entry->name, cx_symbolTable(cx) );
+		sy_setImmediateAction ( sy, an_fromFunction( entry->function ), cx );
+		sy_setArity           ( sy, entry->arity, cx );
+		sy_setIsSymbolic      ( sy, entry->isSymbolic, cx );
 		}
-	return sc;
+	return cx;
 	}
 
 static token_t nextToken(){ return (token_t)yylex(); }
@@ -324,7 +324,7 @@ int main(int argc, char **argv)
 	{
 	diagnostics = fdopen( 3, "wt" );
 	SymbolTable st = theSymbolTable();
-	currentScope = sc_new( populateScope( st_outermostScope( st ) ) );
+	currentScope = cx_new( populateScope( st_outermostScope( st ) ) );
 	heap = theObjectHeap();
 	di = di_new( heap, st, NULL, diagnostics );
 	stack = sk_new();
@@ -349,7 +349,7 @@ int main(int argc, char **argv)
 			trace( diagnostics, "\n  ");
 			di_sendTo( di, diagnostics );
 			trace( diagnostics, "\n  ");
-			sc_sendTo( currentScope, diagnostics );
+			cx_sendTo( currentScope, diagnostics );
 			trace( diagnostics, "\n");
 			}
 		ob = ts_next( tokenStream );

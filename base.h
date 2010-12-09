@@ -17,10 +17,10 @@ typedef char bool;
 #endif
 
 typedef struct an_struct *Action;
+typedef struct cx_struct *Context;
 typedef struct di_struct *Dispatcher;
 typedef struct ob_struct *Object;
 typedef struct oh_struct *ObjectHeap;
-typedef struct sc_struct *Scope;
 typedef struct sk_struct *Stack;
 typedef struct st_struct *SymbolTable;
 typedef struct sy_struct *Symbol;

@@ -6,7 +6,7 @@
 #include "file.h"
 
 FUNC Dispatcher di_new( ObjectHeap heap, SymbolTable st, Action shiftAction, File diagnostics );
-FUNC Action di_action( Dispatcher di, Object ob, Scope sc );
+FUNC Action di_action( Dispatcher di, Object ob, Context cx );
 
 FUNC int di_sendTo( Dispatcher di, File fl );
 

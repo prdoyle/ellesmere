@@ -101,47 +101,47 @@ static SymbolDefList sdl_bySymbol( SymbolDefList sdl, Symbol sy )
 		return sdl_bySymbol( sdl->next, sy );
 	}
 
-struct sc_struct
+struct cx_struct
 	{
 	SymbolDefList defs;
 	union
 		{
-		Scope    outer;
+		Context  outer;
 		intptr_t st;   // Low-tagged
 		} data;
 	};
 
-FUNC Scope st_outermostScope( SymbolTable st )
+FUNC Context st_outermostScope( SymbolTable st )
 	{
-	// TODO: Shouldn't this always return the same Scope given the same st?
-	Scope result = (Scope)mem_alloc( sizeof(*result) );
+	// TODO: Shouldn't this always return the same Context given the same st?
+	Context result = (Context)mem_alloc( sizeof(*result) );
 	result->defs = NULL;
 	result->data.st = ((intptr_t)st) | 1;
 	return result;
 	}
 
-FUNC Scope sc_new( Scope outer )
+FUNC Context cx_new( Context outer )
 	{
-	Scope result = (Scope)mem_alloc( sizeof(*result) );
+	Context result = (Context)mem_alloc( sizeof(*result) );
 	result->defs = NULL;
 	result->data.outer = outer;
 	return result;
 	}
 
-FUNC SymbolTable sc_symbolTable( Scope sc )
+FUNC SymbolTable cx_symbolTable( Context cx )
 	{
-	if( sc->data.st & 1 )
-		return (SymbolTable)( sc->data.st & ~1 );
+	if( cx->data.st & 1 )
+		return (SymbolTable)( cx->data.st & ~1 );
 	else
-		return sc_symbolTable( sc->data.outer );
+		return cx_symbolTable( cx->data.outer );
 	}
 
-FUNC Scope sc_outer( Scope sc )
+FUNC Context cx_outer( Context cx )
 	{
-	if( sc->data.st & 1 )
+	if( cx->data.st & 1 )
 		return NULL;
 	else
-		return sc->data.outer;
+		return cx->data.outer;
 	}
 
 static void sdl_sendTo( SymbolDefList sdl, File fl, SymbolTable st )
@@ -153,100 +153,100 @@ static void sdl_sendTo( SymbolDefList sdl, File fl, SymbolTable st )
 		}
 	}
 
-FUNC void sc_sendTo( Scope sc, File fl )
+FUNC void cx_sendTo( Context cx, File fl )
 	{
 	if( !fl )
 		return;
-	fl_write( fl, "Scope_%p{ ", sc );
-	sdl_sendTo( sc->defs, fl, sc_symbolTable( sc ) );
-	fl_write( fl, "}", sc );
+	fl_write( fl, "Scope_%p{ ", cx );
+	sdl_sendTo( cx->defs, fl, cx_symbolTable( cx ) );
+	fl_write( fl, "}", cx );
 	}
 
-FUNC Action sy_immediateAction( Symbol sy, Scope sc )
+FUNC Action sy_immediateAction( Symbol sy, Context cx )
 	{
-	SymbolDefList sdl = sdl_bySymbol( sc->defs, sy );
+	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
 	if( sdl )
 		return sdl->immediateAction;
-	else if( sc_outer(sc) )
-		return sy_immediateAction( sy, sc_outer( sc ) );
+	else if( cx_outer(cx) )
+		return sy_immediateAction( sy, cx_outer( cx ) );
 	else
 		return NULL;
 	}
 
-FUNC void sy_setImmediateAction ( Symbol sy, Action an, Scope sc )
+FUNC void sy_setImmediateAction ( Symbol sy, Action an, Context cx )
 	{
-	SymbolDefList sdl = sdl_bySymbol( sc->defs, sy );
+	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
 	if( sdl )
 		sdl->immediateAction = an;
 	else
-		sc->defs = sdl_new( sy, an, 0, false, NULL, sc->defs );
+		cx->defs = sdl_new( sy, an, 0, false, NULL, cx->defs );
 	}
 
-FUNC int sy_arity( Symbol sy, Scope sc )
+FUNC int sy_arity( Symbol sy, Context cx )
 	{
-	SymbolDefList sdl = sdl_bySymbol( sc->defs, sy );
+	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
 	if( sdl )
 		return sdl->arity;
-	else if( sc_outer(sc) )
-		return sy_arity( sy, sc_outer( sc ) );
+	else if( cx_outer(cx) )
+		return sy_arity( sy, cx_outer( cx ) );
 	else
 		return 0;
 	}
 
-FUNC void sy_setArity( Symbol sy, int arity, Scope sc )
+FUNC void sy_setArity( Symbol sy, int arity, Context cx )
 	{
-	SymbolDefList sdl = sdl_bySymbol( sc->defs, sy );
+	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
 	if( sdl )
 		sdl->arity = arity;
 	else
-		sc->defs = sdl_new( sy, NULL, arity, false, NULL, sc->defs );
+		cx->defs = sdl_new( sy, NULL, arity, false, NULL, cx->defs );
 	}
 
-FUNC bool sy_isSymbolic( Symbol sy, Scope sc )
+FUNC bool sy_isSymbolic( Symbol sy, Context cx )
 	{
-	SymbolDefList sdl = sdl_bySymbol( sc->defs, sy );
+	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
 	if( sdl )
 		return sdl->isSymbolic;
-	else if( sc_outer(sc) )
-		return sy_isSymbolic( sy, sc_outer( sc ) );
+	else if( cx_outer(cx) )
+		return sy_isSymbolic( sy, cx_outer( cx ) );
 	else
 		return false;
 	}
 
-FUNC void sy_setIsSymbolic( Symbol sy, bool isSymbolic, Scope sc )
+FUNC void sy_setIsSymbolic( Symbol sy, bool isSymbolic, Context cx )
 	{
-	SymbolDefList sdl = sdl_bySymbol( sc->defs, sy );
+	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
 	if( sdl )
 		sdl->isSymbolic = isSymbolic;
 	else
-		sc->defs = sdl_new( sy, NULL, 0, isSymbolic, NULL, sc->defs );
+		cx->defs = sdl_new( sy, NULL, 0, isSymbolic, NULL, cx->defs );
 	}
 
-FUNC Object sy_value( Symbol sy, Scope sc )
+FUNC Object sy_value( Symbol sy, Context cx )
 	{
-	SymbolDefList sdl = sdl_bySymbol( sc->defs, sy );
+	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
 	if( sdl )
 		return sdl->value;
-	else if( sc_outer(sc) )
-		return sy_value( sy, sc_outer( sc ) );
+	else if( cx_outer(cx) )
+		return sy_value( sy, cx_outer( cx ) );
 	else
 		return NULL;
 	}
 
-FUNC void sy_setValue( Symbol sy, Object value, Scope sc )
+FUNC void sy_setValue( Symbol sy, Object value, Context cx )
 	{
-	SymbolDefList sdl = sdl_bySymbol( sc->defs, sy );
+	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
 	if( sdl )
 		sdl->value = value;
 	else
-		sc->defs = sdl_new( sy, NULL, 0, false, value, sc->defs );
-	assert( sy_value( sy, sc ) == value );
+		cx->defs = sdl_new( sy, NULL, 0, false, value, cx->defs );
+	assert( sy_value( sy, cx ) == value );
 	}
 
-FUNC Action an_perform( Action an, Scope sc )
+FUNC Action an_perform( Action an, Context cx )
 	{
-	assert( an && sc );
-	return an->function( an, sc );
+	assert( an && cx );
+	return an->function( an, cx );
 	}
 
 FUNC Action an_fromFunctionAndSymbol( ActionFunction af, Symbol sy )

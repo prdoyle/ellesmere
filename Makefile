@@ -76,6 +76,6 @@ memreport.txt: ellesmere
 	./ellesmere < fib.el | sort -k2 -nk3 | uniq -c | sort -rn > $@
 
 clean:
-	rm -f memreport.txt ellesmere tags _merged.c gmon.out $(GEN_C_FILES) $(GEN_H_FILES) $(O_FILES) $(I_FILES) $(D_FILES)
+	rm -f memreport.txt ellesmere tags _merged.c gmon.out *.gcda $(GEN_C_FILES) $(GEN_H_FILES) $(O_FILES) $(I_FILES) $(D_FILES)
 
 .PHONY: all merged memreport.txt

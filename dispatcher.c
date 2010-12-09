@@ -93,7 +93,7 @@ static int instrumented_if( int cond, char *condStr, char *file, int line, Dispa
 
 #define if(c) if(instrumented_if(!!(c), #c, __FILE__, __LINE__, di))
 
-FUNC Action di_action( Dispatcher di, Object ob, Scope sc )
+FUNC Action di_action( Dispatcher di, Object ob, Context cx )
 	{
 	bool tryRunning = true;
 	if( ob_isToken( ob, di->heap ) )
@@ -109,27 +109,27 @@ FUNC Action di_action( Dispatcher di, Object ob, Scope sc )
 				frame->argsRemaining--;
 				tryRunning = false;
 				}
-			else if( sy_immediateAction( token, sc ) == NULL )
+			else if( sy_immediateAction( token, cx ) == NULL )
 				{
 				// Dispatchee didn't ask for a token but it's getting one because this token has no action
 				frame->argsRemaining--;
 				tryRunning = false;
 				}
 			}
-		else if( sy_immediateAction( token, sc ) == NULL )
+		else if( sy_immediateAction( token, cx ) == NULL )
 			tryRunning = false; // No action to run
 		if( tryRunning )
 			{
-			if( sy_arity( token, sc ) == 0 )
+			if( sy_arity( token, cx ) == 0 )
 				{
 				// Token has a known action we can take immediately
-				return sy_immediateAction( token, sc );
+				return sy_immediateAction( token, cx );
 				}
 			else
 				{
 				// Token has a known action we can take after parsing its arguments
 				StackFrame newFrame = ds_push( &di->stack );
-				sf_init( newFrame, token, sy_arity(token,sc), sy_isSymbolic(token,sc)?1:0 );
+				sf_init( newFrame, token, sy_arity(token,cx), sy_isSymbolic(token,cx)?1:0 );
 				}
 			}
 		}
@@ -144,7 +144,7 @@ FUNC Action di_action( Dispatcher di, Object ob, Scope sc )
 		StackFrame frame = ds_topFrame( &di->stack );
 		if( frame->argsRemaining == 0 )
 			{
-			Action result = sy_immediateAction( frame->dispatchee, sc );
+			Action result = sy_immediateAction( frame->dispatchee, cx );
 			ds_pop( &di->stack );
 			return result;
 			}
