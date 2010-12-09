@@ -2,32 +2,76 @@
 #include "dispatcher.h"
 #include "memory.h"
 
-typedef struct ss_struct
+typedef struct sf_struct
 	{
-	struct ss_struct *next;
 	Symbol  dispatchee;
 	int argsRemaining;
 	int tokensRemaining;
-	} *StateStack;
+	} *StackFrame;
 
-static StateStack ss_new( Symbol dispatchee, int argsRemaining, int tokensRemaining, StateStack next )
+static void sf_init( StackFrame frame, Symbol dispatchee, int argsRemaining, int tokensRemaining )
 	{
 	assert( argsRemaining >= 1 );
-	StateStack result = (StateStack)mem_alloc( sizeof(*result) );
-	result->dispatchee = dispatchee;
-	result->argsRemaining = argsRemaining;
-	result->tokensRemaining = tokensRemaining;
-	result->next = next;
+	frame->dispatchee = dispatchee;
+	frame->argsRemaining = argsRemaining;
+	frame->tokensRemaining = tokensRemaining;
+	}
+
+typedef struct ds_struct
+	{
+	int depth;
+	int capacity;
+	struct sf_struct *frames;
+	} *DispatcherStack;
+
+#define INITIAL_STACK_CAPCITY 25
+
+static void ds_init( DispatcherStack ds )
+	{
+	ds->depth = 0;
+	ds->capacity = INITIAL_STACK_CAPCITY;
+	ds->frames = (struct sf_struct*)mem_alloc( ds->capacity * sizeof( ds->frames[0] ) );
+	}
+
+static StackFrame ds_frame( DispatcherStack ds, int depth )
+	{
+	assert( ds->depth >= 1 );
+	return ds->frames + ds->depth-1 - depth;
+	}
+
+static StackFrame ds_topFrame( DispatcherStack ds )
+	{
+	StackFrame result;
+	assert( ds->depth >= 1 );
+	result = ds->frames + ds->depth-1;
+	assert( result == ds_frame( ds, 0 ) );
 	return result;
+	}
+
+static StackFrame ds_push( DispatcherStack ds )
+	{
+	if( ds->depth == ds->capacity )
+		{
+		ds->capacity *= 2;
+		ds->frames = (struct sf_struct*)mem_realloc( ds->frames, ds->capacity * sizeof( ds->frames[0] ) );
+		}
+	return ds->frames + ds->depth++;
+	}
+
+static void ds_pop( DispatcherStack ds )
+	{
+	assert( ds->depth >= 1 );
+	ds->depth--;
+	// TODO: realloc if depth << capacity
 	}
 
 struct di_struct
 	{
-	ObjectHeap  heap;
-	SymbolTable st;
-	StateStack  stack;
-	Action      shiftAction;
-	File        diagnostics;
+	ObjectHeap       heap;
+	struct ds_struct stack;
+	SymbolTable      st;
+	Action           shiftAction;
+	File             diagnostics;
 	};
 
 FUNC Dispatcher di_new( ObjectHeap heap, SymbolTable st, Action shiftAction, File diagnostics )
@@ -35,9 +79,9 @@ FUNC Dispatcher di_new( ObjectHeap heap, SymbolTable st, Action shiftAction, Fil
 	Dispatcher result = (Dispatcher)mem_alloc( sizeof(*result) );
 	result->heap = heap;
 	result->st = st;
-	result->stack = NULL;
 	result->shiftAction = shiftAction;
 	result->diagnostics = diagnostics;
+	ds_init( &result->stack );
 	return result;
 	}
 
@@ -55,19 +99,20 @@ FUNC Action di_action( Dispatcher di, Object ob, Scope sc )
 	if( ob_isToken( ob, di->heap ) )
 		{
 		Symbol token = ob_toSymbol( ob, di->heap );
-		if( di->stack )
+		if( di->stack.depth >= 1 )
 			{
-			if( di->stack->tokensRemaining >= 1 )
+			StackFrame frame = ds_topFrame( &di->stack );
+			if( frame->tokensRemaining >= 1 )
 				{
 				// Dispatcher is expecting this token
-				di->stack->tokensRemaining--;
-				di->stack->argsRemaining--;
+				frame->tokensRemaining--;
+				frame->argsRemaining--;
 				tryRunning = false;
 				}
 			else if( sy_immediateAction( token, sc ) == NULL )
 				{
 				// Dispatchee didn't ask for a token but it's getting one because this token has no action
-				di->stack->argsRemaining--;
+				frame->argsRemaining--;
 				tryRunning = false;
 				}
 			}
@@ -83,22 +128,24 @@ FUNC Action di_action( Dispatcher di, Object ob, Scope sc )
 			else
 				{
 				// Token has a known action we can take after parsing its arguments
-				di->stack = ss_new( token, sy_arity(token,sc), sy_isSymbolic(token,sc)?1:0, di->stack );
+				StackFrame newFrame = ds_push( &di->stack );
+				sf_init( newFrame, token, sy_arity(token,sc), sy_isSymbolic(token,sc)?1:0 );
 				}
 			}
 		}
 	else
 		{
-		if( di->stack )
-			di->stack->argsRemaining--;
+		if( di->stack.depth >= 1 )
+			ds_topFrame( &di->stack )->argsRemaining--;
 		}
 
-	if( di->stack )
+	if( di->stack.depth >= 1 )
 		{
-		if( di->stack->argsRemaining == 0 )
+		StackFrame frame = ds_topFrame( &di->stack );
+		if( frame->argsRemaining == 0 )
 			{
-			Action result = sy_immediateAction( di->stack->dispatchee, sc );
-			di->stack = di->stack->next;
+			Action result = sy_immediateAction( frame->dispatchee, sc );
+			ds_pop( &di->stack );
 			return result;
 			}
 		}
@@ -111,27 +158,21 @@ FUNC Action di_action( Dispatcher di, Object ob, Scope sc )
 
 #undef if
 
-static int ss_sendTo( StateStack ss, SymbolTable st, File fl )
-	{
-	int charsSent = 0;
-	if( ss->next )
-		{
-		charsSent += ss_sendTo( ss->next, st, fl );
-		charsSent += fl_write( fl, ", " );
-		}
-	charsSent += fl_write( fl, "%s+%d", sy_name( ss->dispatchee, st ), ss->argsRemaining );
-	return charsSent;
-	}
-
 FUNC int di_sendTo( Dispatcher di, File fl )
 	{
 	if( !fl )
 		return 0;
 	else
 		{
+		int i;
+		char *sep = "";
 		int charsSent = fl_write( fl, "_Dispatcher_%p{ ", di );
-		if( di->stack )
-			charsSent += ss_sendTo( di->stack, di->st, fl );
+		for( i = 0; i < di->stack.depth; i++ )
+			{
+			StackFrame sf = ds_frame( &di->stack, i );
+			charsSent += fl_write( fl, "%s%s+%d", sep, sy_name( sf->dispatchee, di->st ), sf->argsRemaining );
+			sep = ", ";
+			}
 		charsSent += fl_write( fl, " }" );
 		return charsSent;
 		}

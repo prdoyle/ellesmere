@@ -45,9 +45,9 @@ FUNC void sk_popN( Stack sk, int count )
 	{
 	assert( count <= sk_depth(sk) );
 	sk->depth -= count;
-	if( sk->depth < sk->capacity / 4 )
+	if( sk->depth < sk->capacity / 16 && (sk->capacity/8) >= INITIAL_CAPACITY )
 		{
-		sk->capacity /= 2;
+		sk->capacity /= 8;
 		sk->items = mem_realloc( sk->items, sk->capacity * sizeof( sk->items[0] ) );
 		}
 	}
