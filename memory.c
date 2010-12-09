@@ -32,9 +32,19 @@ FUNC void *mem_allocAnnotated(int size, const char *file, int line)
 
 FUNC void *mem_reallocAnnotated(void *old, int size, const char *file, int line)
 	{
-	Header *oldHeader = ((Header*)old) - 1;
-	Header *result = (Header*)realloc(oldHeader, size + sizeof(Header));
+	Header *oldHeader, *newHeader, *result;
+	oldHeader = ((Header*)old) - 1;
+	// Make a "naked header" to record the original alloc info
+	newHeader = ((Header*)mem_allocAnnotated( 1, oldHeader->file, oldHeader->line )) - 1;
+	newHeader->size = oldHeader->size;
+	// Realloc the new block
+	result = (Header*)realloc(oldHeader, size + sizeof(Header));
 	check( result );
+	// Update new header to record new alloc info
+	result->file = file;
+	result->line = line;
+	result->size = size;
+	// Fix up links
 	if( result->prev )
 		result->prev->next = result;
 	else
@@ -48,6 +58,6 @@ FUNC void mem_report()
 	{
 	Header *h;
 	for( h = lastHeader; h; h = h->prev )
-		printf("%.10d %s %d\n", h->size, h->file, h->line);
+		printf("%d %s %d\n", h->size, h->file, h->line);
 	}
 

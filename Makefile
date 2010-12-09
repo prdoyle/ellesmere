@@ -72,7 +72,10 @@ $(GEN_H_FILES): %.h: %.c
 lex.l.c: lex.l
 	flex -o $@ --header-file=lex.l.h $<
 
-clean:
-	rm -f ellesmere tags _merged.c gmon.out $(GEN_C_FILES) $(GEN_H_FILES) $(O_FILES) $(I_FILES) $(D_FILES)
+memreport.txt: ellesmere
+	./ellesmere < fib.el | sort -k2 -nk3 | uniq -c | sort -rn > $@
 
-.PHONY: all merged
+clean:
+	rm -f memreport.txt ellesmere tags _merged.c gmon.out $(GEN_C_FILES) $(GEN_H_FILES) $(O_FILES) $(I_FILES) $(D_FILES)
+
+.PHONY: all merged memreport.txt
