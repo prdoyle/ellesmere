@@ -56,7 +56,7 @@ static Action popAction( Action an, Context cx )
 	Symbol symbol = ob_toSymbol( pop(), heap );
 	popToken();
 	sy_setValue( symbol, pop(), cx );
-	sy_setImmediateAction( symbol, an_fromFunction( valueof ), cx );
+	sy_setImmediateAction( symbol, an_fromFunctionAndSymbol( valueof, symbol ), cx );
 	trace( diagnostics, "  sy_setValue( %p, %p, %p )\n", symbol, sy_value( symbol, cx ), cx );
 	return NULL;
 	}

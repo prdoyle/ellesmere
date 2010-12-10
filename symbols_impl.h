@@ -19,6 +19,9 @@ struct sy_struct
 	const char *name;
 	Object token;
 	struct sy_scopedDefs scopedDefs;
+	// cache of a couple of things to reduce malloc
+	SymbolDefList freeSDL;
+	Action        recentAction;
 	};
 
 

@@ -70,16 +70,20 @@ FUNC const char *sy_name( Symbol sy, SymbolTable st )
 	return sy->name;
 	}
 
-typedef struct sdl_struct
+struct sdl_struct
 	{
 	struct sdl_struct *next;
 	Symbol sy;
 	struct sy_scopedDefs scopedDefs;
-	} *SymbolDefList;
+	};
 
 static SymbolDefList sdl_new( Symbol sy, SymbolDefList next )
 	{
-	SymbolDefList result = (SymbolDefList)mem_alloc( sizeof(*result) );
+	SymbolDefList result = sy->freeSDL;
+	if( result )
+		sy->freeSDL = NULL;
+	else
+		result = (SymbolDefList)mem_alloc( sizeof(*result) );
 	result->sy = sy;
 	result->scopedDefs = sy->scopedDefs;
 	result->next = next;
@@ -92,6 +96,16 @@ static SymbolDefList sdl_bySymbol( SymbolDefList sdl, Symbol sy )
 		return sdl;
 	else
 		return sdl_bySymbol( sdl->next, sy );
+	}
+
+static SymbolDefList sdl_applyAndFree( SymbolDefList sdl )
+	{
+	SymbolDefList next = sdl->next;
+	sdl->sy->scopedDefs = sdl->scopedDefs;
+	if( !sdl->sy->freeSDL )
+		sdl->sy->freeSDL = sdl;
+	sdl->sy = (Symbol)0xdead; // poison
+	return next;
 	}
 
 typedef struct ub_struct
@@ -147,8 +161,8 @@ FUNC void cx_restore( Context cx )
 	check( cx->ub.length >= 1 );
 	UndoBuffer ub = &cx->ub;
 	SymbolDefList cur;
-	for( cur = *ub_curListPtr( ub ); cur; cur = cur->next )
-		cur->sy->scopedDefs = cur->scopedDefs;
+	for( cur = *ub_curListPtr( ub ); cur; cur = sdl_applyAndFree( cur ) )
+		{}
 	--ub->length;
 	}
 
@@ -238,7 +252,9 @@ FUNC Action an_perform( Action an, Context cx )
 
 FUNC Action an_fromFunctionAndSymbol( ActionFunction af, Symbol sy )
 	{
-	Action result = (Action)mem_alloc( sizeof(*result) );
+	Action result = sy->recentAction;
+	if( !result || result->function != af )
+		sy->recentAction = result = (Action)mem_alloc( sizeof(*result) );
 	result->function = af;
 	result->sy       = sy;
 	return result;
@@ -246,7 +262,10 @@ FUNC Action an_fromFunctionAndSymbol( ActionFunction af, Symbol sy )
 
 FUNC Action an_fromFunction( ActionFunction af )
 	{
-	return an_fromFunctionAndSymbol( af, NULL );
+	Action result = (Action)mem_alloc( sizeof(*result) );
+	result->function = af;
+	result->sy = NULL;
+	return result;
 	}
 
 FUNC Symbol an_symbol( Action an )

@@ -27,4 +27,6 @@ typedef struct sy_struct *Symbol;
 typedef struct tb_struct *TokenBlock;
 typedef struct ts_struct *TokenStream;
 
+typedef struct sdl_struct *SymbolDefList;
+
 #endif
