@@ -25,10 +25,10 @@ FUNC const const char *sy_name  ( Symbol sy, SymbolTable st );
 FUNC Symbol            sy_byIndex ( SymbolIndex index, SymbolTable st ); // 0 <= index < st_count(st)
 FUNC Symbol            sy_byName  ( const char *name, SymbolTable st ); // Creates a symbol if none already exists
 
-FUNC Context      st_outermostScope( SymbolTable st );
-FUNC Context      cx_new( Context outer );
+FUNC Context      cx_new( SymbolTable st );
+FUNC void         cx_save( Context cx );
+FUNC void         cx_restore( Context cx );
 FUNC SymbolTable  cx_symbolTable( Context cx );
-FUNC Context      cx_outer( Context cx );
 FUNC void         cx_sendTo( Context cx, File fl );
 
 // Attributes of symbols

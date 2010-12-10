@@ -74,21 +74,15 @@ FUNC const char *sy_name( Symbol sy, SymbolTable st )
 typedef struct sdl_struct
 	{
 	struct sdl_struct *next;
-	Symbol      sy;
-	Action      immediateAction;
-	int         arity;
-	bool        isSymbolic;
-	Object      value;
+	Symbol sy;
+	struct sy_scopedDefs scopedDefs;
 	} *SymbolDefList;
 
-static SymbolDefList sdl_new( Symbol sy, Action immediateAction, int arity, bool isSymbolic, Object value, SymbolDefList next )
+static SymbolDefList sdl_new( Symbol sy, SymbolDefList next )
 	{
 	SymbolDefList result = (SymbolDefList)mem_alloc( sizeof(*result) );
 	result->sy = sy;
-	result->immediateAction = immediateAction;
-	result->arity = arity;
-	result->isSymbolic = isSymbolic;
-	result->value = value;
+	result->scopedDefs = sy->scopedDefs;
 	result->next = next;
 	return result;
 	}
@@ -101,55 +95,75 @@ static SymbolDefList sdl_bySymbol( SymbolDefList sdl, Symbol sy )
 		return sdl_bySymbol( sdl->next, sy );
 	}
 
+typedef struct ub_struct
+	{
+	int length;
+	int capacity;
+	SymbolDefList *defLists;
+	} *UndoBuffer;
+
+#define INITIAL_UNDO_CAPCITY 17
+
+static void ub_init( UndoBuffer ub )
+	{
+	ub->length = 0;
+	ub->capacity = INITIAL_UNDO_CAPCITY;
+	ub->defLists = (SymbolDefList*)mem_alloc( ub->capacity * sizeof( ub->defLists[0] ) );
+	}
+
+static SymbolDefList *ub_curListPtr( UndoBuffer ub )
+	{
+	assert( ub->length >= 1 );
+	return ub->defLists + ub->length-1;
+	}
+
 struct cx_struct
 	{
-	SymbolDefList defs;
-	union
-		{
-		Context  outer;
-		intptr_t st;   // Low-tagged
-		} data;
+	SymbolTable      st;
+	struct ub_struct ub;
 	};
 
-FUNC Context st_outermostScope( SymbolTable st )
+FUNC Context cx_new( SymbolTable st )
 	{
-	// TODO: Shouldn't this always return the same Context given the same st?
 	Context result = (Context)mem_alloc( sizeof(*result) );
-	result->defs = NULL;
-	result->data.st = ((intptr_t)st) | 1;
+	result->st = st;
+	ub_init( &result->ub );
 	return result;
 	}
 
-FUNC Context cx_new( Context outer )
+FUNC void cx_save( Context cx )
 	{
-	Context result = (Context)mem_alloc( sizeof(*result) );
-	result->defs = NULL;
-	result->data.outer = outer;
-	return result;
+	UndoBuffer ub = &cx->ub;
+	if( ub->length == ub->capacity )
+		{
+		ub->capacity *= 2;
+		ub->defLists = (SymbolDefList*)mem_realloc( ub->defLists, ub->capacity * sizeof( ub->defLists[0] ) );
+		}
+	ub->length++;
+	*ub_curListPtr( ub ) = NULL;
+	}
+
+FUNC void cx_restore( Context cx )
+	{
+	check( cx->ub.length >= 1 );
+	UndoBuffer ub = &cx->ub;
+	SymbolDefList cur;
+	for( cur = *ub_curListPtr( ub ); cur; cur = cur->next )
+		cur->sy->scopedDefs = cur->scopedDefs;
+	--ub->length;
 	}
 
 FUNC SymbolTable cx_symbolTable( Context cx )
 	{
-	if( cx->data.st & 1 )
-		return (SymbolTable)( cx->data.st & ~1 );
-	else
-		return cx_symbolTable( cx->data.outer );
+	return cx->st;
 	}
 
-FUNC Context cx_outer( Context cx )
-	{
-	if( cx->data.st & 1 )
-		return NULL;
-	else
-		return cx->data.outer;
-	}
-
-static void sdl_sendTo( SymbolDefList sdl, File fl, SymbolTable st )
+static void sdl_sendTo( SymbolDefList sdl, File fl, SymbolTable st, char *sep )
 	{
 	if( sdl && fl )
 		{
-		fl_write( fl, "%s ", sy_name( sdl->sy, st ) );
-		sdl_sendTo( sdl->next, fl, st );
+		fl_write( fl, "%s%s", sep, sy_name( sdl->sy, st ) );
+		sdl_sendTo( sdl->next, fl, st, ", " );
 		}
 	}
 
@@ -157,90 +171,64 @@ FUNC void cx_sendTo( Context cx, File fl )
 	{
 	if( !fl )
 		return;
-	fl_write( fl, "Scope_%p{ ", cx );
-	sdl_sendTo( cx->defs, fl, cx_symbolTable( cx ) );
+	fl_write( fl, "Scope_%p{", cx );
+	if( cx->ub.length >= 1 )
+		sdl_sendTo( *ub_curListPtr( &cx->ub ), fl, cx_symbolTable( cx ), "" );
 	fl_write( fl, "}", cx );
 	}
 
 FUNC Action sy_immediateAction( Symbol sy, Context cx )
 	{
-	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
-	if( sdl )
-		return sdl->immediateAction;
-	else if( cx_outer(cx) )
-		return sy_immediateAction( sy, cx_outer( cx ) );
-	else
-		return NULL;
-	}
-
-FUNC void sy_setImmediateAction ( Symbol sy, Action an, Context cx )
-	{
-	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
-	if( sdl )
-		sdl->immediateAction = an;
-	else
-		cx->defs = sdl_new( sy, an, 0, false, NULL, cx->defs );
+	return sy->scopedDefs.immediateAction;
 	}
 
 FUNC int sy_arity( Symbol sy, Context cx )
 	{
-	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
-	if( sdl )
-		return sdl->arity;
-	else if( cx_outer(cx) )
-		return sy_arity( sy, cx_outer( cx ) );
-	else
-		return 0;
-	}
-
-FUNC void sy_setArity( Symbol sy, int arity, Context cx )
-	{
-	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
-	if( sdl )
-		sdl->arity = arity;
-	else
-		cx->defs = sdl_new( sy, NULL, arity, false, NULL, cx->defs );
+	return sy->scopedDefs.arity;
 	}
 
 FUNC bool sy_isSymbolic( Symbol sy, Context cx )
 	{
-	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
-	if( sdl )
-		return sdl->isSymbolic;
-	else if( cx_outer(cx) )
-		return sy_isSymbolic( sy, cx_outer( cx ) );
-	else
-		return false;
-	}
-
-FUNC void sy_setIsSymbolic( Symbol sy, bool isSymbolic, Context cx )
-	{
-	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
-	if( sdl )
-		sdl->isSymbolic = isSymbolic;
-	else
-		cx->defs = sdl_new( sy, NULL, 0, isSymbolic, NULL, cx->defs );
+	return sy->scopedDefs.isSymbolic;
 	}
 
 FUNC Object sy_value( Symbol sy, Context cx )
 	{
-	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
-	if( sdl )
-		return sdl->value;
-	else if( cx_outer(cx) )
-		return sy_value( sy, cx_outer( cx ) );
-	else
-		return NULL;
+	return sy->scopedDefs.value;
+	}
+
+static void sy_save( Symbol sy, Context cx )
+	{
+	SymbolDefList *listPtr;
+	if( cx->ub.length == 0 )
+		return;
+	listPtr = ub_curListPtr( &cx->ub );
+	if( !sdl_bySymbol( *listPtr, sy ) )
+		*listPtr = sdl_new( sy, *listPtr );
+	}
+
+FUNC void sy_setImmediateAction ( Symbol sy, Action an, Context cx )
+	{
+	sy_save( sy, cx );
+	sy->scopedDefs.immediateAction = an;
+	}
+
+FUNC void sy_setArity( Symbol sy, int arity, Context cx )
+	{
+	sy_save( sy, cx );
+	sy->scopedDefs.arity = arity;
+	}
+
+FUNC void sy_setIsSymbolic( Symbol sy, bool isSymbolic, Context cx )
+	{
+	sy_save( sy, cx );
+	sy->scopedDefs.isSymbolic = isSymbolic;
 	}
 
 FUNC void sy_setValue( Symbol sy, Object value, Context cx )
 	{
-	SymbolDefList sdl = sdl_bySymbol( cx->defs, sy );
-	if( sdl )
-		sdl->value = value;
-	else
-		cx->defs = sdl_new( sy, NULL, 0, false, value, cx->defs );
-	assert( sy_value( sy, cx ) == value );
+	sy_save( sy, cx );
+	sy->scopedDefs.value = value;
 	}
 
 FUNC Action an_perform( Action an, Context cx )

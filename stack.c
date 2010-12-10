@@ -9,7 +9,7 @@ struct sk_struct
 	Object *items;
 	};
 
-#define INITIAL_CAPACITY 20
+#define INITIAL_CAPACITY 19
 
 FUNC Stack sk_new()
 	{

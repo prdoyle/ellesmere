@@ -5,6 +5,7 @@
 #include "base.h"
 
 #ifdef NDEBUG
+	#include <stdlib.h>
 	#define mem_alloc malloc
 	#define mem_realloc realloc
 	#define mem_report()

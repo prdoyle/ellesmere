@@ -249,7 +249,7 @@ static Action returnAction( Action an, Context cx )
 	popToken();
 	check( ts_caller( tokenStream ) != NULL );
 	tokenStream = ts_close( tokenStream );
-	currentScope = cx_outer( currentScope );
+	cx_restore( currentScope );
 	return NULL;
 	}
 
@@ -257,7 +257,7 @@ static Action reduce( Action an, Context cx )
 	{
 	TokenBlock block = ob_toTokenBlock( sy_value( an_symbol(an), cx ), heap );
 	tokenStream = ts_fromBlock( block, heap, tokenStream );
-	currentScope = cx_new( currentScope );
+	cx_save( currentScope );
 	return NULL;
 	}
 
@@ -324,7 +324,7 @@ int main(int argc, char **argv)
 	{
 	diagnostics = fdopen( 3, "wt" );
 	SymbolTable st = theSymbolTable();
-	currentScope = cx_new( populateScope( st_outermostScope( st ) ) );
+	currentScope = populateScope( cx_new( st ) );
 	heap = theObjectHeap();
 	di = di_new( heap, st, NULL, diagnostics );
 	stack = sk_new();

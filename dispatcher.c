@@ -24,7 +24,7 @@ typedef struct ds_struct
 	struct sf_struct *frames;
 	} *DispatcherStack;
 
-#define INITIAL_STACK_CAPCITY 25
+#define INITIAL_STACK_CAPCITY 23
 
 static void ds_init( DispatcherStack ds )
 	{
@@ -85,6 +85,7 @@ FUNC Dispatcher di_new( ObjectHeap heap, SymbolTable st, Action shiftAction, Fil
 	return result;
 	}
 
+#if 0
 static int instrumented_if( int cond, char *condStr, char *file, int line, Dispatcher di )
 	{
 	fl_write( di->diagnostics, "    if(%d) %s %s:%d\n", cond, condStr, file, line );
@@ -92,6 +93,7 @@ static int instrumented_if( int cond, char *condStr, char *file, int line, Dispa
 	}
 
 #define if(c) if(instrumented_if(!!(c), #c, __FILE__, __LINE__, di))
+#endif
 
 FUNC Action di_action( Dispatcher di, Object ob, Context cx )
 	{
@@ -156,7 +158,9 @@ FUNC Action di_action( Dispatcher di, Object ob, Context cx )
 	return di->shiftAction;
 	}
 
+#if 0
 #undef if
+#endif
 
 FUNC int di_sendTo( Dispatcher di, File fl )
 	{
