@@ -1,6 +1,5 @@
 
 #include "symbols.h"
-#include "objects.h"
 #include "memory.h"
 #include "symbols_impl.h"
 #include <string.h>
@@ -255,5 +254,5 @@ FUNC Symbol an_symbol( Action an )
 	return an->sy;
 	}
 
-//MERGE:10
+//MERGE:20
 

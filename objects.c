@@ -306,5 +306,5 @@ FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy )
 	return sy->token;
 	}
 
-//MERGE:20
+//MERGE:40
 
