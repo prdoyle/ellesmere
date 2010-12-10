@@ -18,7 +18,7 @@ blockto
 	n print
 	fib n print
 	add n 1 pop n
-	branchgt quit n 24
+	branchgt quit n 28
 		n goto mainloop
 	quit
 	| pop mainloop
