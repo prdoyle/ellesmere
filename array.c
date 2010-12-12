@@ -70,6 +70,7 @@ FUNC int ar_incCount( Array ar, int elementSize )
 	return ar->count;
 	}
 
+/*
 typedef Array IntArray;
 #define AR_PREFIX  ia
 #define AR_TYPE    IntArray
@@ -82,6 +83,7 @@ static void test()
 	IntArray ia = ia_new( 123 );
 	ia_append( ia, 456 );
 	}
+*/
 
 //MERGE:15
 

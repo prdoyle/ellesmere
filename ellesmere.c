@@ -27,11 +27,16 @@ static int trace( FILE *file, const char *format, ... )
 	return result;
 	}
 
+#pragma GCC push_options
+//#pragma GCC optimize ("no-inline")
+
 static Action push( Object ob )
 	{
 	sk_push( stack, ob );
 	return di_action( di, ob, currentScope );
 	}
+
+#pragma GCC pop_options
 
 static Object pop()
 	{
@@ -317,8 +322,6 @@ static Context populateScope( Context cx )
 		}
 	return cx;
 	}
-
-static token_t nextToken(){ return (token_t)yylex(); }
 
 int main(int argc, char **argv)
 	{

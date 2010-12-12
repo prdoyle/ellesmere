@@ -123,9 +123,14 @@ FUNC Object ts_next( TokenStream ts )
 	return NULL;
 	}
 
-FUNC TokenStream ts_caller ( TokenStream ts )
+FUNC TokenStream ts_caller( TokenStream ts )
 	{
 	return ts->caller;
+	}
+
+FUNC ObjectHeap ts_heap( TokenStream ts )
+	{
+	return ts->heap;
 	}
 
 FUNC TokenStream ts_close( TokenStream ts )
