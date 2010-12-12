@@ -56,7 +56,7 @@ tags: $(C_FILES) $(H_FILES)
 	ctags -R .
 
 ellesmere: $(O_FILES)
-	$(LD) $(LDFLAGS) $^ -o $@ -lfl
+	$(LD) $(LDFLAGS) $^ -o $@ -lfl #-lefence
 
 $(O_FILES): %.o: %.c
 	$(CC) $(CFLAGS) $< -o $@ -MMD -MF $(@:.o=.d)

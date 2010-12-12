@@ -73,18 +73,24 @@ FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st )
 FUNC TokenStream ts_fromBlock( TokenBlock block, ObjectHeap heap, TokenStream caller )
 	{
 	TokenStream result;
+	//setbuf( stdout, 0 );
 	if( caller && caller->free )
 		{
 		result = caller->free;
 		caller->free = NULL;
+		//printf("Reusing TokenStream %p\n", result);
 		}
 	else
+		{
 		result = (TokenStream)mem_alloc(sizeof(*result));
+		//printf("New TokenStream %p\n", result);
+		}
 	result->kind   = BLOCK;
 	result->heap   = heap;
 	result->caller = caller;
 	result->data.block.tb    = block;
 	result->data.block.index = 0;
+	result->free   = NULL;
 	return result;
 	}
 
