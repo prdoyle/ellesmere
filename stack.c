@@ -28,13 +28,13 @@ FUNC void sk_push( Stack sk, Object ob )
 FUNC Object sk_item( Stack sk, int depth )
 	{
 	assert( depth < sk_depth(sk) );
-	return ska_get( sk, sk_depth(sk)-1 - depth );
+	return ska_getLast( sk, depth );
 	}
 
 FUNC void sk_popN( Stack sk, int count )
 	{
 	assert( count <= sk_depth(sk) );
-	ska_setCount( sk, sk_depth(sk) - count );
+	ska_incCountBy( sk, -count );
 	}
 
 FUNC int sk_sendTo( Stack sk, File fl, ObjectHeap heap )

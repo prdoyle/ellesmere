@@ -37,36 +37,57 @@ FUNC void *ar_element( Array ar, int index, int elementSize )
 	return (void*)( (intptr_t)ar->storage + index * elementSize );
 	}
 
+FUNC void *ar_last( Array ar, int indexFromEnd, int elementSize )
+	{
+	assert( 0 <= indexFromEnd && indexFromEnd < ar->count );
+	return ar_element( ar, (ar->count-1 - indexFromEnd), elementSize );
+	}
+
 FUNC void ar_store( Array ar, int index, void *newValue, int elementSize )
 	{
 	assert( 0 <= index && index < ar->count );
 	memcpy( ar_element( ar, index, elementSize ), newValue, elementSize );
 	}
 
+static void ar_changeCapacity( Array ar, int newCapacity, int elementSize ) __attribute__((noinline));
+static void ar_changeCapacity( Array ar, int newCapacity, int elementSize )
+	{
+	assert( newCapacity != ar->capacity );
+	ar->capacity = newCapacity;
+	ar->storage = mem_realloc( ar->storage, ar->capacity * elementSize );
+	if( newCapacity < ar->count )
+		ar->count = newCapacity;
+	}
+
+FUNC void ar_setCapacity( Array ar, int newCapacity, int elementSize ) __attribute__((always_inline));
 FUNC void ar_setCapacity( Array ar, int newCapacity, int elementSize )
 	{
 	assert( newCapacity >= 0 );
 	if( newCapacity != ar->capacity )
-		{
-		ar->capacity = newCapacity;
-		ar->storage = mem_realloc( ar->storage, ar->capacity * elementSize );
-		if( newCapacity < ar->count )
-			ar->count = newCapacity;
-		}
+		ar_changeCapacity( ar, newCapacity, elementSize );
 	assert( ar_capacity(ar) == newCapacity );
 	}
 
+FUNC void ar_setCount( Array ar, int newCount, int elementSize ) __attribute__((always_inline));
 FUNC void ar_setCount( Array ar, int newCount, int elementSize )
 	{ 
 	if( newCount > ar_capacity( ar ) )
-		ar_setCapacity( ar, 2 * ( newCount-1 ), elementSize );
+		ar_changeCapacity( ar, 2 * ( newCount-1 ), elementSize );
 	ar->count = newCount;
 	assert( ar_count(ar) == newCount );
 	}
 
+FUNC int ar_incCount( Array ar, int elementSize ) __attribute__((always_inline));
 FUNC int ar_incCount( Array ar, int elementSize )
 	{ 
 	ar_setCount( ar, ar_count(ar) + 1, elementSize );
+	return ar->count;
+	}
+
+FUNC int ar_incCountBy( Array ar, int delta, int elementSize ) __attribute__((always_inline));
+FUNC int ar_incCountBy( Array ar, int delta, int elementSize )
+	{ 
+	ar_setCount( ar, ar_count(ar) + delta, elementSize );
 	return ar->count;
 	}
 

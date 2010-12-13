@@ -15,7 +15,7 @@ LDFLAGS += -g
 
 small: CFLAGS    += -Os -DNDEBUG -g0
 small: LEXFLAGS  += -Cem
-fast:  CFLAGS    += -O3 -DNDEBUG
+fast:  CFLAGS    += -O3 -DNDEBUG -Winline
 fast:  LEXFLAGS  += --Fast
 prof:  CFLAGS    += -pg -O3 -DNDEBUG -fprofile-arcs
 prof:  LDFLAGS   += -pg -fprofile-arcs
@@ -44,9 +44,9 @@ D_FILES     := $(patsubst %.c,%.d,$(C_FILES))
 I_FILES     := $(patsubst %.c,%.i,$(C_FILES))
 S_FILES     := $(patsubst %.c,%.s,$(C_FILES))
 
-_merged.o: CFLAGS += -DFUNC="static inline" -Wno-unused-function
-_merged.i: CFLAGS += -DFUNC="static inline" -Wno-unused-function
-_merged.s: CFLAGS += -DFUNC="static inline" -Wno-unused-function
+_merged.o: CFLAGS += -DFUNC="static " -Wno-unused-function
+_merged.i: CFLAGS += -DFUNC="static " -Wno-unused-function
+_merged.s: CFLAGS += -DFUNC="static " -Wno-unused-function
 _merged.s: _merged.c
 
 merged: _merged.o $(GEN_O_FILES)

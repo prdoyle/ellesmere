@@ -14,6 +14,9 @@ static ObjectHeap  heap;
 static Dispatcher  di;
 FILE *diagnostics;
 
+#ifdef NDEBUG
+#define trace(...)
+#else
 static int trace( FILE *file, const char *format, ... )
 	{
 	if( !file )
@@ -26,17 +29,13 @@ static int trace( FILE *file, const char *format, ... )
 	va_end( args );
 	return result;
 	}
-
-#pragma GCC push_options
-//#pragma GCC optimize ("no-inline")
+#endif
 
 static Action push( Object ob )
 	{
 	sk_push( stack, ob );
 	return di_action( di, ob, currentScope );
 	}
-
-#pragma GCC pop_options
 
 static Object pop()
 	{

@@ -10,9 +10,36 @@ typedef enum
 	BLOCK,
 	} StreamKind;
 
+struct ts_struct
+	{
+	StreamKind  kind;
+	ObjectHeap  heap;
+	TokenStream caller;
+	union
+		{
+		struct
+			{
+			SymbolTable st;
+			} lex;
+		struct
+			{
+			TokenBlock tb;
+			int index;
+			} block;
+		} data;
+	};
+
+typedef struct tss_struct *TokenStreamStack;
+#define AR_PREFIX  tss
+#define AR_TYPE    TokenStreamStack
+#define AR_ELEMENT TokenStream
+#define AR_BYVALUE
+#include "array_template.h"
+
 struct tb_struct
 	{
 	int count;
+	TokenStreamStack streams;
 	Object tokens[1];
 	};
 
@@ -29,6 +56,7 @@ static TokenBlock tb_alloc( int count )
 	{
 	TokenBlock result = (TokenBlock)mem_alloc( tb_size(count) );
 	result->count = count;
+	result->streams = tss_new( 2 ); // more than 2x recursion probably means deep recursion
 	return result;
 	}
 
@@ -39,26 +67,6 @@ static TokenBlock tb_realloc( TokenBlock tb, int count )
 	return result;
 	}
 
-struct ts_struct
-	{
-	StreamKind  kind;
-	ObjectHeap  heap;
-	TokenStream caller;
-	TokenStream free; // A TokenStream that could be used for caller
-	union
-		{
-		struct
-			{
-			SymbolTable st;
-			} lex;
-		struct
-			{
-			TokenBlock tb;
-			int index;
-			} block;
-		} data;
-	};
-
 FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st )
 	{
 	TokenStream result = (TokenStream)mem_alloc(sizeof(*result));
@@ -66,31 +74,24 @@ FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st )
 	result->heap   = heap;
 	result->caller = NULL;
 	result->data.lex.st = st;
-	result->free   = NULL;
 	return result;
 	}
 
 FUNC TokenStream ts_fromBlock( TokenBlock block, ObjectHeap heap, TokenStream caller )
 	{
 	TokenStream result;
-	//setbuf( stdout, 0 );
-	if( caller && caller->free )
+	if( tss_count( block->streams ) >= 1 )
 		{
-		result = caller->free;
-		caller->free = NULL;
-		//printf("Reusing TokenStream %p\n", result);
+		result = tss_getLast( block->streams, 0 );
+		tss_incCountBy( block->streams, -1 );
 		}
 	else
-		{
-		result = (TokenStream)mem_alloc(sizeof(*result));
-		//printf("New TokenStream %p\n", result);
-		}
+		result = (TokenStream)mem_alloc( sizeof(*result) );
 	result->kind   = BLOCK;
 	result->heap   = heap;
 	result->caller = caller;
 	result->data.block.tb    = block;
 	result->data.block.index = 0;
-	result->free   = NULL;
 	return result;
 	}
 
@@ -135,12 +136,9 @@ FUNC ObjectHeap ts_heap( TokenStream ts )
 
 FUNC TokenStream ts_close( TokenStream ts )
 	{
-	TokenStream result = ts->caller;
-	if( result->free == NULL )
-		result->free = ts;
-	else
-		free( ts );
-	return result;
+	if( ts->kind == BLOCK )
+		tss_append( ts->data.block.tb->streams, ts );
+	return ts->caller;
 	}
 
 FUNC TokenBlock ts_recordUntil( TokenStream ts, Symbol terminator )

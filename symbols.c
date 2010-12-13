@@ -57,8 +57,7 @@ FUNC Symbol sy_byName( const char *name, SymbolTable st )
 	for( i=0; i < st_count(st); i++ )
 		if(!strcmp( name, sy_name( sy_byIndex(i,st), st ) ))
 			return sy_byIndex(i,st);
-	sta_incCount( st );
-	sy = sta_element( st, st_count(st) - 1 );
+	sy = sta_element( st, sta_incCount(st)-1 );
 	memset( sy, 0, sizeof(*sy) );
 	sy->name = strdup( name );
 	return sy;
@@ -75,100 +74,89 @@ FUNC const char *sy_name( Symbol sy, SymbolTable st )
 	return sy->name;
 	}
 
-struct sdl_struct
+typedef struct ss_struct
 	{
-	struct sdl_struct *next;
 	Symbol sy;
 	struct sy_scopedDefs scopedDefs;
-	};
+	} *SymbolSnapshot;
 
-static SymbolDefList sdl_new( Symbol sy, SymbolDefList next )
+static void ss_init( SymbolSnapshot ss, Symbol sy )
 	{
-	SymbolDefList result = sy->freeSDL;
-	if( result )
-		sy->freeSDL = NULL;
-	else
-		result = (SymbolDefList)mem_alloc( sizeof(*result) );
-	result->sy = sy;
-	result->scopedDefs = sy->scopedDefs;
-	result->next = next;
-	return result;
+	ss->sy = sy;
+	ss->scopedDefs = sy->scopedDefs;
 	}
 
-static SymbolDefList sdl_bySymbol( SymbolDefList sdl, Symbol sy )
+typedef struct cp_struct *Checkpoint;
+#define AR_PREFIX  cp
+#define AR_TYPE    Checkpoint
+#define AR_ELEMENT struct ss_struct
+#undef AR_BYVALUE
+#include "array_template.h"
+
+static SymbolSnapshot ss_bySymbol( Symbol sy, Checkpoint cp )
 	{
-	if( !sdl || sdl->sy == sy )
-		return sdl;
-	else
-		return sdl_bySymbol( sdl->next, sy );
+	int i;
+	for( i=0; i < cp_count( cp ); i++ )
+		{
+		SymbolSnapshot ss = cp_element( cp, i );
+		if( ss->sy == sy )
+			return ss;
+		}
+	return NULL;
 	}
 
-static SymbolDefList sdl_applyAndFree( SymbolDefList sdl )
+static void cp_reviveAndClear( Checkpoint cp )
 	{
-	SymbolDefList next = sdl->next;
-	sdl->sy->scopedDefs = sdl->scopedDefs;
-	if( !sdl->sy->freeSDL )
-		sdl->sy->freeSDL = sdl;
-	sdl->sy = (Symbol)0xdead; // poison
-	return next;
+	int i;
+	for( i=0; i < cp_count( cp ); i++ )
+		{
+		SymbolSnapshot ss = cp_element( cp, i );
+		ss->sy->scopedDefs = ss->scopedDefs;
+		ss->sy = (Symbol)0xdead; // poison
+		}
+	cp_setCount( cp, 0 );
 	}
 
-typedef struct ub_struct
-	{
-	int length;
-	int capacity;
-	SymbolDefList *defLists;
-	} *UndoBuffer;
-
-#define INITIAL_UNDO_CAPCITY 17
-
-static void ub_init( UndoBuffer ub )
-	{
-	ub->length = 0;
-	ub->capacity = INITIAL_UNDO_CAPCITY;
-	ub->defLists = (SymbolDefList*)mem_alloc( ub->capacity * sizeof( ub->defLists[0] ) );
-	}
-
-static SymbolDefList *ub_curListPtr( UndoBuffer ub )
-	{
-	assert( ub->length >= 1 );
-	return ub->defLists + ub->length-1;
-	}
+typedef struct us_struct *UndoStack;
+#define AR_PREFIX  us
+#define AR_TYPE    UndoStack
+#define AR_ELEMENT Checkpoint
+#define AR_BYVALUE
+#include "array_template.h"
 
 struct cx_struct
 	{
-	SymbolTable      st;
-	struct ub_struct ub;
+	SymbolTable st;
+	UndoStack   us;
+	UndoStack   freeList;
 	};
 
 FUNC Context cx_new( SymbolTable st )
 	{
 	Context result = (Context)mem_alloc( sizeof(*result) );
 	result->st = st;
-	ub_init( &result->ub );
+	result->us = us_new( 11 );
+	result->freeList = us_new( 11 );
 	return result;
 	}
 
 FUNC void cx_save( Context cx )
 	{
-	UndoBuffer ub = &cx->ub;
-	if( ub->length == ub->capacity )
+	if( us_count( cx->freeList ) >= 1 )
 		{
-		ub->capacity *= 2;
-		ub->defLists = (SymbolDefList*)mem_realloc( ub->defLists, ub->capacity * sizeof( ub->defLists[0] ) );
+		us_append( cx->us, us_getLast( cx->freeList, 0 ) );
+		us_incCountBy( cx->freeList, -1 );
 		}
-	ub->length++;
-	*ub_curListPtr( ub ) = NULL;
+	else
+		us_append( cx->us, cp_new( 13 ) );
 	}
 
 FUNC void cx_restore( Context cx )
 	{
-	check( cx->ub.length >= 1 );
-	UndoBuffer ub = &cx->ub;
-	SymbolDefList cur;
-	for( cur = *ub_curListPtr( ub ); cur; cur = sdl_applyAndFree( cur ) )
-		{}
-	--ub->length;
+	check( us_count( cx->us ) >= 1 );
+	cp_reviveAndClear( us_getLast( cx->us, 0 ) );
+	us_append( cx->freeList, us_getLast( cx->us, 0 ) );
+	us_incCountBy( cx->us, -1 );
 	}
 
 FUNC SymbolTable cx_symbolTable( Context cx )
@@ -176,22 +164,22 @@ FUNC SymbolTable cx_symbolTable( Context cx )
 	return cx->st;
 	}
 
-static void sdl_sendTo( SymbolDefList sdl, File fl, SymbolTable st, char *sep )
-	{
-	if( sdl && fl )
-		{
-		fl_write( fl, "%s%s", sep, sy_name( sdl->sy, st ) );
-		sdl_sendTo( sdl->next, fl, st, ", " );
-		}
-	}
-
 FUNC void cx_sendTo( Context cx, File fl )
 	{
 	if( !fl )
 		return;
 	fl_write( fl, "Scope_%p{", cx );
-	if( cx->ub.length >= 1 )
-		sdl_sendTo( *ub_curListPtr( &cx->ub ), fl, cx_symbolTable( cx ), "" );
+	if( us_count( cx->us ) >= 1 )
+		{
+		char *sep = "";
+		int i;
+		Checkpoint cp = us_getLast( cx->us, 0 );
+		for( i=0; i < cp_count(cp); i++ )
+			{
+			fl_write( fl, "%s%s", sep, sy_name( cp_element( cp, i )->sy, cx->st ) );
+			sep = ", ";
+			}
+		}
 	fl_write( fl, "}", cx );
 	}
 
@@ -217,12 +205,12 @@ FUNC Object sy_value( Symbol sy, Context cx )
 
 static void sy_save( Symbol sy, Context cx )
 	{
-	SymbolDefList *listPtr;
-	if( cx->ub.length == 0 )
-		return;
-	listPtr = ub_curListPtr( &cx->ub );
-	if( !sdl_bySymbol( *listPtr, sy ) )
-		*listPtr = sdl_new( sy, *listPtr );
+	if( us_count( cx->us ) >= 1 )
+		{
+		Checkpoint cp = us_getLast( cx->us, 0 );
+		if( !ss_bySymbol( sy, cp ) )
+			ss_init( cp_element( cp, cp_incCount(cp)-1 ), sy );
+		}
 	}
 
 FUNC void sy_setImmediateAction ( Symbol sy, Action an, Context cx )
