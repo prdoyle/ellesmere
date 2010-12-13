@@ -22,12 +22,12 @@ typedef struct cx_struct *Context;
 typedef struct di_struct *Dispatcher;
 typedef struct ob_struct *Object;
 typedef struct oh_struct *ObjectHeap;
+typedef struct sk_struct *Stack;
 typedef struct st_struct *SymbolTable;
 typedef struct sy_struct *Symbol;
 typedef struct tb_struct *TokenBlock;
 typedef struct ts_struct *TokenStream;
 
-typedef struct ar_struct *Stack;
 
 typedef struct sdl_struct *SymbolDefList;
 

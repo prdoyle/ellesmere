@@ -4,8 +4,6 @@
 
 #include "symbols.h"
 
-enum{ MAX_SYMBOLS=500 };
-
 struct sy_scopedDefs
 	{
 	Action immediateAction;

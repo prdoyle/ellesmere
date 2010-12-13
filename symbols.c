@@ -5,6 +5,8 @@
 #include <string.h>
 #include <stdint.h>
 
+enum{ MAX_SYMBOLS=500 };
+
 struct st_struct
 	{
 	SymbolIndex count;
