@@ -5,13 +5,11 @@
 #include <string.h>
 #include <stdint.h>
 
-enum{ MAX_SYMBOLS=500 };
-
-struct st_struct
-	{
-	SymbolIndex count;
-	struct sy_struct symbols[MAX_SYMBOLS];
-	};
+#define AR_PREFIX  sta
+#define AR_TYPE    SymbolTable
+#define AR_ELEMENT struct sy_struct
+#undef AR_BYVALUE
+#include "array_template.h"
 
 struct an_struct
 	{
@@ -19,32 +17,37 @@ struct an_struct
 	Symbol         sy;
 	};
 
+static struct sy_struct predefinedSymbols[] =
+	{
+	{ "$NO_SYMBOL" },
+	{ "$INT" },
+	{ "$STRING" },
+	{ "$TOKEN" },
+	{ "$TOKEN_BLOCK" },
+	{ "$TOKEN_STREAM" },
+	};
+
 FUNC SymbolTable theSymbolTable()
 	{
-	static struct st_struct _theSymbolTable = { NUM_PREDEFINED_SYMBOLS,
+	static SymbolTable result = NULL;
+	if( !result )
 		{
-		{ "$NO_SYMBOL" },
-		{ "$INT" },
-		{ "$STRING" },
-		{ "$TOKEN" },
-		{ "$TOKEN_BLOCK" },
-		{ "$TOKEN_STREAM" },
+		result = sta_new( 200 + NUM_PREDEFINED_SYMBOLS );
+		sta_setCount( result, NUM_PREDEFINED_SYMBOLS );
+		memcpy( sta_element( result, 0 ), predefinedSymbols, sizeof(predefinedSymbols) );
 		}
-		};
-	assert(  _theSymbolTable.symbols[ _theSymbolTable.count-1 ].name );
-	assert( !_theSymbolTable.symbols[ _theSymbolTable.count   ].name );
-	return &_theSymbolTable;
+	return result;
 	}
 
 FUNC SymbolIndex st_count( SymbolTable st )
 	{
-	return theSymbolTable()->count;
+	return sta_count( st );
 	}
 
 FUNC Symbol sy_byIndex( SymbolIndex index, SymbolTable st )
 	{
-	assert( index < st->count );
-	return st->symbols + index;
+	assert( index < st_count(st) );
+	return sta_element( st, index );
 	}
 
 FUNC Symbol sy_byName( const char *name, SymbolTable st )
@@ -52,10 +55,10 @@ FUNC Symbol sy_byName( const char *name, SymbolTable st )
 	Symbol sy;
 	SymbolIndex i;
 	for( i=0; i < st_count(st); i++ )
-		if( !strcmp( name, sy_name( st->symbols+i, st ) ) )
-			return st->symbols+i;
-	assert( st->count < sizeof(st->symbols) / sizeof(st->symbols[0]) );
-	sy = st->symbols + st->count++;
+		if(!strcmp( name, sy_name( sy_byIndex(i,st), st ) ))
+			return sy_byIndex(i,st);
+	sta_incCount( st );
+	sy = sta_element( st, st_count(st) - 1 );
 	memset( sy, 0, sizeof(*sy) );
 	sy->name = strdup( name );
 	return sy;
@@ -63,8 +66,8 @@ FUNC Symbol sy_byName( const char *name, SymbolTable st )
 
 FUNC SymbolIndex sy_index( Symbol sy, SymbolTable st )
 	{
-	assert( st->symbols <= sy && sy < ( st->symbols + st->count ) );
-	return sy - st->symbols;
+	assert( sta_element( st, 0 ) <= sy && sy <= sta_element( st, sta_count(st)-1 ) );
+	return sy - sta_element( st, 0 );
 	}
 
 FUNC const char *sy_name( Symbol sy, SymbolTable st )
