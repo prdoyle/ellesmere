@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#ifndef NDEBUG
+
 typedef struct header_struct
 	{
 	struct header_struct *prev;
@@ -59,5 +61,71 @@ FUNC void mem_report()
 	Header *h;
 	for( h = lastHeader; h; h = h->prev )
 		printf("%d %s %d\n", h->size, h->file, h->line);
+	}
+
+#endif
+
+typedef struct mh_struct *MemoryHunk;
+struct mh_struct
+	{
+	MemoryHunk prev;
+	int8_t *base, *alloc, *limit;
+	};
+
+static MemoryHunk mh_new( int size, MemoryHunk prev )
+	{
+	// if you want to use mem_alloc here, be careful freeing it
+	MemoryHunk result = (MemoryHunk)malloc( sizeof(*result) );
+	result->base = (int8_t*)malloc( size );
+	result->alloc = result->limit = result->base + size;
+	result->prev = prev;
+	return result;
+	}
+
+struct mb_struct
+	{
+	MemoryHunk curHunk;
+	};
+
+#define BASIC_HUNK_SIZE 1000
+
+FUNC MemoryBatch mb_new( int numBytesEstimate )
+	{
+	MemoryBatch result = (MemoryBatch)malloc( sizeof(*result) );
+	result->curHunk = (MemoryHunk)mh_new( numBytesEstimate + BASIC_HUNK_SIZE, NULL );
+	return result;
+	}
+
+FUNC void *mb_alloc( MemoryBatch mb, int numBytes )
+	{
+	MemoryHunk hunk = mb->curHunk; void *result;
+	if( hunk->limit - hunk->alloc < numBytes )
+		{
+		int newSize = 2 * ( hunk->limit - hunk->base );
+		if( newSize <  numBytes )
+			{
+			// Big allocation - give it its own hunk and keep using the existing one
+			hunk->prev = mh_new( numBytes, hunk->prev );
+			hunk = hunk->prev;
+			}
+		else
+			hunk = mb->curHunk = mh_new( newSize, hunk );
+		}
+	result = hunk->alloc;
+	hunk->alloc += numBytes;
+	return result;
+	}
+
+FUNC void mb_free( MemoryBatch mb )
+	{
+	MemoryHunk hunk, prevHunk;
+	for( hunk = mb->curHunk; hunk; hunk = prevHunk )
+		{
+		prevHunk = hunk->prev;
+		free( hunk->base );
+		free( hunk );
+		}
+	mb->curHunk = (MemoryHunk)0xdead;
+	free( mb );
 	}
 

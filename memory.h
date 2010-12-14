@@ -17,6 +17,9 @@
 	#define mem_realloc(p,s) mem_reallocAnnotated ((p),(s), __FILE__, __LINE__)
 #endif
 
+FUNC MemoryBatch mb_new( int numBytesEstimate );
+FUNC void *mb_alloc( MemoryBatch mb, int numBytes );
+FUNC void  mb_free ( MemoryBatch mb );
 
 #endif
 
