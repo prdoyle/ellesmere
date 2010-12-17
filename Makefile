@@ -82,7 +82,12 @@ lex.l.c: lex.l
 memreport.txt: ellesmere
 	./ellesmere < fib.el | sort -k2 -nk3 | uniq -c | sort -rn > $@
 
+bitvector.t: CFLAGS += -DUNIT_TEST
+bitvector.t: bitvector.o memory.o
+	$(LD) $(LDFLAGS) $^ -o $@
+
 clean:
 	rm -f memreport.txt ellesmere tags _merged.c gmon.out *.gcda $(GEN_C_FILES) $(GEN_H_FILES) $(O_FILES) $(I_FILES) $(D_FILES)
+	rm -f bitvector.t
 
 .PHONY: all merged memreport.txt

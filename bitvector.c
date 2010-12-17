@@ -29,9 +29,9 @@ static Word bit2mask( int bitNum )
 	return ((Word)1) << bit2shift( bitNum );
 	}
 
-FUNC BitVector bv_new( int sizeEstimate )
+FUNC BitVector bv_new( int numBits )
 	{
-	int numWords = ( sizeEstimate + BITS_PER_WORD-1 ) / BITS_PER_WORD;
+	int numWords = bit2word( numBits-1 ) + 1;
 	int numBytes = numWords * sizeof( Word );
 	BitVector result = (BitVector)mem_alloc( sizeof(*result) );
 	result->numWords = numWords;
@@ -75,7 +75,7 @@ FUNC int bv_nextBit( BitVector bv, int prevBit )
 		if( w )
 			for( i = bitIndex; i < BITS_PER_WORD; i++ )
 				if( (w>>i) & 1 )
-					return i;
+					return wordIndex * BITS_PER_WORD + i;
 		bitIndex = 0;
 		}
 	return bv_END;
@@ -118,4 +118,38 @@ FUNC void bv_minus( BitVector target, BitVector source )
 	for( i=0; i < stop; i++ )
 		target->words[ i ] &= ~source->words[ i ];
 	}
+
+#ifdef UNIT_TEST
+
+#include <stdio.h>
+
+static int try( int *entries, int numEntries )
+	{
+	int i,j;
+	BitVector bv = bv_new( entries[ numEntries-1 ] );
+	for( i=0; i < numEntries; i++ )
+		bv_set( bv, entries[i] );
+	for( i=0, j = bv_firstBit( bv ); j != bv_END; j = bv_nextBit( bv, j ), i++ )
+		if( entries[i] == j )
+			bv_unset( bv, j );
+		else
+			return printf( "Mismatched bit #%d: %d != %d\n", i, entries[i], j );
+	if( i != numEntries )
+		return printf( "Wrong number of entries: %d != %d\n", i, numEntries );
+	if( bv_firstBit( bv ) != bv_END )
+		return printf( "Bitvector has bit %d set\n", bv_firstBit( bv ) );
+	return 0;
+	}
+
+static int test1[] = { 0, 1, 2, 29, 30, 31, 32, 33, 62, 63, 64, 65 };
+
+int main( int argc, char **argv )
+	{
+	int errorOccurred = try( test1, sizeof( test1 ) / sizeof( test1[0] ) );
+	return errorOccurred? 1 : 0;
+	}
+
+#endif
+
+// MERGE:17
 

@@ -4,7 +4,7 @@
 
 #include "base.h"
 
-FUNC BitVector bv_new( int sizeEstimate );
+FUNC BitVector bv_new( int numBits );
 FUNC bool      bv_isSet ( BitVector bv, int bitIndex );
 FUNC void      bv_set   ( BitVector bv, int bitIndex );
 FUNC void      bv_unset ( BitVector bv, int bitIndex );
