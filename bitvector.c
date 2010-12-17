@@ -95,7 +95,7 @@ FUNC void bv_and( BitVector target, BitVector source )
 	for( i=0; i < stop; i++ )
 		target->words[ i ] &= source->words[ i ];
 	for( i = stop; i < target->numWords; i++ )
-		target->words = 0;
+		target->words[ i ] = 0;
 	}
 
 FUNC void bv_or( BitVector target, BitVector source )
@@ -123,29 +123,72 @@ FUNC void bv_minus( BitVector target, BitVector source )
 
 #include <stdio.h>
 
-static int try( int *entries, int numEntries )
+static BitVector populate( int *entries, int numEntries )
 	{
-	int i,j;
+	int i;
 	BitVector bv = bv_new( entries[ numEntries-1 ] );
 	for( i=0; i < numEntries; i++ )
 		bv_set( bv, entries[i] );
+	return bv;
+	}
+
+static int compare( BitVector bv, int *entries, int numEntries )
+	{
+	int i,j;
 	for( i=0, j = bv_firstBit( bv ); j != bv_END; j = bv_nextBit( bv, j ), i++ )
-		if( entries[i] == j )
-			bv_unset( bv, j );
-		else
+		if( entries[i] != j )
 			return printf( "Mismatched bit #%d: %d != %d\n", i, entries[i], j );
 	if( i != numEntries )
 		return printf( "Wrong number of entries: %d != %d\n", i, numEntries );
+	return 0;
+	}
+
+static int clear( BitVector bv, int *entries, int numEntries )
+	{
+	int i;
+	for( i=0; i < numEntries; i++ )
+		bv_unset( bv, entries[i] );
 	if( bv_firstBit( bv ) != bv_END )
 		return printf( "Bitvector has bit %d set\n", bv_firstBit( bv ) );
 	return 0;
 	}
 
+static int testIteration( int *entries, int numEntries )
+	{
+	BitVector bv = populate( entries, numEntries );
+	return compare( bv, entries, numEntries ) || clear( bv, entries, numEntries );
+	}
+
 static int test1[] = { 0, 1, 2, 29, 30, 31, 32, 33, 62, 63, 64, 65 };
+static int test2[] = { 0, 1, 3, 11, 12 };
+static int test3[] = { 0, 1 }; // and
+static int test4[] = { 0, 1, 2, 3, 11, 12, 29, 30, 31, 32, 33, 62, 63, 64, 65 }; // or
+static int test5[] = { 2, 3, 11, 12, 29, 30, 31, 32, 33, 62, 63, 64, 65 }; // xor
+static int test6[] = { 2, 29, 30, 31, 32, 33, 62, 63, 64, 65 }; // minus
 
 int main( int argc, char **argv )
 	{
-	int errorOccurred = try( test1, sizeof( test1 ) / sizeof( test1[0] ) );
+	BitVector a, b;
+	int errorOccurred = testIteration( test1, asizeof( test1 ) );
+	errorOccurred    |= testIteration( test2, asizeof( test2 ) );
+
+	a = populate( test1, asizeof( test1 ) );
+	b = populate( test2, asizeof( test2 ) );
+	bv_and( a, b );
+	errorOccurred |= compare( a, test3, asizeof( test3 ) );
+
+	a = populate( test1, asizeof( test1 ) );
+	bv_or( a, b );
+	errorOccurred |= compare( a, test4, asizeof( test4 ) );
+
+	a = populate( test1, asizeof( test1 ) );
+	bv_xor( a, b );
+	errorOccurred |= compare( a, test5, asizeof( test5 ) );
+
+	a = populate( test1, asizeof( test1 ) );
+	bv_minus( a, b );
+	errorOccurred |= compare( a, test6, asizeof( test6 ) );
+
 	return errorOccurred? 1 : 0;
 	}
 
