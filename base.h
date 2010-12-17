@@ -18,6 +18,7 @@ typedef char bool;
 
 typedef struct an_struct *Action;
 typedef struct ar_struct *Array;
+typedef struct bv_struct *BitVector;
 typedef struct cx_struct *Context;
 typedef struct di_struct *Dispatcher;
 typedef struct gr_struct *Grammar;
