@@ -10,8 +10,9 @@ enum { BITS_PER_WORD = sizeof(Word) * 8 };
 
 struct bv_struct
 	{
-	int   numWords;
-	Word *words;
+	int         numWords;
+	Word       *words;
+	MemoryBatch mb;
 	};
 
 static int min(int a, int b)
@@ -32,15 +33,30 @@ static Word bit2mask( int bitNum )
 	return ((Word)1) << bit2shift( bitNum );
 	}
 
-FUNC BitVector bv_new( int numBits )
+FUNC BitVector bv_newInMB( int numBits, MemoryBatch mb )
 	{
 	int numWords = bit2word( numBits-1 ) + 1;
 	int numBytes = numWords * sizeof( Word );
-	BitVector result = (BitVector)mem_alloc( sizeof(*result) );
+	BitVector result;
+	if( mb )
+		{
+		result    = (BitVector)mb_alloc( mb, sizeof(*result) );
+		result->words = (Word*)mb_alloc( mb, numBytes );
+		}
+	else
+		{
+		result    = (BitVector)mem_alloc( sizeof(*result) );
+		result->words = (Word*)mem_alloc( numBytes );
+		}
 	result->numWords = numWords;
-	result->words    = (Word*)mem_alloc( numBytes );
+	result->mb       = mb;
 	memset( result->words, 0, numBytes );
 	return result;
+	}
+
+FUNC BitVector bv_new( int numBits )
+	{
+	return bv_newInMB( numBits, NULL );
 	}
 
 static void bv_ensure( BitVector bv, int numWords, BitVector fillFrom )
@@ -49,7 +65,10 @@ static void bv_ensure( BitVector bv, int numWords, BitVector fillFrom )
 	if( numWords > bv->numWords )
 		{
 		int firstWordToFill = bv->numWords;
-		bv->words = (Word*)mem_realloc( bv->words, numWords * sizeof( Word ) );
+		if( bv->mb )
+			bv->words = (Word*)mb_realloc( bv->mb, bv->words, bv->numWords * sizeof( Word ), numWords * sizeof( Word ) );
+		else
+			bv->words = (Word*)mem_realloc( bv->words, numWords * sizeof( Word ) );
 		if( fillFrom )
 			{
 			int wordsToCopy = min( numWords, fillFrom->numWords ) - firstWordToFill;
@@ -144,6 +163,19 @@ FUNC void bv_minus( BitVector target, BitVector source )
 		target->words[ i ] &= ~source->words[ i ];
 	}
 
+FUNC void bv_shrinkWrap( BitVector bv )
+	{
+	int i, newNumWords=0;
+	for( i=0; i < bv->numWords; i++ )
+		if( bv->words[i] )
+			newNumWords = i+1;
+	if( bv->mb )
+		bv->words = (Word*)mb_realloc( bv->mb, bv->words, bv->numWords * sizeof( Word ), newNumWords * sizeof( Word ) );
+	else
+		bv->words = (Word*)mem_realloc( bv->words, newNumWords * sizeof( Word ) );
+	bv->numWords = newNumWords;
+	}
+
 #ifdef UNIT_TEST
 
 #include <stdio.h>
@@ -191,6 +223,8 @@ static int test4[] = { 0, 1, 2, 3, 11, 12, 29, 30, 31, 32, 33, 62, 63, 64, 65 };
 static int test5[] = { 2, 3, 11, 12, 29, 30, 31, 32, 33, 62, 63, 64, 65 }; // xor
 static int test6[] = { 2, 29, 30, 31, 32, 33, 62, 63, 64, 65 }; // minus
 static int test7[] = { 3, 11, 12 }; // b minus a
+static int test8[] = { 1, 3, 5, 150 };
+static int test9[] = { 1, 3, 5 };
 
 int main( int argc, char **argv )
 	{
@@ -231,6 +265,22 @@ int main( int argc, char **argv )
 	a = populate( test2, asizeof( test2 ) );
 	bv_minus( a, b );
 	errorOccurred |= compare( a, test7, asizeof( test7 ) );
+
+	a = populate( test8, asizeof( test8 ) );
+	bv_unset( a, 150 );
+	errorOccurred |= compare( a, test9, asizeof( test9 ) );
+	bv_shrinkWrap( a );
+	errorOccurred |= compare( a, test9, asizeof( test9 ) );
+	bv_unset( a, 1 );
+	bv_unset( a, 3 );
+	bv_unset( a, 5 );
+	errorOccurred |= ( bv_firstBit(a) != bv_END );
+	bv_shrinkWrap( a );
+	errorOccurred |= ( bv_firstBit(a) != bv_END );
+	bv_set( a, 1 );
+	bv_set( a, 3 );
+	bv_set( a, 5 );
+	errorOccurred |= compare( a, test9, asizeof( test9 ) );
 
 	return errorOccurred? 1 : 0;
 	}

@@ -16,6 +16,9 @@
 static inline AR_TYPE AR_PREFIXED( _new )( int capacity )
 	{ return (AR_TYPE)ar_new( capacity, sizeof(AR_ELEMENT) ); }
 
+static inline AR_TYPE AR_PREFIXED( _newInMB )( int capacity, MemoryBatch mb )
+	{ return (AR_TYPE)ar_newInMB( capacity, sizeof(AR_ELEMENT), mb ); }
+
 static inline int AR_PREFIXED( _count )( AR_TYPE ar )
 	{ return ar_count( (Array)ar ); }
 
@@ -42,6 +45,12 @@ static inline void AR_PREFIXED( _setCount )( AR_TYPE ar, int newCount )
 
 static inline void AR_PREFIXED( _setCapacity )( AR_TYPE ar, int newCapacity )
 	{ ar_setCapacity( (Array)ar, newCapacity, sizeof(AR_ELEMENT) ); }
+
+static inline AR_ELEMENT *AR_PREFIXED( _nextElement )( AR_TYPE ar )
+	{ return (AR_ELEMENT*)ar_element( (Array)ar, ar_incCount( (Array)ar, sizeof(AR_ELEMENT) ) - 1, sizeof(AR_ELEMENT) ); }
+
+static inline void AR_PREFIXED( _shrinkWrap )( AR_TYPE ar )
+	{ ar_setCapacity( (Array)ar, ar_count( (Array)ar ), sizeof(AR_ELEMENT) ); }
 
 #if defined( AR_BYVALUE )
 // a few bonus functions to get/set by value if desired

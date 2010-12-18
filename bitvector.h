@@ -4,10 +4,11 @@
 
 #include "base.h"
 
-FUNC BitVector bv_new( int numBits );
-FUNC bool      bv_isSet ( BitVector bv, int bitIndex );
-FUNC void      bv_set   ( BitVector bv, int bitIndex );
-FUNC void      bv_unset ( BitVector bv, int bitIndex );
+FUNC BitVector bv_new     ( int numBits );
+FUNC BitVector bv_newInMB ( int numBits, MemoryBatch mb );
+FUNC bool      bv_isSet   ( BitVector bv, int bitIndex );
+FUNC void      bv_set     ( BitVector bv, int bitIndex );
+FUNC void      bv_unset   ( BitVector bv, int bitIndex );
 
 FUNC int       bv_firstBit ( BitVector bv );
 FUNC int       bv_nextBit  ( BitVector bv, int prevBit );
@@ -17,6 +18,8 @@ FUNC void      bv_and   ( BitVector target, BitVector source );
 FUNC void      bv_or    ( BitVector target, BitVector source );
 FUNC void      bv_xor   ( BitVector target, BitVector source );
 FUNC void      bv_minus ( BitVector target, BitVector source );
+
+FUNC void      bv_shrinkWrap( BitVector bv );
 
 #endif
 

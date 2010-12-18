@@ -38,7 +38,7 @@ static StackFrame sfa_topFrame( StackFrameArray sfa )
 
 static StackFrame sfa_push( StackFrameArray sfa )
 	{
-	return sfa_element( sfa, sfa_incCount( sfa ) - 1 );
+	return sfa_nextElement( sfa );
 	}
 
 static void sfa_pop( StackFrameArray sfa )

@@ -57,7 +57,7 @@ FUNC Symbol sy_byName( const char *name, SymbolTable st )
 	for( i=0; i < st_count(st); i++ )
 		if(!strcmp( name, sy_name( sy_byIndex(i,st), st ) ))
 			return sy_byIndex(i,st);
-	sy = sta_element( st, sta_incCount(st)-1 );
+	sy = sta_nextElement( st );
 	memset( sy, 0, sizeof(*sy) );
 	sy->name = strdup( name );
 	return sy;
@@ -209,7 +209,7 @@ static void sy_save( Symbol sy, Context cx )
 		{
 		Checkpoint cp = us_getLast( cx->us, 0 );
 		if( !ss_bySymbol( sy, cp ) )
-			ss_init( cp_element( cp, cp_incCount(cp)-1 ), sy );
+			ss_init( cp_nextElement( cp ), sy );
 		}
 	}
 

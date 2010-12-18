@@ -10,6 +10,7 @@ struct ar_struct
 	int   count;
 	int   capacity;
 	void *storage;
+	MemoryBatch mb;
 	};
 
 FUNC Array ar_new( int capacity, int elementSize )
@@ -17,7 +18,18 @@ FUNC Array ar_new( int capacity, int elementSize )
 	Array result = (Array)mem_alloc( sizeof(*result) );
 	result->count = 0;
 	result->capacity = capacity;
+	result->mb = NULL;
 	result->storage = mem_alloc( result->capacity * elementSize );
+	return result;
+	}
+
+FUNC Array ar_newInMB( int capacity, int elementSize, MemoryBatch mb )
+	{
+	Array result = (Array)mb_alloc( mb, sizeof(*result) );
+	result->count = 0;
+	result->capacity = capacity;
+	result->mb = mb;
+	result->storage = mb_alloc( mb, result->capacity * elementSize );
 	return result;
 	}
 
@@ -53,8 +65,11 @@ static void ar_changeCapacity( Array ar, int newCapacity, int elementSize ) __at
 static void ar_changeCapacity( Array ar, int newCapacity, int elementSize )
 	{
 	assert( newCapacity != ar->capacity );
+	if( ar->mb )
+		ar->storage = mb_realloc( ar->mb, ar->storage, ar->capacity * elementSize, newCapacity * elementSize );
+	else
+		ar->storage = mem_realloc( ar->storage, newCapacity * elementSize );
 	ar->capacity = newCapacity;
-	ar->storage = mem_realloc( ar->storage, ar->capacity * elementSize );
 	if( newCapacity < ar->count )
 		ar->count = newCapacity;
 	}

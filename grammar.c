@@ -59,16 +59,14 @@ FUNC void pn_appendWithName( Production pn, Symbol name, Symbol token, Grammar g
 	{
 	ProductionStorage pns = pn2pns(pn,gr);
 	ProductionElement pe;
-	rhs_incCount( pns->rhs );
-	pe = rhs_last( pns->rhs, 0 );
+	pe = rhs_nextElement( pns->rhs );
 	pe->token = token;
 	pe->name  = name;
 	}
 
 FUNC void pn_stopAppending( Production pn, Grammar gr )
 	{
-	RightHandSide rhs = pn2pns(pn,gr)->rhs;
-	rhs_setCapacity( rhs, rhs_count( rhs ) );
+	rhs_shrinkWrap( pn2pns(pn,gr)->rhs );
 	}
 
 FUNC Symbol pn_lhs( Production pn, Grammar gr )
@@ -117,8 +115,7 @@ FUNC Production gr_production( Grammar gr, int index )
 FUNC Production pn_new( Grammar gr, Symbol lhs, int lengthEstimate )
 	{
 	ProductionStorage result;
-	pra_incCount( gr->pra );
-	result = pra_last( gr->pra, 0 );
+	result = pra_nextElement( gr->pra );
 	result->lhs = lhs;
 	result->rhs = rhs_new( lengthEstimate );
 	return pns2pn( result, gr );

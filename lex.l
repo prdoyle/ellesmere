@@ -33,6 +33,26 @@ const char *lastWord()          { return _lastString; }
 %option   noyywrap
 %option   nodebug
 
+%{
+/* These just trim down the size of the lexer */
+%}
+%option noyy_pop_state
+%option noyy_top_state
+%option noyy_scan_bytes
+%option noyy_scan_string
+%option noyyset_extra
+%option noyyget_leng
+%option noyyget_text
+%option noyyset_lineno
+%option noyyget_in
+%option noyyset_in
+%option noyyset_out
+%option noyyget_lval
+%option noyyset_lval
+%option noyyset_lloc
+%option noyyget_debug
+%option noyyset_debug
+
 DIGIT       [0-9]
 ALPHA       [A-Za-z_$]
 ALNUM       [0-9A-Za-z_]
