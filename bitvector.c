@@ -14,6 +14,9 @@ struct bv_struct
 	Word *words;
 	};
 
+static int min(int a, int b)
+	{ return a<b? a : b; }
+
 static int bit2word( int bitNum )
 	{
 	return bitNum / BITS_PER_WORD;
@@ -40,11 +43,30 @@ FUNC BitVector bv_new( int numBits )
 	return result;
 	}
 
+static void bv_ensure( BitVector bv, int numWords, BitVector fillFrom )
+	{
+	assert( numWords >= 0 );
+	if( numWords > bv->numWords )
+		{
+		int firstWordToFill = bv->numWords;
+		bv->words = (Word*)mem_realloc( bv->words, numWords * sizeof( Word ) );
+		if( fillFrom )
+			{
+			int wordsToCopy = min( numWords, fillFrom->numWords ) - firstWordToFill;
+			memcpy( bv->words + firstWordToFill, fillFrom->words + firstWordToFill, wordsToCopy * sizeof( Word ) );
+			firstWordToFill += wordsToCopy;
+			}
+		if( firstWordToFill < numWords )
+			memset( bv->words + firstWordToFill, 0, ( numWords - firstWordToFill ) * sizeof( Word ) );
+		bv->numWords = numWords;
+		}
+	}
+
 FUNC bool bv_isSet( BitVector bv, int bitIndex )
 	{
 	int wordIndex = bit2word( bitIndex );
 	assert( 0 <= wordIndex );
-	if( wordIndex >= bv->numWords )
+	if( wordIndex < bv->numWords )
 		return ( bv->words[ wordIndex ] & bit2mask( bitIndex ) ) != 0;
 	else
 		return false;
@@ -53,15 +75,17 @@ FUNC bool bv_isSet( BitVector bv, int bitIndex )
 FUNC void bv_set( BitVector bv, int bitIndex )
 	{
 	int wordIndex = bit2word( bitIndex );
-	assert( 0 <= wordIndex && wordIndex < bv->numWords );
+	assert( 0 <= wordIndex );
+	bv_ensure( bv, wordIndex+1, NULL );
 	bv->words[ wordIndex ] |= bit2mask( bitIndex );
 	}
 
 FUNC void bv_unset( BitVector bv, int bitIndex )
 	{
 	int wordIndex = bit2word( bitIndex );
-	assert( 0 <= wordIndex && wordIndex < bv->numWords );
-	bv->words[ wordIndex ] &= ~bit2mask( bitIndex );
+	assert( 0 <= wordIndex );
+	if( wordIndex < bv->numWords )
+		bv->words[ wordIndex ] &= ~bit2mask( bitIndex );
 	}
 
 FUNC int bv_nextBit( BitVector bv, int prevBit )
@@ -86,12 +110,10 @@ FUNC int bv_firstBit( BitVector bv )
 	return bv_nextBit( bv, -1 );
 	}
 
-static int min(int a, int b)
-	{ return a<b? a : b; }
-
 FUNC void bv_and( BitVector target, BitVector source )
 	{
 	int i, stop = min( target->numWords, source->numWords );
+	bv_ensure( target, source->numWords, NULL );
 	for( i=0; i < stop; i++ )
 		target->words[ i ] &= source->words[ i ];
 	for( i = stop; i < target->numWords; i++ )
@@ -101,6 +123,7 @@ FUNC void bv_and( BitVector target, BitVector source )
 FUNC void bv_or( BitVector target, BitVector source )
 	{
 	int i, stop = min( target->numWords, source->numWords );
+	bv_ensure( target, source->numWords, source );
 	for( i=0; i < stop; i++ )
 		target->words[ i ] |= source->words[ i ];
 	}
@@ -108,6 +131,7 @@ FUNC void bv_or( BitVector target, BitVector source )
 FUNC void bv_xor( BitVector target, BitVector source )
 	{
 	int i, stop = min( target->numWords, source->numWords );
+	bv_ensure( target, source->numWords, source );
 	for( i=0; i < stop; i++ )
 		target->words[ i ] ^= source->words[ i ];
 	}
@@ -115,6 +139,7 @@ FUNC void bv_xor( BitVector target, BitVector source )
 FUNC void bv_minus( BitVector target, BitVector source )
 	{
 	int i, stop = min( target->numWords, source->numWords );
+	bv_ensure( target, source->numWords, NULL );
 	for( i=0; i < stop; i++ )
 		target->words[ i ] &= ~source->words[ i ];
 	}
@@ -165,6 +190,7 @@ static int test3[] = { 0, 1 }; // and
 static int test4[] = { 0, 1, 2, 3, 11, 12, 29, 30, 31, 32, 33, 62, 63, 64, 65 }; // or
 static int test5[] = { 2, 3, 11, 12, 29, 30, 31, 32, 33, 62, 63, 64, 65 }; // xor
 static int test6[] = { 2, 29, 30, 31, 32, 33, 62, 63, 64, 65 }; // minus
+static int test7[] = { 3, 11, 12 }; // b minus a
 
 int main( int argc, char **argv )
 	{
@@ -188,6 +214,23 @@ int main( int argc, char **argv )
 	a = populate( test1, asizeof( test1 ) );
 	bv_minus( a, b );
 	errorOccurred |= compare( a, test6, asizeof( test6 ) );
+
+	a = populate( test2, asizeof( test2 ) );
+	b = populate( test1, asizeof( test1 ) );
+	bv_and( a, b );
+	errorOccurred |= compare( a, test3, asizeof( test3 ) );
+
+	a = populate( test2, asizeof( test2 ) );
+	bv_or( a, b );
+	errorOccurred |= compare( a, test4, asizeof( test4 ) );
+
+	a = populate( test2, asizeof( test2 ) );
+	bv_xor( a, b );
+	errorOccurred |= compare( a, test5, asizeof( test5 ) );
+
+	a = populate( test2, asizeof( test2 ) );
+	bv_minus( a, b );
+	errorOccurred |= compare( a, test7, asizeof( test7 ) );
 
 	return errorOccurred? 1 : 0;
 	}
