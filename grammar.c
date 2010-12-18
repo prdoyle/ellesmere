@@ -36,7 +36,14 @@ struct gr_struct
 	};
 
 // Production "references" are actually indexes within the ProductionArray,
-// because the latter can move if it gets resized.
+// because the latter can move if it gets resized.  (And we don't want to
+// declare pn_struct to have an int element because that would require memory
+// allocation and an extra level of indirection.)
+
+FUNC int pn_index( Production pn, Grammar gr )
+	{
+	return (int)(intptr_t)pn;
+	}
 
 static inline Production pns2pn( ProductionStorage pns, Grammar gr )
 	{
@@ -45,39 +52,41 @@ static inline Production pns2pn( ProductionStorage pns, Grammar gr )
 
 static inline ProductionStorage pn2pns( Production pn, Grammar gr )
 	{
-	return pra_element( gr->pra, (int)(intptr_t)pn );
+	return pra_element( gr->pra, pn_index( pn, gr ) );
 	}
 
-FUNC void pr_appendWithName( Production pn, Symbol name, Symbol token, Grammar gr )
+FUNC void pn_appendWithName( Production pn, Symbol name, Symbol token, Grammar gr )
 	{
+	ProductionStorage pns = pn2pns(pn,gr);
 	ProductionElement pe;
-	rhs_incCount( pn2pns(pn,gr)->rhs );
-	pe = rhs_last( pn2pns(pn,gr)->rhs, 0 );
+	rhs_incCount( pns->rhs );
+	pe = rhs_last( pns->rhs, 0 );
 	pe->token = token;
 	pe->name  = name;
 	}
 
-FUNC void pr_stopAppending( Production pn, Grammar gr )
+FUNC void pn_stopAppending( Production pn, Grammar gr )
 	{
-	rhs_setCapacity( pn2pns(pn,gr)->rhs, rhs_count( pn2pns(pn,gr)->rhs ) );
+	RightHandSide rhs = pn2pns(pn,gr)->rhs;
+	rhs_setCapacity( rhs, rhs_count( rhs ) );
 	}
 
-FUNC Symbol pr_lhs( Production pn, Grammar gr )
+FUNC Symbol pn_lhs( Production pn, Grammar gr )
 	{
 	return pn2pns(pn,gr)->lhs;
 	}
 
-FUNC int pr_length( Production pn, Grammar gr )
+FUNC int pn_length( Production pn, Grammar gr )
 	{
 	return rhs_count( pn2pns(pn,gr)->rhs );
 	}
 
-FUNC Symbol pr_token( Production pn, int index, Grammar gr )
+FUNC Symbol pn_token( Production pn, int index, Grammar gr )
 	{
 	return rhs_element( pn2pns(pn,gr)->rhs, index )->token;
 	}
 
-FUNC Symbol pr_name( Production pn, int index, Grammar gr )
+FUNC Symbol pn_name( Production pn, int index, Grammar gr )
 	{
 	return rhs_element( pn2pns(pn,gr)->rhs, index )->token;
 	}
@@ -105,7 +114,7 @@ FUNC Production gr_production( Grammar gr, int index )
 	return pns2pn( pra_element( gr->pra, index ), gr );
 	}
 
-FUNC Production pr_new( Grammar gr, Symbol lhs, int lengthEstimate )
+FUNC Production pn_new( Grammar gr, Symbol lhs, int lengthEstimate )
 	{
 	ProductionStorage result;
 	pra_incCount( gr->pra );

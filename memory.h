@@ -18,8 +18,9 @@
 #endif
 
 FUNC MemoryBatch mb_new( int numBytesEstimate );
-FUNC void *mb_alloc( MemoryBatch mb, int numBytes );
-FUNC void  mb_free ( MemoryBatch mb );
+FUNC void *mb_alloc   ( MemoryBatch mb, int numBytes );
+FUNC void *mb_realloc ( MemoryBatch mb, void *oldStorage, int oldNumBytes, int newNumBytes );
+FUNC void  mb_free    ( MemoryBatch mb );
 
 #endif
 

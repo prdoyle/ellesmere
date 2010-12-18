@@ -3,6 +3,7 @@
 #undef mem_alloc // that's for users of memory.h, not the implementation!
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #ifndef NDEBUG
 
@@ -114,6 +115,43 @@ FUNC void *mb_alloc( MemoryBatch mb, int numBytes )
 	result = hunk->alloc;
 	hunk->alloc += numBytes;
 	return result;
+	}
+
+static bool mh_reallocInPlace( MemoryHunk mh, int8_t *oldEnd, int delta )
+	{
+	if( mh->alloc == oldEnd )
+		{
+		// This was the last allocation from mh.  Just pretend it was the modified size.
+		mh->alloc += delta;
+		return true;
+		}
+	else if( mh->prev && mh_reallocInPlace( mh->prev, oldEnd, delta ) )
+		{
+		// This was the last allocation from some previous mh.  It has already been resized.
+		return true;
+		}
+	else if( delta <= 0 )
+		{
+		// Whatever mh it's in, ignore the extra bytes allocated (thereby causing fragmentation)
+		return true;
+		}
+
+	// Nothing we can do within this MemoryHunk
+	return false;
+	}
+
+FUNC void *mb_realloc( MemoryBatch mb, void *oldStorage, int oldNumBytes, int newNumBytes )
+	{
+	int8_t *oldEnd = ((int8_t*)oldStorage) + oldNumBytes;
+	int      delta = newNumBytes - oldNumBytes;
+	if( mh_reallocInPlace( mb->curHunk, oldEnd, delta ) )
+		return oldStorage;
+	else
+		{
+		void *result = mb_alloc( mb, newNumBytes );
+		memcpy( result, oldStorage, oldNumBytes );
+		return result;
+		}
 	}
 
 FUNC void mb_free( MemoryBatch mb )
