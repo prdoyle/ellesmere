@@ -1,11 +1,12 @@
 
 #include "memory.h"
-#undef mem_alloc // that's for users of memory.h, not the implementation!
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
 #ifndef NDEBUG
+
+#undef mem_alloc // that's for users of memory.h, not the implementation!
 
 typedef struct header_struct
 	{
@@ -167,3 +168,4 @@ FUNC void mb_free( MemoryBatch mb )
 	free( mb );
 	}
 
+// MERGE:5
