@@ -107,6 +107,11 @@ FUNC void gr_stopAdding( Grammar gr )
 	pra_setCapacity( gr->pra, gr_numProductions(gr) );
 	}
 
+FUNC Symbol gr_goal( Grammar gr )
+	{
+	return gr->goal;
+	}
+
 FUNC Production gr_production( Grammar gr, int index )
 	{
 	return pns2pn( pra_element( gr->pra, index ), gr );

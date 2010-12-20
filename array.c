@@ -106,6 +106,12 @@ FUNC int ar_incCountBy( Array ar, int delta, int elementSize )
 	return ar->count;
 	}
 
+FUNC void ar_clear( Array ar, int newCount, int elementSize )
+	{
+	ar_setCount( ar, newCount, elementSize );
+	memset( ar->storage, 0, newCount * elementSize );
+	}
+
 /*
 typedef Array IntArray;
 #define AR_PREFIX  ia

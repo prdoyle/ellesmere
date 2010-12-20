@@ -19,12 +19,13 @@ struct an_struct
 
 static struct sy_struct predefinedSymbols[] =
 	{
-	{ "$NO_SYMBOL" },
+	{ "$NULL_SYMBOL" },
 	{ "$INT" },
 	{ "$STRING" },
 	{ "$TOKEN" },
 	{ "$TOKEN_BLOCK" },
 	{ "$TOKEN_STREAM" },
+	{ "$STATE_NODE" },
 	};
 
 FUNC SymbolTable theSymbolTable()

@@ -6,8 +6,9 @@
 
 FUNC Grammar    gr_new( Symbol goal, int numProductionsEstimate );
 FUNC void       gr_stopAdding( Grammar gr );
-FUNC int        gr_numProductions( Grammar gr ); 
-FUNC Production gr_production( Grammar gr, int index ); 
+FUNC Symbol     gr_goal( Grammar gr );
+FUNC int        gr_numProductions( Grammar gr );
+FUNC Production gr_production( Grammar gr, int index );
 
 FUNC Production pn_new( Grammar gr, Symbol lhs, int lengthEstimate );
 FUNC void       pn_appendWithName ( Production pr, Symbol name, Symbol token, Grammar gr );

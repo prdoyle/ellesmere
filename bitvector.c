@@ -59,16 +59,22 @@ FUNC BitVector bv_new( int numBits )
 	return bv_newInMB( numBits, NULL );
 	}
 
+static void bv_reallocWords( BitVector bv, int newNumWords )
+	{
+	if( bv->mb )
+		bv->words = (Word*)mb_realloc( bv->mb, bv->words, bv->numWords * sizeof( Word ), newNumWords * sizeof( Word ) );
+	else
+		bv->words = (Word*)mem_realloc( bv->words, newNumWords * sizeof( Word ) );
+	bv->numWords = newNumWords;
+	}
+
 static void bv_ensure( BitVector bv, int numWords, BitVector fillFrom )
 	{
 	assert( numWords >= 0 );
 	if( numWords > bv->numWords )
 		{
 		int firstWordToFill = bv->numWords;
-		if( bv->mb )
-			bv->words = (Word*)mb_realloc( bv->mb, bv->words, bv->numWords * sizeof( Word ), numWords * sizeof( Word ) );
-		else
-			bv->words = (Word*)mem_realloc( bv->words, numWords * sizeof( Word ) );
+		bv_reallocWords( bv, numWords );
 		if( fillFrom )
 			{
 			int wordsToCopy = min( numWords, fillFrom->numWords ) - firstWordToFill;
@@ -77,7 +83,6 @@ static void bv_ensure( BitVector bv, int numWords, BitVector fillFrom )
 			}
 		if( firstWordToFill < numWords )
 			memset( bv->words + firstWordToFill, 0, ( numWords - firstWordToFill ) * sizeof( Word ) );
-		bv->numWords = numWords;
 		}
 	}
 
@@ -129,6 +134,54 @@ FUNC int bv_firstBit( BitVector bv )
 	return bv_nextBit( bv, -1 );
 	}
 
+FUNC int bv_population( BitVector bv )
+	{
+	int result = 0;  int i;
+	for( i = bv_firstBit( bv ); i != bv_END; i = bv_nextBit( bv, i ) )
+		result++;
+	return result;
+	}
+
+FUNC int bv_hash( BitVector bv )
+	{
+	int result = 1; int i;
+	for( i=0; i < bv->numWords; i++ )
+		if( bv->words[i] ) // make sure trailing zeros don't affect the hash
+			result = ( result ^ bv->words[i] ) * 1103515245 ^ i;
+	return result;
+	}
+
+FUNC bool bv_isEmpty( BitVector bv )
+	{
+	return bv_firstBit( bv ) == bv_END;
+	}
+
+FUNC void bv_clear( BitVector bv )
+	{
+	if( bv->numWords > 0 )
+		bv_reallocWords( bv, 0 );
+	}
+
+FUNC bool bv_equals( BitVector bv, BitVector other )
+	{
+	BitVector smaller, bigger; int i, stop;
+	if( bv->numWords < other->numWords )
+		{
+		smaller = bv;
+		bigger  = other;
+		}
+	else
+		{
+		smaller = other;
+		bigger  = bv;
+		}
+	stop = smaller->numWords;
+	for( i=0; i < stop; i++ )
+		if( bv->words[i] != other->words[i] )
+			return false;
+	return bv_nextBit( bigger, stop * BITS_PER_WORD ) == bv_END;
+	}
+
 FUNC void bv_and( BitVector target, BitVector source )
 	{
 	int i, stop = min( target->numWords, source->numWords );
@@ -137,6 +190,14 @@ FUNC void bv_and( BitVector target, BitVector source )
 		target->words[ i ] &= source->words[ i ];
 	for( i = stop; i < target->numWords; i++ )
 		target->words[ i ] = 0;
+	}
+
+FUNC void bv_copy( BitVector target, BitVector source )
+	{
+	int i;
+	bv_reallocWords( target, source->numWords );
+	for( i=0; i < source->numWords; i++ )
+		target->words[ i ] = source->words[ i ];
 	}
 
 FUNC void bv_or( BitVector target, BitVector source )
@@ -161,6 +222,21 @@ FUNC void bv_minus( BitVector target, BitVector source )
 	bv_ensure( target, source->numWords, NULL );
 	for( i=0; i < stop; i++ )
 		target->words[ i ] &= ~source->words[ i ];
+	}
+
+static int shiftedOff( Word w )
+	{
+	return (w >> (BITS_PER_WORD-1) ) & 1;
+	}
+
+FUNC void bv_shift( BitVector bv )
+	{
+	int i;
+	if( shiftedOff( bv->words[ bv->numWords-1 ] ) )
+		bv_ensure( bv, bv->numWords+1, NULL );
+	for( i = bv->numWords-1; i > 0; i-- )
+		bv->words[ i ] = ( bv->words[ i ] << 1 ) | shiftedOff( bv->words[ i-1 ] );
+	bv->words[0] <<= 1;
 	}
 
 FUNC void bv_shrinkWrap( BitVector bv )
@@ -226,6 +302,10 @@ static int test7[] = { 3, 11, 12 }; // b minus a
 static int test8[] = { 1, 3, 5, 150 };
 static int test9[] = { 1, 3, 5 };
 
+static int test10[] = { 1, 2, 3, 4, 12, 13, 30, 31, 32, 33, 34, 63, 64, 65, 66 }; // test4 shifted
+static int test11[] = { 63 };
+static int test12[] = { 64 }; // test11 shifted
+
 int main( int argc, char **argv )
 	{
 	BitVector a, b;
@@ -242,7 +322,14 @@ int main( int argc, char **argv )
 	errorOccurred |= compare( a, test4, asizeof( test4 ) );
 
 	a = populate( test1, asizeof( test1 ) );
+	bv_copy( a, b );
+	errorOccurred |= bv_equals( a, b );
+	errorOccurred |= bv_equals( b, a );
+	errorOccurred |= compare( a, test2, asizeof( test2 ) );
+
+	a = populate( test1, asizeof( test1 ) );
 	bv_xor( a, b );
+	errorOccurred |= !bv_equals( b, a );
 	errorOccurred |= compare( a, test5, asizeof( test5 ) );
 
 	a = populate( test1, asizeof( test1 ) );
@@ -257,6 +344,12 @@ int main( int argc, char **argv )
 	a = populate( test2, asizeof( test2 ) );
 	bv_or( a, b );
 	errorOccurred |= compare( a, test4, asizeof( test4 ) );
+
+	a = populate( test2, asizeof( test2 ) );
+	bv_copy( a, b );
+	errorOccurred |= bv_equals( a, b );
+	errorOccurred |= bv_equals( b, a );
+	errorOccurred |= compare( a, test1, asizeof( test1 ) );
 
 	a = populate( test2, asizeof( test2 ) );
 	bv_xor( a, b );
@@ -281,6 +374,18 @@ int main( int argc, char **argv )
 	bv_set( a, 3 );
 	bv_set( a, 5 );
 	errorOccurred |= compare( a, test9, asizeof( test9 ) );
+
+	a = populate( test4, asizeof( test4 ) );
+	bv_shift( a );
+	errorOccurred |= compare( a, test10, asizeof( test10 ) );
+
+	a = populate( test11, asizeof( test11 ) );
+	bv_shift( a );
+	errorOccurred |= compare( a, test12, asizeof( test12 ) );
+
+	a = populate( test8, asizeof( test8 ) );
+	b = populate( test9, asizeof( test9 ) );
+	errorOccurred |= !bv_equals( a, b );
 
 	return errorOccurred? 1 : 0;
 	}

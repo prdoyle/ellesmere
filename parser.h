@@ -4,7 +4,7 @@
 
 #include "grammar.h"
 
-FUNC Parser ps_new( Grammar gr );
+FUNC Parser ps_new( Grammar gr, SymbolTable st );
 
 #endif
 

@@ -52,6 +52,9 @@ static inline AR_ELEMENT *AR_PREFIXED( _nextElement )( AR_TYPE ar )
 static inline void AR_PREFIXED( _shrinkWrap )( AR_TYPE ar )
 	{ ar_setCapacity( (Array)ar, ar_count( (Array)ar ), sizeof(AR_ELEMENT) ); }
 
+static inline void AR_PREFIXED( _clear )( AR_TYPE ar, int newCount )
+	{ ar_clear( (Array)ar, newCount, sizeof(AR_ELEMENT) ); }
+
 #if defined( AR_BYVALUE )
 // a few bonus functions to get/set by value if desired
 static inline AR_ELEMENT AR_PREFIXED( _get )( AR_TYPE ar, int index )

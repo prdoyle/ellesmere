@@ -10,15 +10,22 @@ FUNC bool      bv_isSet   ( BitVector bv, int bitIndex );
 FUNC void      bv_set     ( BitVector bv, int bitIndex );
 FUNC void      bv_unset   ( BitVector bv, int bitIndex );
 
-FUNC int       bv_firstBit ( BitVector bv );
-FUNC int       bv_nextBit  ( BitVector bv, int prevBit );
 enum { bv_END=-1 }; // indicates there are no more bits
+FUNC int       bv_firstBit   ( BitVector bv );
+FUNC int       bv_nextBit    ( BitVector bv, int prevBit );
+FUNC int       bv_population ( BitVector bv );
+FUNC int       bv_hash       ( BitVector bv );
+FUNC bool      bv_isEmpty    ( BitVector bv );
+FUNC bool      bv_equals     ( BitVector bv, BitVector other );
 
+FUNC void      bv_clear ( BitVector target );
+FUNC void      bv_copy  ( BitVector target, BitVector source );
 FUNC void      bv_and   ( BitVector target, BitVector source );
 FUNC void      bv_or    ( BitVector target, BitVector source );
 FUNC void      bv_xor   ( BitVector target, BitVector source );
 FUNC void      bv_minus ( BitVector target, BitVector source );
 
+FUNC void      bv_shift( BitVector bv );
 FUNC void      bv_shrinkWrap( BitVector bv );
 
 #endif
