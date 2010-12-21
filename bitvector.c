@@ -252,7 +252,7 @@ FUNC void bv_shrinkWrap( BitVector bv )
 	bv->numWords = newNumWords;
 	}
 
-#ifdef UNIT_TEST
+#ifdef BITVECTOR_T
 
 #include <stdio.h>
 

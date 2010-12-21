@@ -165,11 +165,19 @@ FUNC SymbolTable cx_symbolTable( Context cx )
 	return cx->st;
 	}
 
-FUNC void cx_sendTo( Context cx, File fl )
+FUNC int sy_sendTo( Symbol sy, File fl, SymbolTable st )
 	{
 	if( !fl )
-		return;
-	fl_write( fl, "Scope_%p{", cx );
+		return 0;
+	return fl_write( fl, "%s", sy_name( sy, st ) );
+	}
+
+FUNC int cx_sendTo( Context cx, File fl )
+	{
+	int charsSent = 0;
+	if( !fl )
+		return 0;
+	charsSent += fl_write( fl, "Scope_%p{", cx );
 	if( us_count( cx->us ) >= 1 )
 		{
 		char *sep = "";
@@ -177,11 +185,12 @@ FUNC void cx_sendTo( Context cx, File fl )
 		Checkpoint cp = us_getLast( cx->us, 0 );
 		for( i=0; i < cp_count(cp); i++ )
 			{
-			fl_write( fl, "%s%s", sep, sy_name( cp_element( cp, i )->sy, cx->st ) );
+			charsSent += fl_write( fl, "%s%s", sep, sy_name( cp_element( cp, i )->sy, cx->st ) );
 			sep = ", ";
 			}
 		}
-	fl_write( fl, "}", cx );
+	charsSent += fl_write( fl, "}", cx );
+	return charsSent;
 	}
 
 FUNC Action sy_immediateAction( Symbol sy, Context cx )
