@@ -276,13 +276,13 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 		case SYM_TOKEN_BLOCK:
 			{
 			TokenBlock tb = ob_toTokenBlock( ob, heap );
-			fl_write( fl, "$TOKEN_BLOCK_%p", tb );
+			fl_write( fl, ":TOKEN_BLOCK_%p", tb );
 			break;
 			}
 		case SYM_TOKEN_STREAM:
 			{
 			TokenStream ts = ob_toTokenStream( ob, heap );
-			fl_write( fl, "$TOKEN_STREAM_%p", ts );
+			fl_write( fl, ":TOKEN_STREAM_%p", ts );
 			break;
 			}
 		default:

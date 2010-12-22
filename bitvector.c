@@ -252,6 +252,18 @@ FUNC void bv_shrinkWrap( BitVector bv )
 	bv->numWords = newNumWords;
 	}
 
+FUNC int bv_sendFormattedTo( BitVector bv, File fl, const char *firstFormat, const char *subsequentFormat )
+	{
+	int i; int charsSent = fl_write( fl, "{ " ); char *format = firstFormat;
+	for( i = bv_firstBit( bv ); i != bv_END; i = bv_nextBit( bv, i ) )
+		{
+		charsSent += fl_write( fl, format, i );
+		format = subsequentFormat;
+		}
+	charsSent += fl_write( fl, " }" );
+	return charsSent;
+	}
+
 #ifdef BITVECTOR_T
 
 #include <stdio.h>

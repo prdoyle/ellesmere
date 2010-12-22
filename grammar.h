@@ -20,6 +20,7 @@ FUNC int        pn_length         ( Production pr, Grammar gr );
 FUNC Symbol     pn_token          ( Production pr, int index, Grammar gr );
 FUNC Symbol     pn_name           ( Production pr, int index, Grammar gr ); // NULL if none
 FUNC int        pn_sendTo         ( Production pn, File fl, Grammar gr, SymbolTable st );
+FUNC int        pn_sendItemTo     ( Production pn, int dotPosition, File fl, Grammar gr, SymbolTable st );
 
 static inline void pn_append( Production pn, Symbol token, Grammar gr )
 	{ pn_appendWithName( pn, NULL, token, gr ); }

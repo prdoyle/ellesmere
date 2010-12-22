@@ -28,5 +28,10 @@ FUNC void      bv_minus ( BitVector target, BitVector source );
 FUNC void      bv_shift( BitVector bv );
 FUNC void      bv_shrinkWrap( BitVector bv );
 
+FUNC int       bv_sendFormattedTo( BitVector bv, File fl, const char *firstFormat, const char *subsequentFormat );
+
+static inline int bv_sendTo( BitVector bv, File fl )
+	{ return bv_sendFormattedTo( bv, fl, "%d", ", %d" ); }
+
 #endif
 

@@ -126,13 +126,22 @@ FUNC Production pn_new( Grammar gr, Symbol lhs, int lengthEstimate )
 	return pns2pn( result, gr );
 	}
 
-FUNC int pn_sendTo( Production pn, File fl, Grammar gr, SymbolTable st )
+FUNC int pn_sendItemTo( Production pn, int dotPosition, File fl, Grammar gr, SymbolTable st )
 	{
 	int i;
 	int charsSent = fl_write( fl, "%s ->", sy_name( pn_lhs(pn,gr), st ) );
 	for( i=0; i < pn_length(pn,gr); i++ )
+		{
+		if( i == dotPosition )
+			charsSent += fl_write( fl, " :" );
 		charsSent += fl_write( fl, " %s", sy_name( pn_token( pn, i, gr ), st ) );
+		}
 	return charsSent;
+	}
+
+FUNC int pn_sendTo( Production pn, File fl, Grammar gr, SymbolTable st )
+	{
+	return pn_sendItemTo( pn, -1, fl, gr, st );
 	}
 
 FUNC int gr_sendTo( Grammar gr, File fl, SymbolTable st )
