@@ -132,10 +132,10 @@ FUNC int pn_sendItemTo( Production pn, int dotPosition, File fl, Grammar gr, Sym
 	int charsSent = fl_write( fl, "%s ->", sy_name( pn_lhs(pn,gr), st ) );
 	for( i=0; i < pn_length(pn,gr); i++ )
 		{
-		if( i == dotPosition )
-			charsSent += fl_write( fl, " :" );
-		charsSent += fl_write( fl, " %s", sy_name( pn_token( pn, i, gr ), st ) );
+		charsSent += fl_write( fl, (i == dotPosition)? ":%s" : " %s", sy_name( pn_token( pn, i, gr ), st ) );
 		}
+	if( i == dotPosition )
+		charsSent += fl_write( fl, ":" );
 	return charsSent;
 	}
 
@@ -156,36 +156,6 @@ FUNC int gr_sendTo( Grammar gr, File fl, SymbolTable st )
 	charsSent += fl_write( fl, "\n  }\n" );
 	return charsSent;
 	}
-
-#ifdef GRAMMAR_T
-
-static char *grammar1[][10] =
-	{
-	{ "S", "E" },
-	{ "E", "E", "*", "B" },
-	{ "E", "E", "+", "B" },
-	{ "E", "B" },
-	{ "B", "0" },
-	{ "B", "1" },
-	};
-
-int main( int argc, char *argv[] )
-	{
-	int i, j;
-	SymbolTable st = theSymbolTable();
-	Symbol goal = sy_byName( grammar1[0][0], st );
-	Grammar gr = gr_new( goal, asizeof( grammar1 ) );
-	for( i=0; i < asizeof( grammar1 ); i++ )
-		{
-		Production pn = pn_new( gr, sy_byName( grammar1[i][0], st ), 10 );
-		for( j=1; grammar1[i][j]; j++ )
-			pn_append( pn, sy_byName( grammar1[i][j], st ), gr );
-		}
-	gr_sendTo( gr, stdout, st );
-	return 0;
-	}
-
-#endif
 
 // MERGE:22
 

@@ -254,7 +254,7 @@ FUNC void bv_shrinkWrap( BitVector bv )
 
 FUNC int bv_sendFormattedTo( BitVector bv, File fl, const char *firstFormat, const char *subsequentFormat )
 	{
-	int i; int charsSent = fl_write( fl, "{ " ); char *format = firstFormat;
+	int i; int charsSent = fl_write( fl, "{ " ); const char *format = firstFormat;
 	for( i = bv_firstBit( bv ); i != bv_END; i = bv_nextBit( bv, i ) )
 		{
 		charsSent += fl_write( fl, format, i );
@@ -335,13 +335,12 @@ int main( int argc, char **argv )
 
 	a = populate( test1, asizeof( test1 ) );
 	bv_copy( a, b );
-	errorOccurred |= bv_equals( a, b );
-	errorOccurred |= bv_equals( b, a );
+	errorOccurred |= !bv_equals( a, b );
+	errorOccurred |= !bv_equals( b, a );
 	errorOccurred |= compare( a, test2, asizeof( test2 ) );
 
 	a = populate( test1, asizeof( test1 ) );
 	bv_xor( a, b );
-	errorOccurred |= !bv_equals( b, a );
 	errorOccurred |= compare( a, test5, asizeof( test5 ) );
 
 	a = populate( test1, asizeof( test1 ) );
@@ -359,8 +358,8 @@ int main( int argc, char **argv )
 
 	a = populate( test2, asizeof( test2 ) );
 	bv_copy( a, b );
-	errorOccurred |= bv_equals( a, b );
-	errorOccurred |= bv_equals( b, a );
+	errorOccurred |= !bv_equals( a, b );
+	errorOccurred |= !bv_equals( b, a );
 	errorOccurred |= compare( a, test1, asizeof( test1 ) );
 
 	a = populate( test2, asizeof( test2 ) );
@@ -397,7 +396,7 @@ int main( int argc, char **argv )
 
 	a = populate( test8, asizeof( test8 ) );
 	b = populate( test9, asizeof( test9 ) );
-	errorOccurred |= !bv_equals( a, b );
+	errorOccurred |= bv_equals( a, b );
 
 	return errorOccurred? 1 : 0;
 	}

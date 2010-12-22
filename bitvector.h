@@ -3,6 +3,7 @@
 #define BITVECTOR_H
 
 #include "base.h"
+#include "file.h"
 
 FUNC BitVector bv_new     ( int numBits );
 FUNC BitVector bv_newInMB ( int numBits, MemoryBatch mb );

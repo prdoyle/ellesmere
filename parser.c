@@ -5,6 +5,16 @@
 #include "objects.h"
 #include <string.h>
 
+#ifdef PARSER_T
+	#define trace   fl_write
+	#define traceBV bv_sendTo
+	#define traceBVX bv_sendFormattedTo
+#else
+	#define trace(...)
+	#define traceBV(...)
+	#define traceBVX(...)
+#endif
+
 typedef struct it_struct
 	{
 	Production pn;
@@ -57,6 +67,7 @@ typedef struct pg_struct
 static ItemSet its_new( ItemSet prev, BitVector items, ParserGenerator pg, ItemSet next )
 	{
 	ItemSet result = (ItemSet)mb_alloc( pg->mb, sizeof(*result) );
+	result->prev = prev;
 	result->items = items;
 	result->stateNode = ob_create( sy_byIndex( SYM_STATE_NODE, pg->st ), pg->heap );
 	result->next = next;
@@ -78,6 +89,7 @@ static SymbolSideTableEntry pg_sideTableEntry( ParserGenerator pg, Symbol sy )
 		result->leftmostItems  = NULL;
 		result->expectingItems = NULL;
 		}
+	assert( result->sy == sy );
 	return result;
 	}
 
@@ -118,8 +130,6 @@ static void pg_computeItemsExpectingToken( ParserGenerator pg, BitVector result,
 		}
 	bv_copy( result, itemSet );
 	bv_and( result, expectingItems );
-	if( bv_isEmpty( result ) )
-		return;
 	}
 
 static ItemSet pg_findItemSet( ParserGenerator pg, BitVector items )
@@ -148,7 +158,7 @@ static ItemSet pg_createItemSet( ParserGenerator pg, BitVector items )
 		}
 	else
 		{
-		result = its_new( NULL, items, pg, NULL );
+		pg->itemSetList = result = its_new( NULL, items, pg, NULL );
 		result->prev = result->next = result;
 		}
 	return result;
@@ -167,15 +177,19 @@ static ItemSet pg_findOrCreateItemSet( ParserGenerator pg, BitVector items )
 
 static ParserGenerator pg_new( Grammar gr, SymbolTable st, MemoryBatch mb, ObjectHeap heap )
 	{
-	int i,j; int itemIndex;
 	ParserGenerator pg = (ParserGenerator)mb_alloc( mb, sizeof(*pg) );
 	pg->gr = gr;
 	pg->st = st;
 	pg->mb = mb;
 	pg->heap = heap;
+	return pg;
+	}
 
-	// Pass 1: Populate item table
+static void pg_populateItemTable( ParserGenerator pg )
 	{
+	int i,j;
+	MemoryBatch mb = pg->mb;
+	Grammar gr = pg->gr;
 	pg->items = ita_newInMB( 1000, mb );
 	pg->rightmostItems = bv_newInMB( gr_numProductions(gr), mb );
 	for( i=0; i < gr_numProductions(gr); i++ )
@@ -187,14 +201,19 @@ static ParserGenerator pg_new( Grammar gr, SymbolTable st, MemoryBatch mb, Objec
 			it->pn  = pn;
 			it->dot = j;
 			}
-		bv_set( pg->rightmostItems, ita_count( pg->items ) );
+		bv_set( pg->rightmostItems, ita_count(pg->items) - 1 );
 		}
 	ita_shrinkWrap( pg->items );
 	 bv_shrinkWrap( pg->rightmostItems );
 	}
 
-	// Pass 2: Populate the symbol side table
+static void pg_populateSymbolSideTable( ParserGenerator pg )
 	{
+	int i,j;
+	MemoryBatch mb = pg->mb;
+	Grammar gr = pg->gr;
+	SymbolTable st = pg->st;
+	int itemIndex;
 	const int sstIndexesSize = st_count(st) * sizeof(pg->sstIndexes[0]);
 	pg->sstIndexes = (int*)mb_alloc( mb, sstIndexesSize );
 	memset( pg->sstIndexes, 0, sstIndexesSize );
@@ -216,55 +235,95 @@ static ParserGenerator pg_new( Grammar gr, SymbolTable st, MemoryBatch mb, Objec
 			{
 			it = ita_element( pg->items, itemIndex );
 			entry = pg_sideTableEntry( pg, pn_token( it->pn, j, gr ) );
-			itemIndex++;
 			if( !entry->expectingItems )
 				entry->expectingItems = bv_newInMB( ita_count( pg->items ), mb );
 			bv_set( entry->expectingItems, itemIndex );
+			itemIndex++;
 			}
 		// now the item where j == pn_length
 		itemIndex++;
 		}
 	}
 
-	// Seed the itemSet list and start generating
+static void pg_computeAutomaton( ParserGenerator pg )
 	{
+	MemoryBatch mb = pg->mb;
+	SymbolTable st = pg->st;
 	ItemSet curItemSet, startItemSet;
+	int itemCount = ita_count( pg->items );
+	BitVector nextItems = bv_newInMB( itemCount, mb );
 	startItemSet = curItemSet = pg_createItemSet( pg, pg_sideTableEntry( pg, gr_goal(pg->gr) )->leftmostItems );
+	pg_closeItemSet( pg, curItemSet->items );
 	while( curItemSet )
 		{
-		int itemIndex; BitVector nextItems = bv_newInMB( itemIndex, mb );
-		BitVector itemsLeft = bv_newInMB( itemIndex, mb );
+		int i; ItemSet stopItemSet;
+		BitVector itemsLeft = bv_newInMB( itemCount, mb );
+
 		bv_copy( itemsLeft, curItemSet->items );
+		trace( stdout, "  %p items left: ", curItemSet );
+		traceBV( itemsLeft, stdout );
+		trace( stdout, "\n" );
+
+		bv_minus( itemsLeft, pg->rightmostItems );
+		traceBVX( itemsLeft, stdout, "    minus rightmost: %d", ", %d" );
+		trace( stdout, "\n" );
+
 		assert( !curItemSet->isExpanded );
 		curItemSet->isExpanded = true;
-		for( itemIndex = bv_firstBit( itemsLeft ); itemIndex != bv_END; itemIndex = bv_nextBit( itemsLeft, itemIndex ) )
+		for( i = bv_firstBit( itemsLeft ); i != bv_END; i = bv_nextBit( itemsLeft, i ) )
 			{
-			Item it = ita_element( pg->items, itemIndex ); ItemSet nextItemSet;
+			Item it = ita_element( pg->items, i ); ItemSet nextItemSet;
 			Symbol expected = pn_token( it->pn, it->dot, pg->gr );
+			trace( stdout, "    Item %d is expecting %s\n", i, sy_name( expected, st ) );
+
 			pg_computeItemsExpectingToken( pg, nextItems, itemsLeft, expected );
+			traceBVX( nextItems, stdout, "      similar items: %d", ", %d" );
+			trace( stdout, "\n" );
+
 			bv_minus( itemsLeft, nextItems );
+			traceBVX( itemsLeft, stdout, "          itemsLeft: %d", ", %d" );
+			trace( stdout, "\n" );
+
 			bv_shift( nextItems );
+			traceBVX( nextItems, stdout, "            shifted: %d", ", %d" );
+			trace( stdout, "\n" );
+
 			pg_closeItemSet( pg, nextItems );
+			traceBVX( nextItems, stdout, "             closed: %d", ", %d" );
+			trace( stdout, "\n" );
+
 			nextItemSet = pg_findItemSet( pg, nextItems );
-			if( !nextItemSet )
+			if( nextItemSet )
+				{
+				trace( stdout, "  Found existing ItemSet %p with items: ", nextItemSet );
+				traceBV( nextItems, stdout );
+				trace( stdout, "\n" );
+				}
+			else
 				{
 				// Use the nextItems bitvector we created, and allocate a new one for the next guy
 				nextItemSet = pg_createItemSet( pg, nextItems );
-				nextItems = bv_newInMB( itemIndex, mb );
+				nextItems = bv_newInMB( itemCount, mb );
+				trace( stdout, "    Created new itemSet %p\n", nextItems );
 				}
 			ob_setField( curItemSet->stateNode, expected, nextItemSet->stateNode, pg->heap );
-			if( nextItemSet->isExpanded )
-				{
-				ItemSet stop = nextItemSet;
-				for( nextItemSet = nextItemSet->next; nextItemSet != stop; nextItemSet = nextItemSet->next )
-					if( !nextItemSet->isExpanded )
-						break;
-				}
+			}
+		stopItemSet = curItemSet;
+		for( curItemSet = curItemSet->next; curItemSet != stopItemSet; curItemSet = curItemSet->next )
+			if( !curItemSet->isExpanded )
+				break;
+		if( curItemSet->isExpanded )
+			{
+			curItemSet = NULL;
+			trace( stdout, "All ItemSets are expanded\n" );
+			}
+		else
+			{
+			trace( stdout, "    Skipped to %p with items: ", curItemSet );
+			traceBV( curItemSet->items, stdout );
+			trace( stdout, "\n" );
 			}
 		}
-	}
-
-	return pg;
 	}
 
 FUNC Parser ps_new( Grammar gr, SymbolTable st )
@@ -275,6 +334,85 @@ FUNC Parser ps_new( Grammar gr, SymbolTable st )
 	mb_free( mb );
 	return pg? NULL: NULL;
 	}
+
+#ifdef PARSER_T
+
+static char *grammar1[][10] =
+	{
+	{ "S", "E" },
+	{ "E", "E", "*", "B" },
+	{ "E", "E", "+", "B" },
+	{ "E", "B" },
+	{ "B", "0" },
+	{ "B", "1" },
+	};
+
+int main( int argc, char *argv[] )
+	{
+	int i, j; SymbolTable st; Symbol goal; Grammar gr; ParserGenerator pg; int charsSent;
+
+	st = theSymbolTable();
+	goal = sy_byName( grammar1[0][0], st );
+	gr = gr_new( goal, asizeof( grammar1 ) );
+	for( i=0; i < asizeof( grammar1 ); i++ )
+		{
+		Production pn = pn_new( gr, sy_byName( grammar1[i][0], st ), 10 );
+		for( j=1; grammar1[i][j]; j++ )
+			pn_append( pn, sy_byName( grammar1[i][j], st ), gr );
+		}
+	gr_sendTo( gr, stdout, st );
+
+	pg = pg_new( gr, st, mb_new( 10000 ), theObjectHeap() );
+
+	pg_populateItemTable( pg );
+	charsSent = fl_write( stdout, "Items:\n" );
+	for( i=0; i < ita_count( pg->items ); i++ )
+		{
+		Item it = ita_element( pg->items, i );
+		charsSent += fl_write( stdout, "  %3d: ", i );
+		pn_sendItemTo( it->pn, it->dot, stdout, gr, st );
+		charsSent += fl_write( stdout, "\n" );
+		}
+	charsSent += fl_write( stdout, "  rightmostItems: " );
+	charsSent += bv_sendTo( pg->rightmostItems, stdout );
+	charsSent += fl_write( stdout, "\n" );
+
+	pg_populateSymbolSideTable( pg );
+	charsSent = fl_write( stdout, "SymbolSideTable:\n" );
+	for( i=1; i < sst_count( pg->sst ); i++ )
+		{
+		SymbolSideTableEntry sste = sst_element( pg->sst, i );
+		int symbolIndex = sy_index( sste->sy, st );
+		if( pg->sstIndexes[ symbolIndex ] == i )
+			{
+			charsSent += fl_write( stdout, "  %3d: %s\n", i, sy_name( sste->sy, st ) );
+			if( sste->leftmostItems )
+				{
+				charsSent += fl_write( stdout, "     leftmostItems: " );
+				charsSent += bv_sendTo( sste->leftmostItems, stdout );
+				charsSent += fl_write( stdout, "\n" );
+				}
+			if( sste->expectingItems )
+				{
+				charsSent += fl_write( stdout, "    expectingItems: " );
+				charsSent += bv_sendTo( sste->expectingItems, stdout );
+				charsSent += fl_write( stdout, "\n" );
+				}
+			}
+		else
+			{
+			charsSent += fl_write( stdout, "INDEX MISMATCH: entry %d is symbol %s. index %d, which has entry %d\n",
+				i, sste->sy, symbolIndex, pg->sstIndexes[ symbolIndex ] );
+			}
+		}
+
+	pg_computeAutomaton( pg );
+
+	return 0;
+	}
+
+#endif
+
 
 // MERGE: 55
 

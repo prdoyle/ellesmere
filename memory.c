@@ -78,9 +78,9 @@ static MemoryHunk mh_new( int size, MemoryHunk prev )
 	{
 	// if you want to use mem_alloc here, be careful freeing it
 	MemoryHunk result = (MemoryHunk)malloc( sizeof(*result) );
-	result->base = (int8_t*)malloc( size );
-	result->alloc = result->limit = result->base + size;
-	result->prev = prev;
+	result->base  = result->alloc = (int8_t*)malloc( size );
+	result->limit = result->base + size;
+	result->prev  = prev;
 	return result;
 	}
 
