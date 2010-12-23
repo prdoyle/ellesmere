@@ -354,13 +354,15 @@ static int sendDeepTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 		{
 		FieldList field;
 		cl_check( cl, ob );
-		ob_sendTo( ob, fl, heap );
 		if( ob_hasItems( ob ) )
 			{
+			ob_sendTo( ob, fl, heap );
 			fl_write( fl, "\n  {\n" );
 			for( field = ob->data.fields; field; field = field->tail )
 				{
-				fl_write( fl, "  %s: ", sy_name( sy_byIndex( field->si, heap->st ), heap->st ) );
+				fl_write( fl, "  " );
+				sy_sendTo( sy_byIndex( field->si, heap->st ), fl, heap->st );
+				fl_write( fl, "->" );
 				ob_sendTo( field->value, fl, heap );
 				fl_write( fl, "\n" );
 				}
@@ -370,7 +372,9 @@ static int sendDeepTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 			}
 		else
 			{
-			fl_write( fl, " { }\n" );
+			// Don't bother printing objects with no items
+			//ob_sendTo( ob, fl, heap );
+			//fl_write( fl, "\n" );
 			}
 		}
 	return charsSent;
@@ -380,6 +384,39 @@ FUNC int ob_sendDeepTo( Object ob, File fl, ObjectHeap heap )
 	{
 	CheckList cl = cl_open( heap );
 	int result = sendDeepTo( ob, fl, heap, cl );
+	cl_close( cl );
+	return result;
+	}
+
+static int sendDotEdgesTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
+	{
+	int charsSent = 0;
+	if( !cl_isChecked( cl, ob ) )
+		{
+		FieldList field;
+		cl_check( cl, ob );
+		if( ob_hasItems( ob ) )
+			{
+			for( field = ob->data.fields; field; field = field->tail )
+				{
+				Symbol sy = sy_byIndex( field->si, heap->st );
+				if( ob_hasItems( field->value ) )
+					{
+					charsSent += fl_write( fl,
+						"n%p -> n%p [label=\"%s\"]\n",
+						ob, field->value, sy_name( sy, heap->st ) );
+					charsSent += sendDotEdgesTo( field->value, fl, heap, cl );
+					}
+				}
+			}
+		}
+	return charsSent;
+	}
+
+FUNC int ob_sendDotEdgesTo( Object ob, File fl, ObjectHeap heap )
+	{
+	CheckList cl = cl_open( heap );
+	int result = sendDotEdgesTo( ob, fl, heap, cl );
 	cl_close( cl );
 	return result;
 	}

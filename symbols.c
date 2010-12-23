@@ -26,6 +26,7 @@ static struct sy_struct predefinedSymbols[] =
 	{ ":TOKEN_BLOCK" },
 	{ ":TOKEN_STREAM" },
 	{ ":STATE_NODE" },
+	{ ":ITEM_SET_NUM" },
 	};
 
 FUNC SymbolTable theSymbolTable()

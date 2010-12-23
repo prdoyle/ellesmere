@@ -88,7 +88,7 @@ bitvector.t: bitvector.o memory.o file.o
 
 parser.t: CFLAGS += -DPARSER_T
 parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvector.o
-	$(LD) $(LDFLAGS) $^ -o $@ -lefence
+	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
 clean:
 	rm -f memreport.txt ellesmere tags _merged.c gmon.out *.gcda $(GEN_C_FILES) $(GEN_H_FILES) $(O_FILES) $(I_FILES) $(D_FILES)

@@ -45,8 +45,9 @@ FUNC void      cl_check     ( CheckList cl, Object ob ); // Beware large int obj
 FUNC void      cl_uncheck   ( CheckList cl, Object ob );
 FUNC bool      cl_isChecked ( CheckList cl, Object ob );
 
-FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap );
-FUNC int ob_sendDeepTo( Object ob, File fl, ObjectHeap heap );
+FUNC int ob_sendTo         ( Object ob, File fl, ObjectHeap heap );
+FUNC int ob_sendDeepTo     ( Object ob, File fl, ObjectHeap heap );
+FUNC int ob_sendDotEdgesTo ( Object ob, File fl, ObjectHeap heap );
 
 #endif
 

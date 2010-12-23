@@ -45,11 +45,17 @@ typedef struct sst_struct *SymbolSideTable;
 typedef struct its_struct *ItemSet;
 struct its_struct
 	{
-	ItemSet   prev, next;
 	BitVector items;
 	Object    stateNode;
 	bool      isExpanded;
 	};
+
+typedef struct itst_struct *ItemSetTable;
+#define AR_PREFIX  itst
+#define AR_TYPE    ItemSetTable
+#define AR_ELEMENT struct its_struct
+#undef AR_BYVALUE
+#include "array_template.h"
 
 typedef struct pg_struct
 	{
@@ -61,19 +67,8 @@ typedef struct pg_struct
 	SymbolTable      st;
 	SymbolSideTable  sst;
 	int             *sstIndexes;
-	ItemSet          itemSetList;
+	ItemSetTable     itemSets;
 	} *ParserGenerator;
-
-static ItemSet its_new( ItemSet prev, BitVector items, ParserGenerator pg, ItemSet next )
-	{
-	ItemSet result = (ItemSet)mb_alloc( pg->mb, sizeof(*result) );
-	result->prev = prev;
-	result->items = items;
-	result->stateNode = ob_create( sy_byIndex( SYM_STATE_NODE, pg->st ), pg->heap );
-	result->next = next;
-	result->isExpanded = false;
-	return result;
-	}
 
 static SymbolSideTableEntry pg_sideTableEntry( ParserGenerator pg, Symbol sy )
 	{
@@ -91,6 +86,11 @@ static SymbolSideTableEntry pg_sideTableEntry( ParserGenerator pg, Symbol sy )
 		}
 	assert( result->sy == sy );
 	return result;
+	}
+
+static int its_index( ItemSet its, ParserGenerator pg )
+	{
+	return its - itst_element( pg->itemSets, 0 );
 	}
 
 static void pg_closeItemSet( ParserGenerator pg, BitVector itemSet )
@@ -134,33 +134,27 @@ static void pg_computeItemsExpectingToken( ParserGenerator pg, BitVector result,
 
 static ItemSet pg_findItemSet( ParserGenerator pg, BitVector items )
 	{
-	ItemSet result, stop;
-	result = stop = pg->itemSetList;
-	if( result )
+	int i;
+	for( i=0; i < itst_count( pg->itemSets ); i++ )
 		{
-		if( bv_equals( result->items, items ) )
-			return result;
-		for( result = result->next; result != stop; result = result->next )
-			if( bv_equals( result->items, items ) )
-				return result;
+		ItemSet its = itst_element( pg->itemSets, i );
+		if( bv_equals( its->items, items ) )
+			return its;
 		}
 	return NULL;
 	}
 
 static ItemSet pg_createItemSet( ParserGenerator pg, BitVector items )
 	{
-	ItemSet cur = pg->itemSetList; ItemSet result;
-	if( cur )
-		{
-		result = its_new( cur->prev, items, pg, cur );
-		result->prev->next = result;
-		result->next->prev = result;
-		}
-	else
-		{
-		pg->itemSetList = result = its_new( NULL, items, pg, NULL );
-		result->prev = result->next = result;
-		}
+	ItemSet result = itst_nextElement( pg->itemSets );
+	result->items = items;
+	result->stateNode = ob_create( sy_byIndex( SYM_STATE_NODE, pg->st ), pg->heap );
+	ob_setField(
+		result->stateNode,
+		sy_byIndex( SYM_ITEM_SET_NUM, pg->st ),
+		ob_fromInt( its_index( result, pg ), pg->heap ),
+		pg->heap );
+	result->isExpanded = false;
 	return result;
 	}
 
@@ -252,16 +246,18 @@ static void pg_computeAutomaton( ParserGenerator pg )
 	ItemSet curItemSet, startItemSet;
 	int itemCount = ita_count( pg->items );
 	BitVector nextItems = bv_newInMB( itemCount, mb );
+	pg->itemSets = itst_newInMB( itemCount * itemCount, mb ); // guesstimate of number of item sets
 	startItemSet = curItemSet = pg_createItemSet( pg, pg_sideTableEntry( pg, gr_goal(pg->gr) )->leftmostItems );
 	pg_closeItemSet( pg, curItemSet->items );
 	st_count( st ); // just to use the variable and silence a warning
 	while( curItemSet )
 		{
-		int i; ItemSet stopItemSet;
+		int i;
 		BitVector itemsLeft = bv_newInMB( itemCount, mb );
 
 		bv_copy( itemsLeft, curItemSet->items );
-		trace( stdout, "  Expanding ItemSet %p\n    stateNode: %s_%p\n    items left: ", curItemSet, sy_name( ob_tag( curItemSet->stateNode, pg->heap ), st ), curItemSet->stateNode );
+		trace( stdout, "  Expanding ItemSet_%d\n    stateNode: %s_%p\n    items left: ",
+			its_index( curItemSet, pg ), sy_name( ob_tag( curItemSet->stateNode, pg->heap ), st ), curItemSet->stateNode );
 		traceBV( itemsLeft, stdout );
 		trace( stdout, "\n" );
 
@@ -296,7 +292,7 @@ static void pg_computeAutomaton( ParserGenerator pg )
 			nextItemSet = pg_findItemSet( pg, nextItems );
 			if( nextItemSet )
 				{
-				trace( stdout, "  Found existing ItemSet %p with items: ", nextItemSet );
+				trace( stdout, "  Found existing ItemSet_%d with items: ", its_index( nextItemSet, pg ) );
 				traceBV( nextItems, stdout );
 				trace( stdout, "\n" );
 				}
@@ -309,10 +305,12 @@ static void pg_computeAutomaton( ParserGenerator pg )
 				}
 			ob_setField( curItemSet->stateNode, expected, nextItemSet->stateNode, pg->heap );
 			}
-		stopItemSet = curItemSet;
-		for( curItemSet = curItemSet->next; curItemSet != stopItemSet; curItemSet = curItemSet->next )
+		for( i = its_index( curItemSet, pg ); i < itst_count( pg->itemSets ); i++ )
+			{
+			curItemSet = itst_element( pg->itemSets, i );
 			if( !curItemSet->isExpanded )
 				break;
+			}
 		if( curItemSet->isExpanded )
 			{
 			curItemSet = NULL;
@@ -343,7 +341,7 @@ FUNC Parser ps_new( Grammar gr, SymbolTable st )
 
 static char *grammar1[][10] =
 	{
-	{ "S", "E" },
+	{ "S", "E", "$" },
 	{ "E", "E", "*", "B" },
 	{ "E", "E", "+", "B" },
 	{ "E", "B" },
@@ -353,7 +351,7 @@ static char *grammar1[][10] =
 
 int main( int argc, char *argv[] )
 	{
-	int i, j; SymbolTable st; Symbol goal; Grammar gr; ParserGenerator pg;
+	int i, j; SymbolTable st; Symbol goal; Grammar gr; ParserGenerator pg; BitVector bv;
 
 	st = theSymbolTable();
 	goal = sy_byName( grammar1[0][0], st );
@@ -411,7 +409,23 @@ int main( int argc, char *argv[] )
 		}
 
 	pg_computeAutomaton( pg );
-	ob_sendDeepTo( pg->itemSetList->stateNode, stdout, pg->heap );
+	//ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, stdout, pg->heap );
+	fprintf( stderr, "digraph \"G\" {\n" );
+	bv = bv_newInMB( ita_count( pg->items ), pg->mb );
+	for( i=0; i < itst_count( pg->itemSets ); i++ )
+		{
+		const char *sep = "";
+		ItemSet its = itst_element( pg->itemSets, i );
+		fprintf( stderr, "n%p [label=\"%d {", its->stateNode, i );
+		for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
+			{
+			fprintf( stderr, "%s%d", sep, j );
+			sep = ", ";
+			}
+		fprintf( stderr, "}\"]\n" );
+		}
+	ob_sendDotEdgesTo( itst_element( pg->itemSets, 0 )->stateNode, stderr, pg->heap );
+	fprintf( stderr, "}\n" );
 
 	return 0;
 	}
