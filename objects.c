@@ -7,6 +7,7 @@
 struct oh_struct
 	{
 	SymbolTable st;
+	int curCheckListIndex;
 	};
 
 typedef enum
@@ -30,6 +31,7 @@ FUNC ObjectHeap theObjectHeap()
 	if( !_theObjectHeap.st )
 		{
 		_theObjectHeap.st = theSymbolTable();
+		_theObjectHeap.curCheckListIndex = 1;
 		}
 	return &_theObjectHeap;
 	}
@@ -70,6 +72,7 @@ struct ob_struct
 		TokenBlock  tokenBlock;
 		TokenStream tokenStream;
 		} data;
+	int checkListIndex;
 	};
 
 FUNC Object ob_create( Symbol tag, ObjectHeap heap )
@@ -77,6 +80,8 @@ FUNC Object ob_create( Symbol tag, ObjectHeap heap )
 	Object result = (Object)mem_alloc( (sizeof(*result)) );
 	result->tag = sy_index( tag, heap->st );
 	result->data.fields = NULL;
+	result->checkListIndex = heap->curCheckListIndex;
+	heap->curCheckListIndex += 2;
 	assert( ob_kind( result ) == OB_STRUCT );
 	return result;
 	}
@@ -252,6 +257,54 @@ FUNC void ob_setElement( Object ob, int index, Object value, ObjectHeap heap )
 	assert( ob_getElement( ob, index, heap ) == value );
 	}
 
+#include "bitvector.h"
+
+struct cl_struct
+	{
+	ObjectHeap  heap;
+	MemoryBatch mb;
+	BitVector   checkMarks;
+	};
+
+FUNC CheckList cl_open( ObjectHeap heap )
+	{
+	MemoryBatch mb = mb_new( 1000 );
+	CheckList result = (CheckList)mb_alloc( mb, sizeof(*result) );
+	result->heap = heap;
+	result->mb = mb;
+	result->checkMarks = bv_newInMB( 50, mb );
+	return result;
+	}
+
+FUNC void cl_close( CheckList cl )
+	{
+	mb_free( cl->mb );
+	}
+
+FUNC void cl_check( CheckList cl, Object ob )
+	{
+	if( ob_isInt( ob, cl->heap ) )
+		bv_set( cl->checkMarks, 2*ob_toInt( ob, cl->heap ) );
+	else
+		bv_set( cl->checkMarks, ob->checkListIndex );
+	}
+
+FUNC void cl_uncheck( CheckList cl, Object ob )
+	{
+	if( ob_isInt( ob, cl->heap ) )
+		bv_unset( cl->checkMarks, 2*ob_toInt( ob, cl->heap ) );
+	else
+		bv_unset( cl->checkMarks, ob->checkListIndex );
+	}
+
+FUNC bool cl_isChecked( CheckList cl, Object ob )
+	{
+	if( ob_isInt( ob, cl->heap ) )
+		return bv_isSet( cl->checkMarks, 2*ob_toInt( ob, cl->heap ) );
+	else
+		return bv_isSet( cl->checkMarks, ob->checkListIndex );
+	}
+
 FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 	{
 	int charsSent=0;
@@ -292,6 +345,43 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 			}
 		}
 	return charsSent;
+	}
+
+static int sendDeepTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
+	{
+	int charsSent = 0;
+	if( !cl_isChecked( cl, ob ) )
+		{
+		FieldList field;
+		cl_check( cl, ob );
+		ob_sendTo( ob, fl, heap );
+		if( ob_hasItems( ob ) )
+			{
+			fl_write( fl, "\n  {\n" );
+			for( field = ob->data.fields; field; field = field->tail )
+				{
+				fl_write( fl, "  %s: ", sy_name( sy_byIndex( field->si, heap->st ), heap->st ) );
+				ob_sendTo( field->value, fl, heap );
+				fl_write( fl, "\n" );
+				}
+			fl_write( fl, "  }\n" );
+			for( field = ob->data.fields; field; field = field->tail )
+				sendDeepTo( field->value, fl, heap, cl );
+			}
+		else
+			{
+			fl_write( fl, " { }\n" );
+			}
+		}
+	return charsSent;
+	}
+
+FUNC int ob_sendDeepTo( Object ob, File fl, ObjectHeap heap )
+	{
+	CheckList cl = cl_open( heap );
+	int result = sendDeepTo( ob, fl, heap, cl );
+	cl_close( cl );
+	return result;
 	}
 
 #include "symbols_impl.h"

@@ -254,13 +254,14 @@ static void pg_computeAutomaton( ParserGenerator pg )
 	BitVector nextItems = bv_newInMB( itemCount, mb );
 	startItemSet = curItemSet = pg_createItemSet( pg, pg_sideTableEntry( pg, gr_goal(pg->gr) )->leftmostItems );
 	pg_closeItemSet( pg, curItemSet->items );
+	st_count( st ); // just to use the variable and silence a warning
 	while( curItemSet )
 		{
 		int i; ItemSet stopItemSet;
 		BitVector itemsLeft = bv_newInMB( itemCount, mb );
 
 		bv_copy( itemsLeft, curItemSet->items );
-		trace( stdout, "  %p items left: ", curItemSet );
+		trace( stdout, "  Expanding ItemSet %p\n    stateNode: %s_%p\n    items left: ", curItemSet, sy_name( ob_tag( curItemSet->stateNode, pg->heap ), st ), curItemSet->stateNode );
 		traceBV( itemsLeft, stdout );
 		trace( stdout, "\n" );
 
@@ -331,6 +332,9 @@ FUNC Parser ps_new( Grammar gr, SymbolTable st )
 	MemoryBatch     mb = mb_new( 10000 );
 	ParserGenerator pg = pg_new( gr, st, mb, theObjectHeap() ); // TODO: allocate objects in mb
 	// TODO: generate the parser
+	pg_populateItemTable( pg );
+	pg_populateSymbolSideTable( pg );
+	pg_computeAutomaton( pg );
 	mb_free( mb );
 	return pg? NULL: NULL;
 	}
@@ -349,7 +353,7 @@ static char *grammar1[][10] =
 
 int main( int argc, char *argv[] )
 	{
-	int i, j; SymbolTable st; Symbol goal; Grammar gr; ParserGenerator pg; int charsSent;
+	int i, j; SymbolTable st; Symbol goal; Grammar gr; ParserGenerator pg;
 
 	st = theSymbolTable();
 	goal = sy_byName( grammar1[0][0], st );
@@ -365,48 +369,49 @@ int main( int argc, char *argv[] )
 	pg = pg_new( gr, st, mb_new( 10000 ), theObjectHeap() );
 
 	pg_populateItemTable( pg );
-	charsSent = fl_write( stdout, "Items:\n" );
+	fl_write( stdout, "Items:\n" );
 	for( i=0; i < ita_count( pg->items ); i++ )
 		{
 		Item it = ita_element( pg->items, i );
-		charsSent += fl_write( stdout, "  %3d: ", i );
+		fl_write( stdout, "  %3d: ", i );
 		pn_sendItemTo( it->pn, it->dot, stdout, gr, st );
-		charsSent += fl_write( stdout, "\n" );
+		fl_write( stdout, "\n" );
 		}
-	charsSent += fl_write( stdout, "  rightmostItems: " );
-	charsSent += bv_sendTo( pg->rightmostItems, stdout );
-	charsSent += fl_write( stdout, "\n" );
+	fl_write( stdout, "  rightmostItems: " );
+	bv_sendTo( pg->rightmostItems, stdout );
+	fl_write( stdout, "\n" );
 
 	pg_populateSymbolSideTable( pg );
-	charsSent = fl_write( stdout, "SymbolSideTable:\n" );
+	fl_write( stdout, "SymbolSideTable:\n" );
 	for( i=1; i < sst_count( pg->sst ); i++ )
 		{
 		SymbolSideTableEntry sste = sst_element( pg->sst, i );
 		int symbolIndex = sy_index( sste->sy, st );
 		if( pg->sstIndexes[ symbolIndex ] == i )
 			{
-			charsSent += fl_write( stdout, "  %3d: %s\n", i, sy_name( sste->sy, st ) );
+			fl_write( stdout, "  %3d: %s\n", i, sy_name( sste->sy, st ) );
 			if( sste->leftmostItems )
 				{
-				charsSent += fl_write( stdout, "     leftmostItems: " );
-				charsSent += bv_sendTo( sste->leftmostItems, stdout );
-				charsSent += fl_write( stdout, "\n" );
+				fl_write( stdout, "     leftmostItems: " );
+				bv_sendTo( sste->leftmostItems, stdout );
+				fl_write( stdout, "\n" );
 				}
 			if( sste->expectingItems )
 				{
-				charsSent += fl_write( stdout, "    expectingItems: " );
-				charsSent += bv_sendTo( sste->expectingItems, stdout );
-				charsSent += fl_write( stdout, "\n" );
+				fl_write( stdout, "    expectingItems: " );
+				bv_sendTo( sste->expectingItems, stdout );
+				fl_write( stdout, "\n" );
 				}
 			}
 		else
 			{
-			charsSent += fl_write( stdout, "INDEX MISMATCH: entry %d is symbol %s. index %d, which has entry %d\n",
+			fl_write( stdout, "INDEX MISMATCH: entry %d is symbol %s. index %d, which has entry %d\n",
 				i, sste->sy, symbolIndex, pg->sstIndexes[ symbolIndex ] );
 			}
 		}
 
 	pg_computeAutomaton( pg );
+	ob_sendDeepTo( pg->itemSetList->stateNode, stdout, pg->heap );
 
 	return 0;
 	}
