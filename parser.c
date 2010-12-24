@@ -239,7 +239,7 @@ static void pg_populateSymbolSideTable( ParserGenerator pg )
 		}
 	}
 
-static void pg_computeAutomaton( ParserGenerator pg )
+static void pg_computeAutomaton( ParserGenerator pg, File traceFile )
 	{
 	MemoryBatch mb = pg->mb;
 	SymbolTable st = pg->st;
@@ -256,14 +256,14 @@ static void pg_computeAutomaton( ParserGenerator pg )
 		BitVector itemsLeft = bv_newInMB( itemCount, mb );
 
 		bv_copy( itemsLeft, curItemSet->items );
-		trace( stdout, "  Expanding ItemSet_%d\n    stateNode: %s_%p\n    items left: ",
+		trace( traceFile, "  Expanding ItemSet_%d\n    stateNode: %s_%p\n    items left: ",
 			its_index( curItemSet, pg ), sy_name( ob_tag( curItemSet->stateNode, pg->heap ), st ), curItemSet->stateNode );
-		traceBV( itemsLeft, stdout );
-		trace( stdout, "\n" );
+		traceBV( itemsLeft, traceFile );
+		trace( traceFile, "\n" );
 
 		bv_minus( itemsLeft, pg->rightmostItems );
-		traceBVX( itemsLeft, stdout, "    minus rightmost: %d", ", %d" );
-		trace( stdout, "\n" );
+		traceBVX( itemsLeft, traceFile, "    minus rightmost: %d", ", %d" );
+		trace( traceFile, "\n" );
 
 		assert( !curItemSet->isExpanded );
 		curItemSet->isExpanded = true;
@@ -271,37 +271,37 @@ static void pg_computeAutomaton( ParserGenerator pg )
 			{
 			Item it = ita_element( pg->items, i ); ItemSet nextItemSet;
 			Symbol expected = pn_token( it->pn, it->dot, pg->gr );
-			trace( stdout, "    Item %d is expecting %s\n", i, sy_name( expected, st ) );
+			trace( traceFile, "    Item %d is expecting %s\n", i, sy_name( expected, st ) );
 
 			pg_computeItemsExpectingToken( pg, nextItems, itemsLeft, expected );
-			traceBVX( nextItems, stdout, "      similar items: %d", ", %d" );
-			trace( stdout, "\n" );
+			traceBVX( nextItems, traceFile, "      similar items: %d", ", %d" );
+			trace( traceFile, "\n" );
 
 			bv_minus( itemsLeft, nextItems );
-			traceBVX( itemsLeft, stdout, "          itemsLeft: %d", ", %d" );
-			trace( stdout, "\n" );
+			traceBVX( itemsLeft, traceFile, "          itemsLeft: %d", ", %d" );
+			trace( traceFile, "\n" );
 
 			bv_shift( nextItems );
-			traceBVX( nextItems, stdout, "            shifted: %d", ", %d" );
-			trace( stdout, "\n" );
+			traceBVX( nextItems, traceFile, "            shifted: %d", ", %d" );
+			trace( traceFile, "\n" );
 
 			pg_closeItemSet( pg, nextItems );
-			traceBVX( nextItems, stdout, "             closed: %d", ", %d" );
-			trace( stdout, "\n" );
+			traceBVX( nextItems, traceFile, "             closed: %d", ", %d" );
+			trace( traceFile, "\n" );
 
 			nextItemSet = pg_findItemSet( pg, nextItems );
 			if( nextItemSet )
 				{
-				trace( stdout, "  Found existing ItemSet_%d with items: ", its_index( nextItemSet, pg ) );
-				traceBV( nextItems, stdout );
-				trace( stdout, "\n" );
+				trace( traceFile, "  Found existing ItemSet_%d with items: ", its_index( nextItemSet, pg ) );
+				traceBV( nextItems, traceFile );
+				trace( traceFile, "\n" );
 				}
 			else
 				{
 				// Use the nextItems bitvector we created, and allocate a new one for the next guy
 				nextItemSet = pg_createItemSet( pg, nextItems );
 				nextItems = bv_newInMB( itemCount, mb );
-				trace( stdout, "    Created new itemSet %p\n", nextItems );
+				trace( traceFile, "    Created new itemSet %p\n", nextItems );
 				}
 			ob_setField( curItemSet->stateNode, expected, nextItemSet->stateNode, pg->heap );
 			}
@@ -314,13 +314,13 @@ static void pg_computeAutomaton( ParserGenerator pg )
 		if( curItemSet->isExpanded )
 			{
 			curItemSet = NULL;
-			trace( stdout, "All ItemSets are expanded\n" );
+			trace( traceFile, "All ItemSets are expanded\n" );
 			}
 		else
 			{
-			trace( stdout, "    Skipped to %p with items: ", curItemSet );
-			traceBV( curItemSet->items, stdout );
-			trace( stdout, "\n" );
+			trace( traceFile, "    Skipped to %p with items: ", curItemSet );
+			traceBV( curItemSet->items, traceFile );
+			trace( traceFile, "\n" );
 			}
 		}
 	}
@@ -332,100 +332,207 @@ FUNC Parser ps_new( Grammar gr, SymbolTable st )
 	// TODO: generate the parser
 	pg_populateItemTable( pg );
 	pg_populateSymbolSideTable( pg );
-	pg_computeAutomaton( pg );
+	pg_computeAutomaton( pg, NULL );
 	mb_free( mb );
 	return pg? NULL: NULL;
 	}
 
 #ifdef PARSER_T
 
-static char *grammar1[][10] =
+enum
 	{
-	{ "S", "E", "$" },
-	{ "E", "E", "*", "B" },
-	{ "E", "E", "+", "B" },
-	{ "E", "B" },
-	{ "B", "0" },
-	{ "B", "1" },
+	Shift,
+	Reduce,
+	Accept,
+	ShiftReduceConflict,
+	ReduceReduceConflict,
+	} LR0StateKinds;
+
+static char *LR0StateKindNames[] =
+	{
+	"Shift",
+	"Reduce",
+	"Accept",
+	"Shift/Reduce conflict",
+	"Reduce/Reduce conflict",
+	};
+
+static int its_stateKind( ItemSet its, ParserGenerator pg )
+	{
+	int numShifts, numReduces; BitVector bv;
+
+	bv = bv_newInMB( ita_count( pg->items ), pg->mb );
+	bv_copy  ( bv, its->items );
+	bv_minus ( bv, pg->rightmostItems );
+	numShifts = bv_population( bv );
+
+	bv = bv_newInMB( ita_count( pg->items ), pg->mb );
+	bv_copy  ( bv, its->items );
+	bv_and   ( bv, pg->rightmostItems );
+	numReduces = bv_population( bv );
+
+	switch( numReduces )
+		{
+		case 0:
+			return Shift;
+		case 1:
+			if( numShifts == 0 )
+				{
+				Item it = ita_element( pg->items, bv_firstBit( bv ) );
+				if( pn_lhs( it->pn, pg->gr ) == gr_goal( pg->gr ) )
+					return Accept;
+				else
+					return Reduce;
+				}
+			else
+				return ShiftReduceConflict;
+		default:
+			return ReduceReduceConflict;
+		}
+	}
+
+typedef char *GrammarLine[10];
+
+#if 0
+static GrammarLine grammar[] =
+	{
+	{ "S",  "E", "$" },
+	{ "E",  "E", "*", "B" },
+	{ "E",  "E", "+", "B" },
+	{ "E",  "B" },
+	{ "B",  "0" },
+	{ "B",  "1" },
+	};
+#endif
+
+#if 0
+static GrammarLine grammar[] =
+	{
+	{ "S",  "E", "$" },
+	{ "E",  "E", "+", "T" },
+	{ "E",  "E", "-", "T" },
+	{ "E",  "T" },
+	{ "T",  "T", "*", "F" },
+	{ "T",  "T", "/", "F" },
+	{ "T",  "F" },
+	{ "F",  "num" },
+	{ "F",  "id" },
+	};
+#endif
+
+#if 0
+static GrammarLine grammar[] =
+	{
+	{ "S",  "E", "$" },
+	{ "E",  "E", "*", "B" },
+	{ "E",  "E", "+", "B" },
+	{ "E",  "B" },
+	{ "B",  "0" },
+	{ "B",  "1" },
+	};
+#endif
+
+static GrammarLine grammar[] =
+	{
+	{ "program",    "statements", "$" },
+	{ "statements", "statement" },
+	{ "statements", "statements", "statement" },
+
+	{ "statement",  "print", ":INT" },
+	{ "statement",  "print", ":STRING" },
+
+	{ ":INT",       "add", ":INT", ":INT" },
+	{ ":INT",       "sub", ":INT", ":INT" },
+
+	{ ":INT",       "fib", ":INT" },
+
+	{ ":INT",       "numWheels", "Truck" },
+	{ ":INT",       "numCylinders", "Truck" },
+
+	{ "Truck",      "FireTruck" },
+	{ ":INT",       "numHoses", "FireTruck" },
+
 	};
 
 int main( int argc, char *argv[] )
 	{
 	int i, j; SymbolTable st; Symbol goal; Grammar gr; ParserGenerator pg; BitVector bv;
+	File traceFile = fdopen( 3, "wt" );
+	File dotFile   = stdout;
 
 	st = theSymbolTable();
-	goal = sy_byName( grammar1[0][0], st );
-	gr = gr_new( goal, asizeof( grammar1 ) );
-	for( i=0; i < asizeof( grammar1 ); i++ )
+	goal = sy_byName( grammar[0][0], st );
+	gr = gr_new( goal, asizeof( grammar ) );
+	for( i=0; i < asizeof( grammar ); i++ )
 		{
-		Production pn = pn_new( gr, sy_byName( grammar1[i][0], st ), 10 );
-		for( j=1; grammar1[i][j]; j++ )
-			pn_append( pn, sy_byName( grammar1[i][j], st ), gr );
+		Production pn = pn_new( gr, sy_byName( grammar[i][0], st ), 10 );
+		for( j=1; grammar[i][j]; j++ )
+			pn_append( pn, sy_byName( grammar[i][j], st ), gr );
 		}
-	gr_sendTo( gr, stdout, st );
+	gr_sendTo( gr, traceFile, st );
 
 	pg = pg_new( gr, st, mb_new( 10000 ), theObjectHeap() );
 
 	pg_populateItemTable( pg );
-	fl_write( stdout, "Items:\n" );
+	fl_write( traceFile, "Items:\n" );
 	for( i=0; i < ita_count( pg->items ); i++ )
 		{
 		Item it = ita_element( pg->items, i );
-		fl_write( stdout, "  %3d: ", i );
-		pn_sendItemTo( it->pn, it->dot, stdout, gr, st );
-		fl_write( stdout, "\n" );
+		fl_write( traceFile, "  %3d: ", i );
+		pn_sendItemTo( it->pn, it->dot, traceFile, gr, st );
+		fl_write( traceFile, "\n" );
 		}
-	fl_write( stdout, "  rightmostItems: " );
-	bv_sendTo( pg->rightmostItems, stdout );
-	fl_write( stdout, "\n" );
+	fl_write( traceFile, "  rightmostItems: " );
+	bv_sendTo( pg->rightmostItems, traceFile );
+	fl_write( traceFile, "\n" );
 
 	pg_populateSymbolSideTable( pg );
-	fl_write( stdout, "SymbolSideTable:\n" );
+	fl_write( traceFile, "SymbolSideTable:\n" );
 	for( i=1; i < sst_count( pg->sst ); i++ )
 		{
 		SymbolSideTableEntry sste = sst_element( pg->sst, i );
 		int symbolIndex = sy_index( sste->sy, st );
 		if( pg->sstIndexes[ symbolIndex ] == i )
 			{
-			fl_write( stdout, "  %3d: %s\n", i, sy_name( sste->sy, st ) );
+			fl_write( traceFile, "  %3d: %s\n", i, sy_name( sste->sy, st ) );
 			if( sste->leftmostItems )
 				{
-				fl_write( stdout, "     leftmostItems: " );
-				bv_sendTo( sste->leftmostItems, stdout );
-				fl_write( stdout, "\n" );
+				fl_write( traceFile, "     leftmostItems: " );
+				bv_sendTo( sste->leftmostItems, traceFile );
+				fl_write( traceFile, "\n" );
 				}
 			if( sste->expectingItems )
 				{
-				fl_write( stdout, "    expectingItems: " );
-				bv_sendTo( sste->expectingItems, stdout );
-				fl_write( stdout, "\n" );
+				fl_write( traceFile, "    expectingItems: " );
+				bv_sendTo( sste->expectingItems, traceFile );
+				fl_write( traceFile, "\n" );
 				}
 			}
 		else
 			{
-			fl_write( stdout, "INDEX MISMATCH: entry %d is symbol %s. index %d, which has entry %d\n",
+			fl_write( traceFile, "INDEX MISMATCH: entry %d is symbol %s. index %d, which has entry %d\n",
 				i, sste->sy, symbolIndex, pg->sstIndexes[ symbolIndex ] );
 			}
 		}
 
-	pg_computeAutomaton( pg );
-	//ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, stdout, pg->heap );
-	fprintf( stderr, "digraph \"G\" {\n" );
+	pg_computeAutomaton( pg, traceFile );
+	//ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
+	fprintf( dotFile, "digraph \"G\" {\n" );
 	bv = bv_newInMB( ita_count( pg->items ), pg->mb );
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
 		{
-		const char *sep = "";
 		ItemSet its = itst_element( pg->itemSets, i );
-		fprintf( stderr, "n%p [label=\"%d {", its->stateNode, i );
+		fprintf( dotFile, "n%p [label=\"%d %s\\n", its->stateNode, i, LR0StateKindNames[ its_stateKind( its, pg ) ] );
 		for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
 			{
-			fprintf( stderr, "%s%d", sep, j );
-			sep = ", ";
+			Item it = ita_element( pg->items, j );
+			pn_sendItemTo( it->pn, it->dot, dotFile, pg->gr, pg->st );
+			fprintf( dotFile, "\\n" );
 			}
-		fprintf( stderr, "}\"]\n" );
+		fprintf( dotFile, "\"]\n" );
 		}
-	ob_sendDotEdgesTo( itst_element( pg->itemSets, 0 )->stateNode, stderr, pg->heap );
-	fprintf( stderr, "}\n" );
+	ob_sendDotEdgesTo( itst_element( pg->itemSets, 0 )->stateNode, dotFile, pg->heap );
+	fprintf( dotFile, "}\n" );
 
 	return 0;
 	}

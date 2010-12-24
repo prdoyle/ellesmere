@@ -132,10 +132,10 @@ FUNC int pn_sendItemTo( Production pn, int dotPosition, File fl, Grammar gr, Sym
 	int charsSent = fl_write( fl, "%s ->", sy_name( pn_lhs(pn,gr), st ) );
 	for( i=0; i < pn_length(pn,gr); i++ )
 		{
-		charsSent += fl_write( fl, (i == dotPosition)? ":%s" : " %s", sy_name( pn_token( pn, i, gr ), st ) );
+		charsSent += fl_write( fl, (i == dotPosition)? " o %s" : "  %s", sy_name( pn_token( pn, i, gr ), st ) );
 		}
 	if( i == dotPosition )
-		charsSent += fl_write( fl, ":" );
+		charsSent += fl_write( fl, " o" );
 	return charsSent;
 	}
 

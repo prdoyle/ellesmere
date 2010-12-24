@@ -90,8 +90,14 @@ parser.t: CFLAGS += -DPARSER_T
 parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvector.o
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
+%.pdf: %.dot
+	dot -Tpdf < $< > $@
+
+states.dot: parser.t
+	./parser.t > states.dot
+
 clean:
 	rm -f memreport.txt ellesmere tags _merged.c gmon.out *.gcda $(GEN_C_FILES) $(GEN_H_FILES) $(O_FILES) $(I_FILES) $(D_FILES)
-	rm -f bitvector.t parser.t
+	rm -f bitvector.t parser.t states.dot states.pdf
 
 .PHONY: all merged memreport.txt
