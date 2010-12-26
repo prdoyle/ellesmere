@@ -33,38 +33,22 @@ static Word bit2mask( int bitNum )
 	return ((Word)1) << bit2shift( bitNum );
 	}
 
-FUNC BitVector bv_newInMB( int numBits, MemoryLifetime ml )
+FUNC BitVector bv_new( int numBits, MemoryLifetime ml )
 	{
 	int numWords = bit2word( numBits-1 ) + 1;
 	int numBytes = numWords * sizeof( Word );
 	BitVector result;
-	if( ml )
-		{
-		result    = (BitVector)ml_alloc( ml, sizeof(*result) );
-		result->words = (Word*)ml_alloc( ml, numBytes );
-		}
-	else
-		{
-		result    = (BitVector)mem_alloc( sizeof(*result) );
-		result->words = (Word*)mem_alloc( numBytes );
-		}
+	result    = (BitVector)ml_alloc( ml, sizeof(*result) );
+	result->words = (Word*)ml_alloc( ml, numBytes );
 	result->numWords = numWords;
 	result->ml       = ml;
 	memset( result->words, 0, numBytes );
 	return result;
 	}
 
-FUNC BitVector bv_new( int numBits )
-	{
-	return bv_newInMB( numBits, NULL );
-	}
-
 static void bv_reallocWords( BitVector bv, int newNumWords )
 	{
-	if( bv->ml )
-		bv->words = (Word*)ml_realloc( bv->ml, bv->words, bv->numWords * sizeof( Word ), newNumWords * sizeof( Word ) );
-	else
-		bv->words = (Word*)mem_realloc( bv->words, newNumWords * sizeof( Word ) );
+	bv->words = (Word*)ml_realloc( bv->ml, bv->words, bv->numWords * sizeof( Word ), newNumWords * sizeof( Word ) );
 	bv->numWords = newNumWords;
 	}
 
@@ -245,10 +229,7 @@ FUNC void bv_shrinkWrap( BitVector bv )
 	for( i=0; i < bv->numWords; i++ )
 		if( bv->words[i] )
 			newNumWords = i+1;
-	if( bv->ml )
-		bv->words = (Word*)ml_realloc( bv->ml, bv->words, bv->numWords * sizeof( Word ), newNumWords * sizeof( Word ) );
-	else
-		bv->words = (Word*)mem_realloc( bv->words, newNumWords * sizeof( Word ) );
+	bv->words = (Word*)ml_realloc( bv->ml, bv->words, bv->numWords * sizeof( Word ), newNumWords * sizeof( Word ) );
 	bv->numWords = newNumWords;
 	}
 

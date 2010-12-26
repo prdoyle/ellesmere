@@ -10,9 +10,9 @@
 
 #define INITIAL_CAPACITY 19
 
-FUNC Stack sk_new()
+FUNC Stack sk_new( MemoryLifetime ml )
 	{
-	return ska_new( INITIAL_CAPACITY );
+	return ska_new( INITIAL_CAPACITY, ml );
 	}
 
 FUNC int sk_depth( Stack sk )

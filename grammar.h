@@ -4,7 +4,7 @@
 
 #include "symbols.h"
 
-FUNC Grammar    gr_new( Symbol goal, int numProductionsEstimate );
+FUNC Grammar    gr_new( Symbol goal, int numProductionsEstimate, MemoryLifetime ml );
 FUNC void       gr_stopAdding     ( Grammar gr );
 FUNC Symbol     gr_goal           ( Grammar gr );
 FUNC int        gr_numProductions ( Grammar gr );

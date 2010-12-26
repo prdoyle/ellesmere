@@ -34,7 +34,7 @@ FUNC SymbolTable theSymbolTable()
 	static SymbolTable result = NULL;
 	if( !result )
 		{
-		result = sta_new( 200 + NUM_PREDEFINED_SYMBOLS );
+		result = sta_new( 200 + NUM_PREDEFINED_SYMBOLS, ml_singleton() );
 		sta_setCount( result, NUM_PREDEFINED_SYMBOLS );
 		memcpy( sta_element( result, 0 ), predefinedSymbols, sizeof(predefinedSymbols) );
 		}
@@ -114,7 +114,7 @@ static void cp_reviveAndClear( Checkpoint cp )
 		{
 		SymbolSnapshot ss = cp_element( cp, i );
 		ss->sy->scopedDefs = ss->scopedDefs;
-		ss->sy = (Symbol)0xdead; // poison
+		ss->sy = (Symbol)0xdead1; // poison
 		}
 	cp_setCount( cp, 0 );
 	}
@@ -128,17 +128,20 @@ typedef struct us_struct *UndoStack;
 
 struct cx_struct
 	{
-	SymbolTable st;
-	UndoStack   us;
-	UndoStack   freeList;
+	SymbolTable    st;
+	MemoryLifetime ml;
+	UndoStack      us;
+	UndoStack      freeList;
 	};
 
 FUNC Context cx_new( SymbolTable st )
 	{
-	Context result = (Context)mem_alloc( sizeof(*result) );
+	MemoryLifetime ml = ml_undecided();
+	Context result = (Context)ml_alloc( ml, sizeof(*result) );
 	result->st = st;
-	result->us = us_new( 11 );
-	result->freeList = us_new( 11 );
+	result->ml = ml;
+	result->us = us_new( 11, ml );
+	result->freeList = us_new( 11, ml );
 	return result;
 	}
 
@@ -150,7 +153,7 @@ FUNC void cx_save( Context cx )
 		us_incCountBy( cx->freeList, -1 );
 		}
 	else
-		us_append( cx->us, cp_new( 13 ) );
+		us_append( cx->us, cp_new( 13, cx->ml ) );
 	}
 
 FUNC void cx_restore( Context cx )
@@ -258,7 +261,7 @@ FUNC Action an_fromFunctionAndSymbol( ActionFunction af, Symbol sy )
 	{
 	Action result = sy->recentAction;
 	if( !result || result->function != af )
-		sy->recentAction = result = (Action)mem_alloc( sizeof(*result) );
+		sy->recentAction = result = (Action)ml_alloc( ml_undecided(), sizeof(*result) );
 	result->function = af;
 	result->sy       = sy;
 	return result;
@@ -266,7 +269,7 @@ FUNC Action an_fromFunctionAndSymbol( ActionFunction af, Symbol sy )
 
 FUNC Action an_fromFunction( ActionFunction af )
 	{
-	Action result = (Action)mem_alloc( sizeof(*result) );
+	Action result = (Action)ml_alloc( ml_undecided(), sizeof(*result) );
 	result->function = af;
 	result->sy = NULL;
 	return result;

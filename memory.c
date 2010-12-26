@@ -4,9 +4,24 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifndef NDEBUG
+typedef struct mh_struct *MemoryHunk;
+struct mh_struct
+	{
+	MemoryHunk prev;
+	int8_t *base, *alloc, *limit;
+	};
 
-#undef mem_alloc // that's for users of memory.h, not the implementation!
+#define BASIC_HUNK_SIZE 1000
+
+static MemoryHunk mh_new( int size, MemoryHunk prev, MemoryLifetime parent )
+	{
+	MemoryHunk result = (MemoryHunk)ml_alloc( parent, sizeof(*result) );
+	assert( size >= BASIC_HUNK_SIZE );
+	result->base  = result->alloc = (int8_t*)ml_alloc( parent, size );
+	result->limit = result->base + size;
+	result->prev  = prev;
+	return result;
+	}
 
 typedef struct header_struct
 	{
@@ -15,13 +30,25 @@ typedef struct header_struct
 	const char *file;
 	int line;
 	int size;
-	} Header;
+	} *Header;
 
-static Header *lastHeader;
-
-FUNC void *mem_allocAnnotated(int size, const char *file, int line)
+struct ml_struct
 	{
-	Header *result = (Header*)malloc(size + sizeof(Header));
+	MemoryLifetime parent;
+	MemoryHunk     curHunk;
+	};
+
+#ifndef NDEBUG
+
+// These macros are for users of memory.h, not the implementation
+#undef ml_alloc
+#undef ml_realloc
+
+static Header lastHeader = NULL;
+
+FUNC void *ml_allocAnnotated(MemoryLifetime ml, int size, const char *file, int line)
+	{
+	Header result = (Header)ml_alloc(ml, size + sizeof(*result));
 	check( result );
 	result->file = file;
 	result->line = line;
@@ -34,20 +61,20 @@ FUNC void *mem_allocAnnotated(int size, const char *file, int line)
 	return result+1;
 	}
 
-FUNC void *mem_reallocAnnotated(void *old, int size, const char *file, int line)
+FUNC void *ml_reallocAnnotated(MemoryLifetime ml, void *oldStorage, int oldSize, int newSize, const char *file, int line)
 	{
-	Header *oldHeader, *newHeader, *result;
-	oldHeader = ((Header*)old) - 1;
+	Header oldHeader, newHeader, result;
+	oldHeader = ((Header)oldStorage) - 1;
 	// Make a "naked header" to record the original alloc info
-	newHeader = ((Header*)mem_allocAnnotated( 1, oldHeader->file, oldHeader->line )) - 1;
+	newHeader = ((Header)ml_allocAnnotated( ml, 1, oldHeader->file, oldHeader->line )) - 1;
 	newHeader->size = oldHeader->size;
 	// Realloc the new block
-	result = (Header*)realloc(oldHeader, size + sizeof(Header));
+	result = ml_realloc( ml, oldHeader, oldSize + sizeof(*oldHeader), newSize + sizeof(*newHeader) );
 	check( result );
 	// Update new header to record new alloc info
 	result->file = file;
 	result->line = line;
-	result->size = size;
+	result->size = newSize;
 	// Fix up links
 	if( result->prev )
 		result->prev->next = result;
@@ -58,63 +85,53 @@ FUNC void *mem_reallocAnnotated(void *old, int size, const char *file, int line)
 	return result+1;
 	}
 
-FUNC void mem_report()
+FUNC int ml_sendReportTo( File fl )
 	{
-	Header *h;
+	Header h; int charsSent = 0;
 	for( h = lastHeader; h; h = h->prev )
-		printf("%d %s %d\n", h->size, h->file, h->line);
+		charsSent += fl_write( fl, "%d %s %d\n", h->size, h->file, h->line );
+	return charsSent;
 	}
 
 #endif
 
-typedef struct mh_struct *MemoryHunk;
-struct mh_struct
+FUNC MemoryLifetime ml_indefinite()
 	{
-	MemoryHunk prev;
-	int8_t *base, *alloc, *limit;
-	};
-
-static MemoryHunk mh_new( int size, MemoryHunk prev )
-	{
-	// if you want to use mem_alloc here, be careful freeing it
-	MemoryHunk result = (MemoryHunk)malloc( sizeof(*result) );
-	result->base  = result->alloc = (int8_t*)malloc( size );
-	result->limit = result->base + size;
-	result->prev  = prev;
-	return result;
+	static struct ml_struct result = { (MemoryLifetime)0xdead4 };
+	return &result;
 	}
 
-struct ml_struct
+FUNC MemoryLifetime ml_begin( int numBytesEstimate, MemoryLifetime parent )
 	{
-	MemoryHunk curHunk;
-	};
-
-#define BASIC_HUNK_SIZE 1000
-
-FUNC MemoryLifetime ml_new( int numBytesEstimate )
-	{
-	MemoryLifetime result = (MemoryLifetime)malloc( sizeof(*result) );
-	result->curHunk = (MemoryHunk)mh_new( numBytesEstimate + BASIC_HUNK_SIZE, NULL );
+	MemoryLifetime result = (MemoryLifetime)ml_alloc( parent, sizeof(*result) );
+	result->parent  = parent;
+	result->curHunk = (MemoryHunk)mh_new( numBytesEstimate + BASIC_HUNK_SIZE, NULL, parent );
 	return result;
 	}
 
 FUNC void *ml_alloc( MemoryLifetime ml, int numBytes )
 	{
-	MemoryHunk hunk = ml->curHunk; void *result;
-	if( hunk->limit - hunk->alloc < numBytes )
+	void *result;
+	if( ml == ml_indefinite() )
+		result = malloc( numBytes );
+	else
 		{
-		int newSize = 2 * ( hunk->limit - hunk->base );
-		if( newSize <  numBytes )
+		MemoryHunk hunk = ml->curHunk;
+		if( hunk->limit - hunk->alloc < numBytes )
 			{
-			// Big allocation - give it its own hunk and keep using the existing one
-			hunk->prev = mh_new( numBytes, hunk->prev );
-			hunk = hunk->prev;
+			int newSize = 2 * ( hunk->limit - hunk->base );
+			if( newSize <  numBytes )
+				{
+				// Big allocation - give it its own hunk and keep using the existing one
+				hunk->prev = mh_new( numBytes, hunk->prev, ml->parent );
+				hunk = hunk->prev;
+				}
+			else
+				hunk = ml->curHunk = mh_new( newSize, hunk, ml->parent );
 			}
-		else
-			hunk = ml->curHunk = mh_new( newSize, hunk );
+		result = hunk->alloc;
+		hunk->alloc += numBytes;
 		}
-	result = hunk->alloc;
-	hunk->alloc += numBytes;
 	return result;
 	}
 
@@ -143,28 +160,36 @@ static bool mh_reallocInPlace( MemoryHunk mh, int8_t *oldEnd, int delta )
 
 FUNC void *ml_realloc( MemoryLifetime ml, void *oldStorage, int oldNumBytes, int newNumBytes )
 	{
-	int8_t *oldEnd = ((int8_t*)oldStorage) + oldNumBytes;
-	int      delta = newNumBytes - oldNumBytes;
-	if( mh_reallocInPlace( ml->curHunk, oldEnd, delta ) )
-		return oldStorage;
+	if( ml == ml_indefinite() )
+		return realloc( oldStorage, newNumBytes );
 	else
 		{
-		void *result = ml_alloc( ml, newNumBytes );
-		memcpy( result, oldStorage, oldNumBytes );
-		return result;
+		int8_t *oldEnd = ((int8_t*)oldStorage) + oldNumBytes;
+		int      delta = newNumBytes - oldNumBytes;
+		if( mh_reallocInPlace( ml->curHunk, oldEnd, delta ) )
+			return oldStorage;
+		else
+			{
+			void *result = ml_alloc( ml, newNumBytes );
+			memcpy( result, oldStorage, oldNumBytes );
+			return result;
+			}
 		}
 	}
 
-FUNC void ml_free( MemoryLifetime ml )
+FUNC void ml_end( MemoryLifetime ml )
 	{
 	MemoryHunk hunk, prevHunk;
+	assert( ml != ml_indefinite() );
 	for( hunk = ml->curHunk; hunk; hunk = prevHunk )
 		{
 		prevHunk = hunk->prev;
+		memset( hunk->base, 0xde, sizeof(void*) );
 		free( hunk->base );
+		hunk->prev = (MemoryHunk)0xdead2;
 		free( hunk );
 		}
-	ml->curHunk = (MemoryHunk)0xdead;
+	ml->curHunk = (MemoryHunk)0xdead3;
 	free( ml );
 	}
 

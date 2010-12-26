@@ -13,11 +13,8 @@
 #define AR_PASTE1( left, right ) AR_PASTE0( left, right )
 #define AR_PREFIXED( str ) AR_PASTE1( AR_PREFIX, str )
 
-static inline AR_TYPE AR_PREFIXED( _new )( int capacity )
-	{ return (AR_TYPE)ar_new( capacity, sizeof(AR_ELEMENT) ); }
-
-static inline AR_TYPE AR_PREFIXED( _newInMB )( int capacity, MemoryLifetime ml )
-	{ return (AR_TYPE)ar_newInMB( capacity, sizeof(AR_ELEMENT), ml ); }
+static inline AR_TYPE AR_PREFIXED( _new )( int capacity, MemoryLifetime ml )
+	{ return (AR_TYPE)ar_new( capacity, sizeof(AR_ELEMENT), ml ); }
 
 static inline int AR_PREFIXED( _count )( AR_TYPE ar )
 	{ return ar_count( (Array)ar ); }

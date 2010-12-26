@@ -325,11 +325,12 @@ static Context populateScope( Context cx )
 int main(int argc, char **argv)
 	{
 	diagnostics = fdopen( 3, "wt" );
+	File memreport = fdopen( 4, "wt" );
 	SymbolTable st = theSymbolTable();
 	currentScope = populateScope( cx_new( st ) );
 	heap = theObjectHeap();
 	di = di_new( heap, st, NULL, diagnostics );
-	stack = sk_new();
+	stack = sk_new( ml_indefinite() );
 	tokenStream = theLexTokenStream( heap, st );
 	Object ob = ts_next( tokenStream );
 	while( ob )
@@ -356,7 +357,7 @@ int main(int argc, char **argv)
 			}
 		ob = ts_next( tokenStream );
 		}
-	mem_report();
+	ml_sendReportTo( memreport );
 	}
 
 //MERGE:70

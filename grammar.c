@@ -33,6 +33,7 @@ struct gr_struct
 	{
 	Symbol goal;
 	ProductionArray pra;
+	MemoryLifetime ml;
 	};
 
 // Production "references" are actually indexes within the ProductionArray,
@@ -89,11 +90,12 @@ FUNC Symbol pn_name( Production pn, int index, Grammar gr )
 	return rhs_element( pn2pns(pn,gr)->rhs, index )->token;
 	}
 
-FUNC Grammar gr_new( Symbol goal, int numProductionsEstimate )
+FUNC Grammar gr_new( Symbol goal, int numProductionsEstimate, MemoryLifetime ml )
 	{
-	Grammar result = (Grammar)mem_alloc( sizeof(*result) );
+	Grammar result = (Grammar)ml_alloc( ml, sizeof(*result) );
 	result->goal = goal;
-	result->pra  = pra_new( numProductionsEstimate );
+	result->pra  = pra_new( numProductionsEstimate, ml );
+	result->ml   = ml;
 	return result;
 	}
 
@@ -122,7 +124,7 @@ FUNC Production pn_new( Grammar gr, Symbol lhs, int lengthEstimate )
 	ProductionStorage result;
 	result = pra_nextElement( gr->pra );
 	result->lhs = lhs;
-	result->rhs = rhs_new( lengthEstimate );
+	result->rhs = rhs_new( lengthEstimate, gr->ml );
 	return pns2pn( result, gr );
 	}
 

@@ -6,7 +6,8 @@
 
 struct oh_struct
 	{
-	SymbolTable st;
+	SymbolTable    st;
+	MemoryLifetime ml;
 	int curCheckListIndex;
 	};
 
@@ -31,6 +32,7 @@ FUNC ObjectHeap theObjectHeap()
 	if( !_theObjectHeap.st )
 		{
 		_theObjectHeap.st = theSymbolTable();
+		_theObjectHeap.ml = ml_singleton();
 		_theObjectHeap.curCheckListIndex = 1;
 		}
 	return &_theObjectHeap;
@@ -43,9 +45,9 @@ typedef struct fl_struct
 	struct fl_struct *tail;
 	} *FieldList;
 
-static FieldList fl_new( SymbolIndex si, Object value, FieldList tail )
+static FieldList fl_new( SymbolIndex si, Object value, FieldList tail, ObjectHeap heap )
 	{
-	FieldList result = (FieldList)mem_alloc( sizeof(*result) );
+	FieldList result = (FieldList)ml_alloc( heap->ml, sizeof(*result) );
 	assert(( (intptr_t)result & OB_KIND_MASK ) == 0);
 	result->si    = si;
 	result->value = value;
@@ -77,7 +79,7 @@ struct ob_struct
 
 FUNC Object ob_create( Symbol tag, ObjectHeap heap )
 	{
-	Object result = (Object)mem_alloc( (sizeof(*result)) );
+	Object result = (Object)ml_alloc( heap->ml, (sizeof(*result)) );
 	result->tag = sy_index( tag, heap->st );
 	result->data.fields = NULL;
 	result->checkListIndex = heap->curCheckListIndex;
@@ -105,7 +107,7 @@ FUNC int ob_toInt( Object ob, ObjectHeap heap )
 
 FUNC Object ob_fromString( const char *value, ObjectHeap heap )
 	{
-	Object result = (Object)mem_alloc( (sizeof(*result)) );
+	Object result = (Object)ml_alloc( heap->ml, (sizeof(*result)) );
 	result->tag = SYM_STRING;
 	result->data.characters = strdup( value );
 	assert( ob_kind( result ) == OB_STRUCT );
@@ -136,7 +138,7 @@ FUNC Symbol ob_toSymbol( Object ob, ObjectHeap heap )
 
 FUNC Object ob_fromTokenBlock( TokenBlock tb, ObjectHeap heap )
 	{
-	Object result = (Object)mem_alloc( (sizeof(*result)) );
+	Object result = (Object)ml_alloc( heap->ml, (sizeof(*result)) );
 	result->tag = SYM_TOKEN_BLOCK;
 	result->data.tokenBlock = tb;
 	assert( ob_kind( result ) == OB_STRUCT );
@@ -156,7 +158,7 @@ FUNC TokenBlock ob_toTokenBlock( Object ob, ObjectHeap heap )
 
 FUNC Object ob_fromTokenStream( TokenStream ts, ObjectHeap heap )
 	{
-	Object result = (Object)mem_alloc( (sizeof(*result)) );
+	Object result = (Object)ml_alloc( heap->ml, (sizeof(*result)) );
 	result->tag = SYM_TOKEN_STREAM;
 	result->data.tokenStream = ts;
 	assert( ob_kind( result ) == OB_STRUCT );
@@ -207,14 +209,14 @@ static Object ob_getItem( Object ob, SymbolIndex si )
 	return fl->value;
 	}
 
-static void ob_setItem( Object ob, SymbolIndex si, Object value )
+static void ob_setItem( Object ob, SymbolIndex si, Object value, ObjectHeap heap )
 	{
 	assert( ob_hasItems( ob ) );
 	FieldList fl = fl_bySymbol( si, ob->data.fields );
 	if( fl )
 		fl->value = value;
 	else
-		ob->data.fields = fl_new( si, value, ob->data.fields );
+		ob->data.fields = fl_new( si, value, ob->data.fields, heap );
 	assert( ob_hasItem( ob, si ) );
 	assert( ob_getItem( ob, si ) == value );
 	}
@@ -233,7 +235,7 @@ FUNC Object ob_getField( Object ob, Symbol field, ObjectHeap heap )
 FUNC void ob_setField( Object ob, Symbol field, Object value, ObjectHeap heap )
 	{
 	check( ob_hasItems( ob ) );
-	ob_setItem( ob, sy_index( field, heap->st ), value );
+	ob_setItem( ob, sy_index( field, heap->st ), value, heap );
 	assert( ob_hasField( ob, field, heap ) );
 	assert( ob_getField( ob, field, heap ) == value );
 	}
@@ -252,7 +254,7 @@ FUNC Object ob_getElement( Object ob, int index, ObjectHeap heap )
 FUNC void ob_setElement( Object ob, int index, Object value, ObjectHeap heap )
 	{
 	check( ob_hasItems(ob) );
-	ob_setItem( ob, (SymbolIndex)index, value );
+	ob_setItem( ob, (SymbolIndex)index, value, heap );
 	assert( ob_hasElement( ob, index, heap ) );
 	assert( ob_getElement( ob, index, heap ) == value );
 	}
@@ -268,17 +270,17 @@ struct cl_struct
 
 FUNC CheckList cl_open( ObjectHeap heap )
 	{
-	MemoryLifetime ml = ml_new( 1000 );
-	CheckList result = (CheckList)ml_alloc( ml, sizeof(*result) );
+	MemoryLifetime checklistLifetime = ml_begin( 1000, heap->ml );
+	CheckList result = (CheckList)ml_alloc( checklistLifetime, sizeof(*result) );
 	result->heap = heap;
-	result->ml = ml;
-	result->checkMarks = bv_newInMB( 50, ml );
+	result->ml = checklistLifetime;
+	result->checkMarks = bv_new( 50, checklistLifetime );
 	return result;
 	}
 
 FUNC void cl_close( CheckList cl )
 	{
-	ml_free( cl->ml );
+	ml_end( cl->ml );
 	}
 
 FUNC void cl_check( CheckList cl, Object ob )

@@ -3,24 +3,26 @@
 #define MEMORY_H
 
 #include "base.h"
+#include "file.h"
 
-#ifdef NDEBUG
-	#include <stdlib.h>
-	#define mem_alloc malloc
-	#define mem_realloc realloc
-	#define mem_report()
-#else
-	FUNC void *mem_allocAnnotated(int size, const char *file, int line);
-	FUNC void *mem_reallocAnnotated(void *old, int size, const char *file, int line);
-	FUNC void mem_report();
-	#define mem_alloc(s)     mem_allocAnnotated   ((s),     __FILE__, __LINE__)
-	#define mem_realloc(p,s) mem_reallocAnnotated ((p),(s), __FILE__, __LINE__)
-#endif
+FUNC MemoryLifetime ml_begin ( int numBytesEstimate, MemoryLifetime parent );
+FUNC void           ml_end   ( MemoryLifetime ml );
+FUNC MemoryLifetime ml_indefinite(); // Never ends
 
-FUNC MemoryLifetime ml_new( int numBytesEstimate );
+#define ml_undecided ml_indefinite // To mark uses I probably want to change later
+#define ml_singleton ml_indefinite // To mark uses for singletons that might not always be singletons
+
 FUNC void *ml_alloc   ( MemoryLifetime ml, int numBytes );
 FUNC void *ml_realloc ( MemoryLifetime ml, void *oldStorage, int oldNumBytes, int newNumBytes );
-FUNC void  ml_free    ( MemoryLifetime ml );
+
+#ifndef NDEBUG
+	FUNC void *ml_allocAnnotated   ( MemoryLifetime ml, int numBytes, const char *file, int line );
+	FUNC void *ml_reallocAnnotated ( MemoryLifetime ml, void *oldStorage, int oldNumBytes, int newNumBytes, const char *file, int line );
+	FUNC int   ml_sendReportTo     ( File fl );
+
+	#define ml_alloc(ml,s)       ml_allocAnnotated   ((ml),(s),         __FILE__, __LINE__)
+	#define ml_realloc(ml,p,o,n) ml_reallocAnnotated ((ml),(p),(o),(n), __FILE__, __LINE__)
+#endif
 
 #endif
 

@@ -58,9 +58,9 @@ struct di_struct
 
 FUNC Dispatcher di_new( ObjectHeap heap, SymbolTable st, Action shiftAction, File diagnostics )
 	{
-	Dispatcher result = (Dispatcher)mem_alloc( sizeof(*result) );
+	Dispatcher result = (Dispatcher)ml_alloc( ml_undecided(), sizeof(*result) );
 	result->heap = heap;
-	result->stack = sfa_new( 19 );
+	result->stack = sfa_new( 19, ml_undecided() );
 	result->st = st;
 	result->shiftAction = shiftAction;
 	result->diagnostics = diagnostics;

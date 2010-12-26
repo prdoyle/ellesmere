@@ -13,17 +13,7 @@ struct ar_struct
 	MemoryLifetime ml;
 	};
 
-FUNC Array ar_new( int capacity, int elementSize )
-	{
-	Array result = (Array)mem_alloc( sizeof(*result) );
-	result->count = 0;
-	result->capacity = capacity;
-	result->ml = NULL;
-	result->storage = mem_alloc( result->capacity * elementSize );
-	return result;
-	}
-
-FUNC Array ar_newInMB( int capacity, int elementSize, MemoryLifetime ml )
+FUNC Array ar_new( int capacity, int elementSize, MemoryLifetime ml )
 	{
 	Array result = (Array)ml_alloc( ml, sizeof(*result) );
 	result->count = 0;
@@ -65,10 +55,7 @@ static void ar_changeCapacity( Array ar, int newCapacity, int elementSize ) __at
 static void ar_changeCapacity( Array ar, int newCapacity, int elementSize )
 	{
 	assert( newCapacity != ar->capacity );
-	if( ar->ml )
-		ar->storage = ml_realloc( ar->ml, ar->storage, ar->capacity * elementSize, newCapacity * elementSize );
-	else
-		ar->storage = mem_realloc( ar->storage, newCapacity * elementSize );
+	ar->storage = ml_realloc( ar->ml, ar->storage, ar->capacity * elementSize, newCapacity * elementSize );
 	ar->capacity = newCapacity;
 	if( newCapacity < ar->count )
 		ar->count = newCapacity;

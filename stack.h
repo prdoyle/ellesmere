@@ -4,7 +4,7 @@
 
 #include "objects.h"
 
-FUNC Stack  sk_new();
+FUNC Stack  sk_new( MemoryLifetime ml );
 FUNC int    sk_depth  ( Stack sk );
 FUNC void   sk_push   ( Stack sk, Object ob );
 FUNC Object sk_item   ( Stack sk, int depth );
