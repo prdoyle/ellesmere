@@ -10,7 +10,7 @@ struct ar_struct
 	int   count;
 	int   capacity;
 	void *storage;
-	MemoryBatch mb;
+	MemoryLifetime ml;
 	};
 
 FUNC Array ar_new( int capacity, int elementSize )
@@ -18,18 +18,18 @@ FUNC Array ar_new( int capacity, int elementSize )
 	Array result = (Array)mem_alloc( sizeof(*result) );
 	result->count = 0;
 	result->capacity = capacity;
-	result->mb = NULL;
+	result->ml = NULL;
 	result->storage = mem_alloc( result->capacity * elementSize );
 	return result;
 	}
 
-FUNC Array ar_newInMB( int capacity, int elementSize, MemoryBatch mb )
+FUNC Array ar_newInMB( int capacity, int elementSize, MemoryLifetime ml )
 	{
-	Array result = (Array)mb_alloc( mb, sizeof(*result) );
+	Array result = (Array)ml_alloc( ml, sizeof(*result) );
 	result->count = 0;
 	result->capacity = capacity;
-	result->mb = mb;
-	result->storage = mb_alloc( mb, result->capacity * elementSize );
+	result->ml = ml;
+	result->storage = ml_alloc( ml, result->capacity * elementSize );
 	return result;
 	}
 
@@ -65,8 +65,8 @@ static void ar_changeCapacity( Array ar, int newCapacity, int elementSize ) __at
 static void ar_changeCapacity( Array ar, int newCapacity, int elementSize )
 	{
 	assert( newCapacity != ar->capacity );
-	if( ar->mb )
-		ar->storage = mb_realloc( ar->mb, ar->storage, ar->capacity * elementSize, newCapacity * elementSize );
+	if( ar->ml )
+		ar->storage = ml_realloc( ar->ml, ar->storage, ar->capacity * elementSize, newCapacity * elementSize );
 	else
 		ar->storage = mem_realloc( ar->storage, newCapacity * elementSize );
 	ar->capacity = newCapacity;

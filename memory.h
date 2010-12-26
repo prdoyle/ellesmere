@@ -17,10 +17,10 @@
 	#define mem_realloc(p,s) mem_reallocAnnotated ((p),(s), __FILE__, __LINE__)
 #endif
 
-FUNC MemoryBatch mb_new( int numBytesEstimate );
-FUNC void *mb_alloc   ( MemoryBatch mb, int numBytes );
-FUNC void *mb_realloc ( MemoryBatch mb, void *oldStorage, int oldNumBytes, int newNumBytes );
-FUNC void  mb_free    ( MemoryBatch mb );
+FUNC MemoryLifetime ml_new( int numBytesEstimate );
+FUNC void *ml_alloc   ( MemoryLifetime ml, int numBytes );
+FUNC void *ml_realloc ( MemoryLifetime ml, void *oldStorage, int oldNumBytes, int newNumBytes );
+FUNC void  ml_free    ( MemoryLifetime ml );
 
 #endif
 

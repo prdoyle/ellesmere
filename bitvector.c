@@ -10,9 +10,9 @@ enum { BITS_PER_WORD = sizeof(Word) * 8 };
 
 struct bv_struct
 	{
-	int         numWords;
-	Word       *words;
-	MemoryBatch mb;
+	int   numWords;
+	Word *words;
+	MemoryLifetime ml;
 	};
 
 static int min(int a, int b)
@@ -33,15 +33,15 @@ static Word bit2mask( int bitNum )
 	return ((Word)1) << bit2shift( bitNum );
 	}
 
-FUNC BitVector bv_newInMB( int numBits, MemoryBatch mb )
+FUNC BitVector bv_newInMB( int numBits, MemoryLifetime ml )
 	{
 	int numWords = bit2word( numBits-1 ) + 1;
 	int numBytes = numWords * sizeof( Word );
 	BitVector result;
-	if( mb )
+	if( ml )
 		{
-		result    = (BitVector)mb_alloc( mb, sizeof(*result) );
-		result->words = (Word*)mb_alloc( mb, numBytes );
+		result    = (BitVector)ml_alloc( ml, sizeof(*result) );
+		result->words = (Word*)ml_alloc( ml, numBytes );
 		}
 	else
 		{
@@ -49,7 +49,7 @@ FUNC BitVector bv_newInMB( int numBits, MemoryBatch mb )
 		result->words = (Word*)mem_alloc( numBytes );
 		}
 	result->numWords = numWords;
-	result->mb       = mb;
+	result->ml       = ml;
 	memset( result->words, 0, numBytes );
 	return result;
 	}
@@ -61,8 +61,8 @@ FUNC BitVector bv_new( int numBits )
 
 static void bv_reallocWords( BitVector bv, int newNumWords )
 	{
-	if( bv->mb )
-		bv->words = (Word*)mb_realloc( bv->mb, bv->words, bv->numWords * sizeof( Word ), newNumWords * sizeof( Word ) );
+	if( bv->ml )
+		bv->words = (Word*)ml_realloc( bv->ml, bv->words, bv->numWords * sizeof( Word ), newNumWords * sizeof( Word ) );
 	else
 		bv->words = (Word*)mem_realloc( bv->words, newNumWords * sizeof( Word ) );
 	bv->numWords = newNumWords;
@@ -245,8 +245,8 @@ FUNC void bv_shrinkWrap( BitVector bv )
 	for( i=0; i < bv->numWords; i++ )
 		if( bv->words[i] )
 			newNumWords = i+1;
-	if( bv->mb )
-		bv->words = (Word*)mb_realloc( bv->mb, bv->words, bv->numWords * sizeof( Word ), newNumWords * sizeof( Word ) );
+	if( bv->ml )
+		bv->words = (Word*)ml_realloc( bv->ml, bv->words, bv->numWords * sizeof( Word ), newNumWords * sizeof( Word ) );
 	else
 		bv->words = (Word*)mem_realloc( bv->words, newNumWords * sizeof( Word ) );
 	bv->numWords = newNumWords;

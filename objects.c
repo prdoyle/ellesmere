@@ -261,24 +261,24 @@ FUNC void ob_setElement( Object ob, int index, Object value, ObjectHeap heap )
 
 struct cl_struct
 	{
-	ObjectHeap  heap;
-	MemoryBatch mb;
-	BitVector   checkMarks;
+	ObjectHeap heap;
+	BitVector  checkMarks;
+	MemoryLifetime ml;
 	};
 
 FUNC CheckList cl_open( ObjectHeap heap )
 	{
-	MemoryBatch mb = mb_new( 1000 );
-	CheckList result = (CheckList)mb_alloc( mb, sizeof(*result) );
+	MemoryLifetime ml = ml_new( 1000 );
+	CheckList result = (CheckList)ml_alloc( ml, sizeof(*result) );
 	result->heap = heap;
-	result->mb = mb;
-	result->checkMarks = bv_newInMB( 50, mb );
+	result->ml = ml;
+	result->checkMarks = bv_newInMB( 50, ml );
 	return result;
 	}
 
 FUNC void cl_close( CheckList cl )
 	{
-	mb_free( cl->mb );
+	ml_free( cl->ml );
 	}
 
 FUNC void cl_check( CheckList cl, Object ob )

@@ -84,23 +84,23 @@ static MemoryHunk mh_new( int size, MemoryHunk prev )
 	return result;
 	}
 
-struct mb_struct
+struct ml_struct
 	{
 	MemoryHunk curHunk;
 	};
 
 #define BASIC_HUNK_SIZE 1000
 
-FUNC MemoryBatch mb_new( int numBytesEstimate )
+FUNC MemoryLifetime ml_new( int numBytesEstimate )
 	{
-	MemoryBatch result = (MemoryBatch)malloc( sizeof(*result) );
+	MemoryLifetime result = (MemoryLifetime)malloc( sizeof(*result) );
 	result->curHunk = (MemoryHunk)mh_new( numBytesEstimate + BASIC_HUNK_SIZE, NULL );
 	return result;
 	}
 
-FUNC void *mb_alloc( MemoryBatch mb, int numBytes )
+FUNC void *ml_alloc( MemoryLifetime ml, int numBytes )
 	{
-	MemoryHunk hunk = mb->curHunk; void *result;
+	MemoryHunk hunk = ml->curHunk; void *result;
 	if( hunk->limit - hunk->alloc < numBytes )
 		{
 		int newSize = 2 * ( hunk->limit - hunk->base );
@@ -111,7 +111,7 @@ FUNC void *mb_alloc( MemoryBatch mb, int numBytes )
 			hunk = hunk->prev;
 			}
 		else
-			hunk = mb->curHunk = mh_new( newSize, hunk );
+			hunk = ml->curHunk = mh_new( newSize, hunk );
 		}
 	result = hunk->alloc;
 	hunk->alloc += numBytes;
@@ -141,31 +141,31 @@ static bool mh_reallocInPlace( MemoryHunk mh, int8_t *oldEnd, int delta )
 	return false;
 	}
 
-FUNC void *mb_realloc( MemoryBatch mb, void *oldStorage, int oldNumBytes, int newNumBytes )
+FUNC void *ml_realloc( MemoryLifetime ml, void *oldStorage, int oldNumBytes, int newNumBytes )
 	{
 	int8_t *oldEnd = ((int8_t*)oldStorage) + oldNumBytes;
 	int      delta = newNumBytes - oldNumBytes;
-	if( mh_reallocInPlace( mb->curHunk, oldEnd, delta ) )
+	if( mh_reallocInPlace( ml->curHunk, oldEnd, delta ) )
 		return oldStorage;
 	else
 		{
-		void *result = mb_alloc( mb, newNumBytes );
+		void *result = ml_alloc( ml, newNumBytes );
 		memcpy( result, oldStorage, oldNumBytes );
 		return result;
 		}
 	}
 
-FUNC void mb_free( MemoryBatch mb )
+FUNC void ml_free( MemoryLifetime ml )
 	{
 	MemoryHunk hunk, prevHunk;
-	for( hunk = mb->curHunk; hunk; hunk = prevHunk )
+	for( hunk = ml->curHunk; hunk; hunk = prevHunk )
 		{
 		prevHunk = hunk->prev;
 		free( hunk->base );
 		free( hunk );
 		}
-	mb->curHunk = (MemoryHunk)0xdead;
-	free( mb );
+	ml->curHunk = (MemoryHunk)0xdead;
+	free( ml );
 	}
 
 // MERGE:5

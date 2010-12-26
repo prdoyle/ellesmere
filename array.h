@@ -5,7 +5,7 @@
 #include "base.h"
 
 FUNC Array ar_new      ( int capacity, int elementSize );
-FUNC Array ar_newInMB  ( int capacity, int elementSize, MemoryBatch mb );
+FUNC Array ar_newInMB  ( int capacity, int elementSize, MemoryLifetime ml );
 FUNC int   ar_count    ( Array ar );
 FUNC int   ar_capacity ( Array ar );
 FUNC void *ar_element  ( Array ar, int index, int elementSize );

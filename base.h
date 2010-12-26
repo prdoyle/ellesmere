@@ -25,7 +25,7 @@ typedef struct cl_struct *CheckList;
 typedef struct cx_struct *Context;
 typedef struct di_struct *Dispatcher;
 typedef struct gr_struct *Grammar;
-typedef struct mb_struct *MemoryBatch;
+typedef struct ml_struct *MemoryLifetime;
 typedef struct ob_struct *Object;
 typedef struct oh_struct *ObjectHeap;
 typedef struct ps_struct *Parser;
