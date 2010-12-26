@@ -451,6 +451,7 @@ static GrammarLine grammar[] =
 
 	{ "Truck",      "FireTruck" },
 	{ ":INT",       "numHoses", "FireTruck" },
+	//{ ":INT",       "numWheels", "FireTruck" }, // If subclass overrides, we end up with an R/R conflict
 
 	};
 
