@@ -252,7 +252,7 @@ FUNC int bv_sendFormattedTo( BitVector bv, File fl, const char *firstFormat, con
 static BitVector populate( int *entries, int numEntries )
 	{
 	int i;
-	BitVector bv = bv_new( entries[ numEntries-1 ] );
+	BitVector bv = bv_new( entries[ numEntries-1 ], ml_indefinite() );
 	for( i=0; i < numEntries; i++ )
 		bv_set( bv, entries[i] );
 	return bv;

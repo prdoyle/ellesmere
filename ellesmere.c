@@ -325,7 +325,6 @@ static Context populateScope( Context cx )
 int main(int argc, char **argv)
 	{
 	diagnostics = fdopen( 3, "wt" );
-	File memreport = fdopen( 4, "wt" );
 	SymbolTable st = theSymbolTable();
 	currentScope = populateScope( cx_new( st ) );
 	heap = theObjectHeap();
@@ -357,7 +356,10 @@ int main(int argc, char **argv)
 			}
 		ob = ts_next( tokenStream );
 		}
+#ifndef NDEBUG
+	File memreport = fdopen( 4, "wt" );
 	ml_sendReportTo( memreport );
+#endif
 	}
 
 //MERGE:70
