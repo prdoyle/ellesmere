@@ -34,6 +34,7 @@ struct gr_struct
 	Symbol goal;
 	ProductionArray pra;
 	MemoryLifetime ml;
+	int numItems;
 	};
 
 // Production "references" are actually indexes within the ProductionArray,
@@ -63,6 +64,7 @@ FUNC void pn_appendWithName( Production pn, Symbol name, Symbol token, Grammar g
 	pe = rhs_nextElement( pns->rhs );
 	pe->token = token;
 	pe->name  = name;
+	gr->numItems++;
 	}
 
 FUNC void pn_stopAppending( Production pn, Grammar gr )
@@ -93,15 +95,30 @@ FUNC Symbol pn_name( Production pn, int index, Grammar gr )
 FUNC Grammar gr_new( Symbol goal, int numProductionsEstimate, MemoryLifetime ml )
 	{
 	Grammar result = (Grammar)ml_alloc( ml, sizeof(*result) );
-	result->goal = goal;
-	result->pra  = pra_new( numProductionsEstimate, ml );
-	result->ml   = ml;
+	result->goal     = goal;
+	result->pra      = pra_new( numProductionsEstimate, ml );
+	result->ml       = ml;
+	result->numItems = 0;
 	return result;
 	}
 
 FUNC int gr_numProductions( Grammar gr )
 	{
 	return pra_count( gr->pra );
+	}
+
+static int gr_countItems( Grammar gr )
+	{
+	int result = 0; int i;
+	for( i=0; i < gr_numProductions( gr ); i++ )
+		result += 1 + pn_length( gr_production(gr, i), gr );
+	return result;
+	}
+
+FUNC int gr_numItems( Grammar gr )
+	{
+	assert( gr->numItems == gr_countItems(gr) );
+	return gr->numItems;
 	}
 
 FUNC void gr_stopAdding( Grammar gr )
@@ -125,6 +142,7 @@ FUNC Production pn_new( Grammar gr, Symbol lhs, int lengthEstimate )
 	result = pra_nextElement( gr->pra );
 	result->lhs = lhs;
 	result->rhs = rhs_new( lengthEstimate, gr->ml );
+	gr->numItems++;
 	return pns2pn( result, gr );
 	}
 

@@ -181,6 +181,9 @@ FUNC void ml_end( MemoryLifetime ml )
 	{
 	MemoryHunk hunk, prevHunk;
 	assert( ml != ml_indefinite() );
+	if( ml->parent != ml_indefinite() )
+		return; // No way to free these yet
+	return; // No way to tell annotated from non-annotated blocks yet
 	for( hunk = ml->curHunk; hunk; hunk = prevHunk )
 		{
 		prevHunk = hunk->prev;

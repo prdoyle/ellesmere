@@ -8,6 +8,7 @@ FUNC Grammar    gr_new( Symbol goal, int numProductionsEstimate, MemoryLifetime 
 FUNC void       gr_stopAdding     ( Grammar gr );
 FUNC Symbol     gr_goal           ( Grammar gr );
 FUNC int        gr_numProductions ( Grammar gr );
+FUNC int        gr_numItems       ( Grammar gr );
 FUNC Production gr_production     ( Grammar gr, int index );
 FUNC int        gr_sendTo         ( Grammar gr, File fl, SymbolTable st );
 

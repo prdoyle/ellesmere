@@ -239,6 +239,7 @@ static void pg_populateSymbolSideTable( ParserGenerator pg )
 		// now the item where j == pn_length
 		itemIndex++;
 		}
+	assert( itemIndex == gr_numItems( pg->gr ) );
 	}
 
 static void pg_computeAutomaton( ParserGenerator pg, File traceFile )
@@ -246,7 +247,7 @@ static void pg_computeAutomaton( ParserGenerator pg, File traceFile )
 	MemoryLifetime ml = pg->generateTime;
 	SymbolTable st = pg->st;
 	ItemSet curItemSet, startItemSet;
-	int itemCount = ita_count( pg->items );
+	int itemCount = gr_numItems( pg->gr );
 	BitVector nextItems = bv_new( itemCount, ml );
 	pg->itemSets = itst_new( itemCount * itemCount, ml ); // guesstimate of number of item sets
 	startItemSet = curItemSet = pg_createItemSet( pg, pg_sideTableEntry( pg, gr_goal(pg->gr) )->leftmostItems );
@@ -465,7 +466,7 @@ int main( int argc, char *argv[] )
 
 	st = theSymbolTable();
 	goal = sy_byName( grammar[0][0], st );
-	gr = gr_new( goal, asizeof( grammar ) );
+	gr = gr_new( goal, asizeof( grammar ), ml_indefinite() );
 	for( i=0; i < asizeof( grammar ); i++ )
 		{
 		Production pn = pn_new( gr, sy_byName( grammar[i][0], st ), 10 );
@@ -474,7 +475,7 @@ int main( int argc, char *argv[] )
 		}
 	gr_sendTo( gr, traceFile, st );
 
-	pg = pg_new( gr, st, ml_begin( 10000 ), theObjectHeap() );
+	pg = pg_new( gr, st, ml_begin( 10000, ml_indefinite() ), ml_indefinite(), theObjectHeap() );
 
 	pg_populateItemTable( pg );
 	fl_write( traceFile, "Items:\n" );

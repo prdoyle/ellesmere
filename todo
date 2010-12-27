@@ -1,5 +1,5 @@
 TODO
-- Everything should use a MemoryBatch (MemorySource?)
+- Perhaps MemoryLifetimes shouldn't support nesting?
 - Should array_template include the capability to add a header struct?
 - Implement the "handle recognizer" Parser interface
 - Implement at least SLR grammars
@@ -9,6 +9,7 @@ DONE
 - Enhance token streams to record symbols / strings / ints too
 - Use that as the only interface from ellesmere.c
 - "Block" should push a token block, not a token stream
+- Everything should use a MemoryBatch (MemorySource?)
 
 RAMBLINGS
 - Must reimplement globals.  Dispatcher needs to be involved I think.  If some other dude replaces them with their values, dispatcher never sees the tokens and can't tell the arity.
