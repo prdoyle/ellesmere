@@ -1,5 +1,6 @@
 TODO
 - Perhaps MemoryLifetimes shouldn't support nesting?
+- Do FIRST and FOLLOW sets, and prepare to calculate lookahead sets
 - Should array_template include the capability to add a header struct?
 - Implement the "handle recognizer" Parser interface
 - Implement at least SLR grammars

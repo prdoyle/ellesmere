@@ -36,6 +36,9 @@ typedef struct sste_struct
 	Symbol sy;
 	ItemVector leftmostItems;  // items with pn_lhs( pn ) == sy && dot == 0
 	ItemVector expectingItems; // items with dot immediately before sy
+	SymbolVector first;
+	SymbolVector follow;
+	SymbolVector lookahead;
 	} *SymbolSideTableEntry;
 
 typedef struct sst_struct *SymbolSideTable;
@@ -71,13 +74,19 @@ typedef struct pg_struct
 	SymbolTable      st;
 	SymbolSideTable  sst;
 	int             *sstIndexes;
+	SymbolVector     nullableSymbols;
 	ItemSetTable     itemSets;
 	} *ParserGenerator;
+
+static int pg_symbolSideTableIndex( ParserGenerator pg, Symbol sy )
+	{
+	return pg->sstIndexes[ sy_index( sy, pg->st ) ];
+	}
 
 static SymbolSideTableEntry pg_sideTableEntry( ParserGenerator pg, Symbol sy )
 	{
 	SymbolSideTableEntry result;
-	int sstIndex = pg->sstIndexes[ sy_index( sy, pg->st ) ];
+	int sstIndex = pg_symbolSideTableIndex( pg, sy );
 	if( sstIndex )
 		result = sst_element( pg->sst, sstIndex );
 	else
@@ -109,9 +118,7 @@ static void pg_closeItemVector( ParserGenerator pg, ItemVector itemVector )
 			{
 			Item it = ita_element( pg->items, i );
 			Production pn = it->pn;
-			if( pn_length( pn, pg->gr ) == 0 )
-				assert(0); // TODO: empty productions?
-			if( !bv_isSet( pg->rightmostItems, i ) )
+			if( !bv_isSet( pg->rightmostItems, i ) ) // Note: this skips empty productions
 				{
 				Symbol nextToken = pn_token( pn, it->dot, pg->gr );
 				SymbolSideTableEntry lhs = pg_sideTableEntry( pg, nextToken );
@@ -217,6 +224,7 @@ static void pg_populateSymbolSideTable( ParserGenerator pg )
 	pg->sstIndexes = (int*)ml_alloc( ml, sstIndexesSize );
 	memset( pg->sstIndexes, 0, sstIndexesSize );
 	pg->sst = sst_new( 100, ml );
+	pg->nullableSymbols = bv_new( 100, ml );
 	sst_incCount( pg->sst ); // sst index zero is used for "null" so skip that one
 	itemIndex = 0;
 	for( i=0; i < gr_numProductions(gr); i++ )
@@ -239,13 +247,27 @@ static void pg_populateSymbolSideTable( ParserGenerator pg )
 			bv_set( entry->expectingItems, itemIndex );
 			itemIndex++;
 			}
-		// now the item where j == pn_length
-		itemIndex++;
+		if( j==0 )
+			bv_set( pg->nullableSymbols, pg_symbolSideTableIndex( pg, lhs ) );
+		itemIndex++; // Account for the item where j == pn_length
 		}
 	assert( itemIndex == gr_numItems( pg->gr ) );
+	sst_shrinkWrap( pg->sst );
+	bv_shrinkWrap( pg->nullableSymbols );
+
+	// Some more initialization now that we know how many side table entries there are
+	int numSymbols = sst_count( pg->sst );
+	for( i=0; i < numSymbols; i++ )
+		{
+		SymbolSideTableEntry sste = sst_element( pg->sst, i );
+		sste->first     = bv_new( numSymbols, pg->generateTime );
+		sste->follow    = bv_new( numSymbols, pg->generateTime );
+		sste->lookahead = bv_new( numSymbols, pg->generateTime );
+		bv_set( sste->first, i );
+		}
 	}
 
-static void pg_computeAutomaton( ParserGenerator pg, File traceFile )
+static void pg_computeStateNodes( ParserGenerator pg, File traceFile )
 	{
 	MemoryLifetime ml = pg->generateTime;
 	SymbolTable st = pg->st;
@@ -331,6 +353,35 @@ static void pg_computeAutomaton( ParserGenerator pg, File traceFile )
 		}
 	}
 
+static void pg_computeFirstSets( ParserGenerator pg, File traceFile )
+	{
+	int pnNum;
+	bool somethingChanged = true;
+	while( somethingChanged )
+		{
+		somethingChanged = false;
+		for( pnNum=0; pnNum < gr_numProductions( pg->gr ); pnNum++ )
+			{
+			Production pn = gr_production( pg->gr, pnNum );
+			int lhsIndex  = pg_symbolSideTableIndex( pg, pn_lhs( pn, pg->gr ) );
+			SymbolSideTableEntry lhs = sst_element( pg->sst, lhsIndex );
+			int i;
+			for( i = 0; i < pn_length( pn, pg->gr ); i++ )
+				{
+				int tokIndex = pg_symbolSideTableIndex( pg, pn_token( pn, i, pg->gr ) );
+				SymbolVector tokFirst = sst_element( pg->sst, tokIndex )->first;
+				if( !bv_contains( lhs->first, tokFirst ) )
+					{
+					somethingChanged = true;
+					bv_or( lhs->first, tokFirst );
+					}
+				if( !bv_isSet( pg->nullableSymbols, tokIndex ) )
+					break; // This token is not nullable so subsequent tokens don't belong in the first set
+				}
+			}
+		}
+	}
+
 FUNC Parser ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml )
 	{
 	MemoryLifetime generateTime = ml_begin( 10000, ml );
@@ -338,7 +389,10 @@ FUNC Parser ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml )
 	// TODO: generate the parser
 	pg_populateItemTable( pg );
 	pg_populateSymbolSideTable( pg );
-	pg_computeAutomaton( pg, NULL );
+	pg_computeStateNodes( pg, NULL );
+	pg_computeFirstSets( pg, NULL );
+	//pg_computeFollowSets( pg, NULL );
+	//pg_computeLookaheadSets( pg, NULL );
 	ml_end( generateTime );
 	return pg? NULL: NULL;
 	}
@@ -522,7 +576,7 @@ int main( int argc, char *argv[] )
 			}
 		}
 
-	pg_computeAutomaton( pg, traceFile );
+	pg_computeStateNodes( pg, traceFile );
 	//ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
 	fprintf( dotFile, "digraph \"G\" {\n" );
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
@@ -539,6 +593,25 @@ int main( int argc, char *argv[] )
 		}
 	ob_sendDotEdgesTo( itst_element( pg->itemSets, 0 )->stateNode, dotFile, pg->heap );
 	fprintf( dotFile, "}\n" );
+
+	pg_computeFirstSets( pg, traceFile );
+	//pg_computeFollowSets( pg, traceFile );
+	//pg_computeLookaheadSets( pg, traceFile );
+	fl_write( traceFile, "Symbol sets:\n" );
+	for( i=1; i < sst_count( pg->sst ); i++ )
+		{
+		SymbolSideTableEntry sste = sst_element( pg->sst, i );
+		fl_write( traceFile, "  %3d: %s\n", i, sy_name( sste->sy, st ) );
+		fl_write( traceFile, "     first: " );
+		bv_sendTo( sste->first, traceFile );
+		fl_write( traceFile, "\n" );
+		fl_write( traceFile, "     follow: " );
+		bv_sendTo( sste->follow, traceFile );
+		fl_write( traceFile, "\n" );
+		fl_write( traceFile, "     lookahead: " );
+		bv_sendTo( sste->lookahead, traceFile );
+		fl_write( traceFile, "\n" );
+		}
 
 	return 0;
 	}

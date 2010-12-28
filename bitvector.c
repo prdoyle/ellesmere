@@ -166,6 +166,18 @@ FUNC bool bv_equals( BitVector bv, BitVector other )
 	return bv_nextBit( bigger, stop * BITS_PER_WORD ) == bv_END;
 	}
 
+FUNC bool bv_contains( BitVector bv, BitVector other )
+	{
+	// TODO: Do this without temporaries
+	MemoryLifetime tempML = ml_begin( sizeof(*bv) + bv->numWords * sizeof(Word), bv->ml );
+	BitVector tempBV = bv_new( bv->numWords * BITS_PER_WORD, tempML );
+	bv_copy( tempBV, bv );
+	bv_and( tempBV, other );
+	bool result = bv_equals( tempBV, other );
+	ml_end( tempML );
+	return result;
+	}
+
 FUNC void bv_and( BitVector target, BitVector source )
 	{
 	int i, stop = min( target->numWords, source->numWords );
@@ -378,6 +390,8 @@ int main( int argc, char **argv )
 	a = populate( test8, asizeof( test8 ) );
 	b = populate( test9, asizeof( test9 ) );
 	errorOccurred |= bv_equals( a, b );
+	errorOccurred |= !bv_contains( a, b );
+	errorOccurred |= bv_contains( b, a );
 
 	return errorOccurred? 1 : 0;
 	}
