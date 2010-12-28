@@ -196,12 +196,26 @@ FUNC void bv_copy( BitVector target, BitVector source )
 		target->words[ i ] = source->words[ i ];
 	}
 
-FUNC void bv_or( BitVector target, BitVector source )
+FUNC bool bv_orChanged( BitVector target, BitVector source )
 	{
+	bool somethingChanged = false;
 	int i, stop = min( target->numWords, source->numWords );
 	bv_ensure( target, source->numWords, source );
 	for( i=0; i < stop; i++ )
-		target->words[ i ] |= source->words[ i ];
+		{
+		Word newWord = target->words[ i ] | source->words[ i ];
+		if( newWord != target->words[ i ] )
+			{
+			target->words[ i ] = newWord;
+			somethingChanged = true;
+			}
+		}
+	return somethingChanged;
+	}
+
+FUNC void bv_or( BitVector target, BitVector source )
+	{
+	bv_orChanged( target, source );
 	}
 
 FUNC void bv_xor( BitVector target, BitVector source )

@@ -26,6 +26,10 @@ FUNC void      bv_or    ( BitVector target, BitVector source );
 FUNC void      bv_xor   ( BitVector target, BitVector source );
 FUNC void      bv_minus ( BitVector target, BitVector source );
 
+// These are like the corresponding operations above but they return "true" if
+// the operation changed the target vector
+FUNC bool      bv_orChanged( BitVector target, BitVector source );
+
 FUNC void      bv_shift( BitVector bv );
 FUNC void      bv_shrinkWrap( BitVector bv );
 

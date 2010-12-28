@@ -370,13 +370,44 @@ static void pg_computeFirstSets( ParserGenerator pg, File traceFile )
 				{
 				int tokIndex = pg_symbolSideTableIndex( pg, pn_token( pn, i, pg->gr ) );
 				SymbolVector tokFirst = sst_element( pg->sst, tokIndex )->first;
-				if( !bv_contains( lhs->first, tokFirst ) )
-					{
-					somethingChanged = true;
-					bv_or( lhs->first, tokFirst );
-					}
+				somethingChanged |= bv_orChanged( lhs->first, tokFirst );
 				if( !bv_isSet( pg->nullableSymbols, tokIndex ) )
 					break; // This token is not nullable so subsequent tokens don't belong in the first set
+				}
+			}
+		}
+	}
+
+static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
+	{
+	int pnNum;
+	bool somethingChanged = true;
+	while( somethingChanged )
+		{
+		somethingChanged = false;
+		for( pnNum=0; pnNum < gr_numProductions( pg->gr ); pnNum++ )
+			{
+			Production pn = gr_production( pg->gr, pnNum );
+			int lhsIndex  = pg_symbolSideTableIndex( pg, pn_lhs( pn, pg->gr ) );
+			SymbolSideTableEntry lhsToken = sst_element( pg->sst, lhsIndex );
+			int i = pn_length( pn, pg->gr ) - 1;
+			// Last token has no successor so treat it specially
+			if( i >= 1 )
+				{
+				int lastIndex = pg_symbolSideTableIndex( pg, pn_token( pn, i, pg->gr ) );
+				SymbolSideTableEntry lastToken = sst_element( pg->sst, lastIndex );
+				somethingChanged |= bv_orChanged( lastToken->follow, lhsToken->follow );
+				}
+			// Loop through the other tokens right-to-left propagating follow info across nullable tokens
+			for( i--; i >= 0; i-- )
+				{
+				int curIndex = pg_symbolSideTableIndex( pg, pn_token( pn, i, pg->gr ) );
+				SymbolSideTableEntry curToken = sst_element( pg->sst, curIndex );
+				int nextIndex = pg_symbolSideTableIndex( pg, pn_token( pn, i+1, pg->gr ) );
+				SymbolSideTableEntry nextToken = sst_element( pg->sst, nextIndex );
+				somethingChanged |= bv_orChanged( curToken->follow, nextToken->first );
+				if( bv_isSet( pg->nullableSymbols, nextIndex ) )
+					somethingChanged |= bv_orChanged( curToken->follow, nextToken->follow );
 				}
 			}
 		}
@@ -391,7 +422,7 @@ FUNC Parser ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml )
 	pg_populateSymbolSideTable( pg );
 	pg_computeStateNodes( pg, NULL );
 	pg_computeFirstSets( pg, NULL );
-	//pg_computeFollowSets( pg, NULL );
+	pg_computeFollowSets( pg, NULL );
 	//pg_computeLookaheadSets( pg, NULL );
 	ml_end( generateTime );
 	return pg? NULL: NULL;
@@ -495,8 +526,8 @@ static GrammarLine grammar[] =
 static GrammarLine grammar[] =
 	{
 	{ "program",    "statements", "$" },
-	{ "statements", "statement" },
 	{ "statements", "statements", "statement" },
+	{ "statements" },
 
 	{ "statement",  "print", ":INT" },
 	{ "statement",  "print", ":STRING" },
@@ -595,7 +626,7 @@ int main( int argc, char *argv[] )
 	fprintf( dotFile, "}\n" );
 
 	pg_computeFirstSets( pg, traceFile );
-	//pg_computeFollowSets( pg, traceFile );
+	pg_computeFollowSets( pg, traceFile );
 	//pg_computeLookaheadSets( pg, traceFile );
 	fl_write( traceFile, "Symbol sets:\n" );
 	for( i=1; i < sst_count( pg->sst ); i++ )
