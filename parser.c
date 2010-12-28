@@ -5,6 +5,9 @@
 #include "objects.h"
 #include <string.h>
 
+typedef BitVector ItemVector;   // BitVectors of item indexes
+typedef BitVector SymbolVector; // BitVectors of symbol side-table indexes
+
 #ifdef PARSER_T
 	#define trace   fl_write
 	#define traceBV bv_sendTo
@@ -31,8 +34,8 @@ typedef struct ita_struct *ItemArray;
 typedef struct sste_struct
 	{
 	Symbol sy;
-	BitVector leftmostItems;  // items with pn_lhs( pn ) == sy && dot == 0
-	BitVector expectingItems; // items with dot immediately before sy
+	ItemVector leftmostItems;  // items with pn_lhs( pn ) == sy && dot == 0
+	ItemVector expectingItems; // items with dot immediately before sy
 	} *SymbolSideTableEntry;
 
 typedef struct sst_struct *SymbolSideTable;
@@ -45,9 +48,9 @@ typedef struct sst_struct *SymbolSideTable;
 typedef struct its_struct *ItemSet;
 struct its_struct
 	{
-	BitVector items;
-	Object    stateNode;
-	bool      isExpanded;
+	ItemVector items;
+	Object     stateNode;
+	bool       isExpanded;
 	};
 
 typedef struct itst_struct *ItemSetTable;
@@ -64,7 +67,7 @@ typedef struct pg_struct
 	MemoryLifetime   parseTime;
 	ObjectHeap       heap;
 	ItemArray        items;
-	BitVector        rightmostItems;
+	ItemVector       rightmostItems;
 	SymbolTable      st;
 	SymbolSideTable  sst;
 	int             *sstIndexes;
@@ -94,15 +97,15 @@ static int its_index( ItemSet its, ParserGenerator pg )
 	return its - itst_element( pg->itemSets, 0 );
 	}
 
-static void pg_closeItemSet( ParserGenerator pg, BitVector itemSet )
+static void pg_closeItemVector( ParserGenerator pg, ItemVector itemVector )
 	{
 	int i;
 	int oldPopulation = 0;
-	int curPopulation = bv_population( itemSet );
+	int curPopulation = bv_population( itemVector );
 	while( curPopulation > oldPopulation )
 		{
 		oldPopulation = curPopulation;
-		for( i = bv_firstBit( itemSet ); i != bv_END; i = bv_nextBit( itemSet, i ) )
+		for( i = bv_firstBit( itemVector ); i != bv_END; i = bv_nextBit( itemVector, i ) )
 			{
 			Item it = ita_element( pg->items, i );
 			Production pn = it->pn;
@@ -112,18 +115,18 @@ static void pg_closeItemSet( ParserGenerator pg, BitVector itemSet )
 				{
 				Symbol nextToken = pn_token( pn, it->dot, pg->gr );
 				SymbolSideTableEntry lhs = pg_sideTableEntry( pg, nextToken );
-				BitVector itemsToAdd = lhs->leftmostItems;
+				ItemVector itemsToAdd = lhs->leftmostItems;
 				if( itemsToAdd )
-					bv_or( itemSet, itemsToAdd );
+					bv_or( itemVector, itemsToAdd );
 				}
 			}
-		curPopulation = bv_population( itemSet );
+		curPopulation = bv_population( itemVector );
 		}
 	}
 
-static void pg_computeItemsExpectingToken( ParserGenerator pg, BitVector result, BitVector itemSet, Symbol token )
+static void pg_computeItemsExpectingToken( ParserGenerator pg, ItemVector result, ItemVector itemSet, Symbol token )
 	{
-	BitVector expectingItems = pg_sideTableEntry( pg, token )->expectingItems;
+	ItemVector expectingItems = pg_sideTableEntry( pg, token )->expectingItems;
 	if( !expectingItems )
 		{
 		bv_clear( result );
@@ -133,7 +136,7 @@ static void pg_computeItemsExpectingToken( ParserGenerator pg, BitVector result,
 	bv_and( result, expectingItems );
 	}
 
-static ItemSet pg_findItemSet( ParserGenerator pg, BitVector items )
+static ItemSet pg_findItemSet( ParserGenerator pg, ItemVector items )
 	{
 	int i;
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
@@ -145,7 +148,7 @@ static ItemSet pg_findItemSet( ParserGenerator pg, BitVector items )
 	return NULL;
 	}
 
-static ItemSet pg_createItemSet( ParserGenerator pg, BitVector items )
+static ItemSet pg_createItemSet( ParserGenerator pg, ItemVector items )
 	{
 	ItemSet result = itst_nextElement( pg->itemSets );
 	result->items = items;
@@ -160,7 +163,7 @@ static ItemSet pg_createItemSet( ParserGenerator pg, BitVector items )
 	}
 
 #if 0
-static ItemSet pg_findOrCreateItemSet( ParserGenerator pg, BitVector items )
+static ItemSet pg_findOrCreateItemSet( ParserGenerator pg, ItemVector items )
 	{
 	ItemSet result = pg_findItemSet( pg, items );
 	if( result )
@@ -248,15 +251,15 @@ static void pg_computeAutomaton( ParserGenerator pg, File traceFile )
 	SymbolTable st = pg->st;
 	ItemSet curItemSet, startItemSet;
 	int itemCount = gr_numItems( pg->gr );
-	BitVector nextItems = bv_new( itemCount, ml );
+	ItemVector nextItems = bv_new( itemCount, ml );
 	pg->itemSets = itst_new( itemCount * itemCount, ml ); // guesstimate of number of item sets
 	startItemSet = curItemSet = pg_createItemSet( pg, pg_sideTableEntry( pg, gr_goal(pg->gr) )->leftmostItems );
-	pg_closeItemSet( pg, curItemSet->items );
+	pg_closeItemVector( pg, curItemSet->items );
 	st_count( st ); // just to use the variable and silence a warning
 	while( curItemSet )
 		{
 		int i;
-		BitVector itemsLeft = bv_new( itemCount, ml );
+		ItemVector itemsLeft = bv_new( itemCount, ml );
 
 		bv_copy( itemsLeft, curItemSet->items );
 		trace( traceFile, "  Expanding ItemSet_%d\n    stateNode: %s_%p\n    items left: ",
@@ -288,7 +291,7 @@ static void pg_computeAutomaton( ParserGenerator pg, File traceFile )
 			traceBVX( nextItems, traceFile, "            shifted: %d", ", %d" );
 			trace( traceFile, "\n" );
 
-			pg_closeItemSet( pg, nextItems );
+			pg_closeItemVector( pg, nextItems );
 			traceBVX( nextItems, traceFile, "             closed: %d", ", %d" );
 			trace( traceFile, "\n" );
 
@@ -362,17 +365,17 @@ static char *LR0StateKindNames[] =
 
 static int its_stateKind( ItemSet its, ParserGenerator pg )
 	{
-	int numShifts, numReduces; BitVector bv;
+	int numShifts, numReduces; ItemVector items;
 
-	bv = bv_new( ita_count( pg->items ), pg->generateTime );
-	bv_copy  ( bv, its->items );
-	bv_minus ( bv, pg->rightmostItems );
-	numShifts = bv_population( bv );
+	items = bv_new( ita_count( pg->items ), pg->generateTime );
+	bv_copy  ( items, its->items );
+	bv_minus ( items, pg->rightmostItems );
+	numShifts = bv_population( items );
 
-	bv = bv_new( ita_count( pg->items ), pg->generateTime );
-	bv_copy  ( bv, its->items );
-	bv_and   ( bv, pg->rightmostItems );
-	numReduces = bv_population( bv );
+	items = bv_new( ita_count( pg->items ), pg->generateTime );
+	bv_copy  ( items, its->items );
+	bv_and   ( items, pg->rightmostItems );
+	numReduces = bv_population( items );
 
 	switch( numReduces )
 		{
@@ -381,7 +384,7 @@ static int its_stateKind( ItemSet its, ParserGenerator pg )
 		case 1:
 			if( numShifts == 0 )
 				{
-				Item it = ita_element( pg->items, bv_firstBit( bv ) );
+				Item it = ita_element( pg->items, bv_firstBit( items ) );
 				if( pn_lhs( it->pn, pg->gr ) == gr_goal( pg->gr ) )
 					return Accept;
 				else
@@ -460,7 +463,7 @@ static GrammarLine grammar[] =
 
 int main( int argc, char *argv[] )
 	{
-	int i, j; SymbolTable st; Symbol goal; Grammar gr; ParserGenerator pg; BitVector bv;
+	int i, j; SymbolTable st; Symbol goal; Grammar gr; ParserGenerator pg;
 	File traceFile = fdopen( 3, "wt" );
 	File dotFile   = stdout;
 
@@ -522,7 +525,6 @@ int main( int argc, char *argv[] )
 	pg_computeAutomaton( pg, traceFile );
 	//ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
 	fprintf( dotFile, "digraph \"G\" {\n" );
-	bv = bv_new( ita_count( pg->items ), pg->generateTime );
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
 		{
 		ItemSet its = itst_element( pg->itemSets, i );
