@@ -389,25 +389,77 @@ static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 			{
 			Production pn = gr_production( pg->gr, pnNum );
 			int lhsIndex  = pg_symbolSideTableIndex( pg, pn_lhs( pn, pg->gr ) );
-			SymbolSideTableEntry lhsToken = sst_element( pg->sst, lhsIndex );
+			SymbolSideTableEntry lhs = sst_element( pg->sst, lhsIndex );
 			int i = pn_length( pn, pg->gr ) - 1;
 			// Last token has no successor so treat it specially
 			if( i >= 1 )
 				{
 				int lastIndex = pg_symbolSideTableIndex( pg, pn_token( pn, i, pg->gr ) );
-				SymbolSideTableEntry lastToken = sst_element( pg->sst, lastIndex );
-				somethingChanged |= bv_orChanged( lastToken->follow, lhsToken->follow );
+				SymbolSideTableEntry last = sst_element( pg->sst, lastIndex );
+				somethingChanged |= bv_orChanged( last->follow, lhs->follow );
 				}
 			// Loop through the other tokens right-to-left propagating follow info across nullable tokens
 			for( i--; i >= 0; i-- )
 				{
 				int curIndex = pg_symbolSideTableIndex( pg, pn_token( pn, i, pg->gr ) );
-				SymbolSideTableEntry curToken = sst_element( pg->sst, curIndex );
+				SymbolSideTableEntry cur = sst_element( pg->sst, curIndex );
 				int nextIndex = pg_symbolSideTableIndex( pg, pn_token( pn, i+1, pg->gr ) );
-				SymbolSideTableEntry nextToken = sst_element( pg->sst, nextIndex );
-				somethingChanged |= bv_orChanged( curToken->follow, nextToken->first );
+				SymbolSideTableEntry next = sst_element( pg->sst, nextIndex );
+				somethingChanged |= bv_orChanged( cur->follow, next->first );
 				if( bv_isSet( pg->nullableSymbols, nextIndex ) )
-					somethingChanged |= bv_orChanged( curToken->follow, nextToken->follow );
+					somethingChanged |= bv_orChanged( cur->follow, next->follow );
+				}
+			}
+		}
+	}
+
+static bool pg_orFirstChanged( ParserGenerator pg, SymbolVector sv, Item it )
+	{
+	bool result = false;
+	int i;
+	Production pn = it->pn;
+	for( i = it->dot; i < pn_length( pn, pg->gr ); i++ )
+		{
+		int token = pg_symbolSideTableIndex( pg, pn_token( pn, i, pg->gr ) );
+		result |= bv_orChanged( sv, sst_element( pg->sst, token )->first );
+		if( !bv_isSet( pg->nullableSymbols, token ) )
+			break;
+		}
+	return result;
+	}
+
+static void pg_computeLookaheadSets( ParserGenerator pg, File traceFile )
+	{
+	// This is meant to be the "channel algorithm" from PTPG2e
+	// What I don't understand is how channels can lead to different lookahead sets for items with the same LHS.
+	// Something is fishy in states 1 and 2 in figure 9.34
+	int itNum;
+	bool somethingChanged = true;
+	while( somethingChanged )
+		{
+		somethingChanged = false;
+		for( itNum=0; itNum < ita_count( pg->items ); itNum++ )
+			{
+			Item it = ita_element( pg->items, itNum );
+			Production pn = it->pn;
+			int lhsIndex  = pg_symbolSideTableIndex( pg, pn_lhs( pn, pg->gr ) );
+			SymbolSideTableEntry lhs = sst_element( pg->sst, lhsIndex );
+			trace( traceFile, "    Item %d: ", itNum );
+			pn_sendItemTo( pn, it->dot, traceFile, pg->gr, pg->st );
+			trace( traceFile, "\n" );
+			if( it->dot == pn_length( pn, pg->gr ) )
+				{
+				SymbolSideTableEntry last = sst_element( pg->sst, 
+					pg_symbolSideTableIndex( pg, pn_token( pn, pn_length( pn, pg->gr ) - 1, pg->gr ) ) );
+				somethingChanged |= bv_orChanged( last->lookahead, lhs->lookahead );
+				trace( traceFile, "      %s lookahead merged into %s\n", sy_name( lhs->sy, pg->st ), sy_name( last->sy, pg->st ) );
+				}
+			else if( it->dot >= 1 )
+				{
+				SymbolSideTableEntry cur = sst_element( pg->sst, pg_symbolSideTableIndex( pg,
+					pn_token( pn, it->dot-1, pg->gr ) ) );
+				somethingChanged |= pg_orFirstChanged( pg, cur->lookahead, it );
+				trace( traceFile, "      FIRST merged into %s\n", sy_name( cur->sy, pg->st ) );
 				}
 			}
 		}
@@ -423,7 +475,7 @@ FUNC Parser ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml )
 	pg_computeStateNodes( pg, NULL );
 	pg_computeFirstSets( pg, NULL );
 	pg_computeFollowSets( pg, NULL );
-	//pg_computeLookaheadSets( pg, NULL );
+	pg_computeLookaheadSets( pg, NULL );
 	ml_end( generateTime );
 	return pg? NULL: NULL;
 	}
@@ -523,6 +575,7 @@ static GrammarLine grammar[] =
 	};
 #endif
 
+#if 0
 static GrammarLine grammar[] =
 	{
 	{ "program",    "statements", "$" },
@@ -545,6 +598,28 @@ static GrammarLine grammar[] =
 	//{ ":INT",       "numWheels", "FireTruck" }, // If subclass overrides, we end up with an R/R conflict
 
 	};
+#endif
+
+#if 0
+static GrammarLine grammar[] = // http://www.scribd.com/doc/7185137/First-and-Follow-Set
+	{
+	{ "S", "a", "A", "B", "e" },
+	{ "A", "A", "b", "c" },
+	{ "A", "b" },
+	{ "B", "d" },
+	};
+#endif
+
+#if 1
+static GrammarLine grammar[] = // http://www.scribd.com/doc/7185137/First-and-Follow-Set
+	{
+	{ "S", "E", "#" },
+	{ "E", "E", "-", "T" },
+	{ "E", "T" },
+	{ "T", "n" },
+	{ "T", "(", "E", ")" },
+	};
+#endif
 
 int main( int argc, char *argv[] )
 	{
@@ -627,7 +702,7 @@ int main( int argc, char *argv[] )
 
 	pg_computeFirstSets( pg, traceFile );
 	pg_computeFollowSets( pg, traceFile );
-	//pg_computeLookaheadSets( pg, traceFile );
+	pg_computeLookaheadSets( pg, traceFile );
 	fl_write( traceFile, "Symbol sets:\n" );
 	for( i=1; i < sst_count( pg->sst ); i++ )
 		{
