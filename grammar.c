@@ -41,15 +41,18 @@ struct gr_struct
 // because the latter can move if it gets resized.  (And we don't want to
 // declare pn_struct to have an int element because that would require memory
 // allocation and an extra level of indirection.)
+//
+// We offset the indexes by 1 so there are no zeros.  That way no Production
+// will compare equal to NULL.
 
 FUNC int pn_index( Production pn, Grammar gr )
 	{
-	return (int)(intptr_t)pn;
+	return ((int)(intptr_t)pn) - 1;
 	}
 
 static inline Production pns2pn( ProductionStorage pns, Grammar gr )
 	{
-	return (Production)( pns - pra_element( gr->pra, 0 ) );
+	return (Production)( 1 + ( pns - pra_element( gr->pra, 0 ) ) );
 	}
 
 static inline ProductionStorage pn2pns( Production pn, Grammar gr )

@@ -3,6 +3,7 @@
 #include "bitvector.h"
 #include "memory.h"
 #include "objects.h"
+#include "stack.h"
 #include <string.h>
 
 typedef BitVector ItemVector;   // BitVectors of item indexes
@@ -267,7 +268,7 @@ static void pg_populateSymbolSideTable( ParserGenerator pg )
 		}
 	}
 
-static void pg_computeStateNodes( ParserGenerator pg, File traceFile )
+static Object pg_computeStateNodes( ParserGenerator pg, File traceFile )
 	{
 	MemoryLifetime ml = pg->generateTime;
 	SymbolTable st = pg->st;
@@ -276,6 +277,7 @@ static void pg_computeStateNodes( ParserGenerator pg, File traceFile )
 	ItemVector nextItems = bv_new( itemCount, ml );
 	pg->itemSets = itst_new( itemCount * itemCount, ml ); // guesstimate of number of item sets
 	startItemSet = curItemSet = pg_createItemSet( pg, pg_sideTableEntry( pg, gr_goal(pg->gr) )->leftmostItems );
+	Object startState = startItemSet->stateNode;
 	pg_closeItemVector( pg, curItemSet->items );
 	st_count( st ); // just to use the variable and silence a warning
 	while( curItemSet )
@@ -351,6 +353,7 @@ static void pg_computeStateNodes( ParserGenerator pg, File traceFile )
 			trace( traceFile, "\n" );
 			}
 		}
+	return startState;
 	}
 
 static void pg_computeFirstSets( ParserGenerator pg, File traceFile )
@@ -441,19 +444,73 @@ static void pg_computeReduceNodes( ParserGenerator pg, File traceFile )
 		}
 	}
 
+struct ps_struct
+	{
+	Grammar gr;
+	Stack stateStack;
+	ObjectHeap stateHeap;
+	};
+
 FUNC Parser ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml )
 	{
 	MemoryLifetime generateTime = ml_begin( 10000, ml );
-	ParserGenerator pg = pg_new( gr, st, generateTime, ml, theObjectHeap() ); // TODO: allocate objects in the proper lifetime
-	// TODO: generate the parser
+	ParserGenerator pg = pg_new( gr, st, generateTime, ml, theObjectHeap() );
 	pg_populateItemTable( pg );
 	pg_populateSymbolSideTable( pg );
-	pg_computeStateNodes( pg, NULL );
+	Object startState = pg_computeStateNodes( pg, NULL );
 	pg_computeFirstSets( pg, NULL );
 	pg_computeFollowSets( pg, NULL );
 	pg_computeReduceNodes( pg, NULL );
 	ml_end( generateTime );
-	return pg? NULL: NULL;
+
+	Parser result = (Parser)ml_alloc( ml, sizeof(*result) );
+	result->gr = gr;
+	result->stateStack = sk_new( ml );
+	result->stateHeap  = theObjectHeap();
+	sk_push( result->stateStack, startState );
+	return result;
+	}
+
+FUNC Grammar ps_grammar( Parser ps )
+	{
+	return ps->gr;
+	}
+
+static Object ps_nextState( Parser ps, Object ob )
+	{
+	ObjectHeap oh = ps->stateHeap;
+	Object curState = sk_top( ps->stateStack );
+	Symbol token = ob_tag( ob, oh );
+	// Not sure how I'm dealing with tokens as first-class objects yet...
+	if( ob_isToken( ob, oh ) )
+		token = ob_toSymbol( ob, oh );
+	if( !ob_hasField( curState, token, oh ) )
+		return NULL;
+	else
+		return ob_getField( curState, token, oh );
+	}
+
+FUNC void ps_push( Parser ps, Object ob )
+	{
+	Object nextState = ps_nextState( ps, ob );
+	check( nextState );
+	sk_push( ps->stateStack, nextState );
+	}
+
+FUNC Production ps_handle( Parser ps, Object lookahead )
+	{
+	ObjectHeap oh = ps->stateHeap;
+	Object nextState = ps_nextState( ps, lookahead );
+	if( ob_isInt( nextState, oh ) )
+		return gr_production( ps->gr, ob_toInt( nextState, oh ) );
+	else
+		return NULL;
+	}
+
+FUNC void ps_popN( Parser ps, int count )
+	{
+	assert( sk_depth( ps->stateStack ) >= count+1 ); // must always leave the startState on the stack
+	sk_popN( ps->stateStack, count );
 	}
 
 #ifdef PARSER_T
@@ -536,9 +593,17 @@ static GrammarLine grammar[] =
 	{ "T",  "T", "*", "F" },
 	{ "T",  "T", "/", "F" },
 	{ "T",  "F" },
-	{ "F",  "num" },
-	{ "F",  "id" },
+	{ "F",  "0" },
+	{ "F",  "1" },
+	{ "F",  "2" },
+	{ "F",  "3" },
 	};
+
+static char *sentence[] =
+	{
+	"1", "+", "2", "*", "2", "/", "2", "+", "3"
+	};
+
 #endif
 
 #if 0
@@ -695,6 +760,30 @@ int main( int argc, char *argv[] )
 		}
 	ob_sendDotEdgesTo( itst_element( pg->itemSets, 0 )->stateNode, dotFile, pg->heap );
 	fprintf( dotFile, "}\n" );
+
+	fprintf( traceFile, "Parsing...\n" );
+	Parser ps = ps_new( gr, st, ml_indefinite() );
+	ObjectHeap heap = theObjectHeap();
+	for( i=0; i < asizeof( sentence ); i++ )
+		{
+		char *cur = sentence[i];
+		char *next = (i == asizeof( sentence )-1 )? "$" : sentence[i+1];
+		fprintf( traceFile, "  Token: %s\n", cur );
+		Symbol sy = sy_byName( cur, st );
+		ps_push( ps, oh_symbolToken( heap, sy ) );
+		Object lookahead = oh_symbolToken( heap, sy_byName( next, st ) );
+		Production handle = ps_handle( ps, lookahead );
+		while( handle )
+			{
+			fprintf( traceFile, "    Reduce: " );
+			pn_sendTo( handle, traceFile, gr, st );
+			fprintf( traceFile, "\n" );
+			ps_popN( ps, pn_length( handle, gr ) );
+			ps_push( ps, oh_symbolToken( heap, pn_lhs( handle, gr ) ) );
+			handle = ps_handle( ps, lookahead );
+			}
+		}
+	fprintf( traceFile, "...done\n" );
 
 	return 0;
 	}

@@ -87,7 +87,7 @@ bitvector.t: bitvector.o memory.o file.o
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
 parser.t: CFLAGS += -DPARSER_T
-parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvector.o
+parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvector.o stack.o
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
 %.pdf: %.dot
