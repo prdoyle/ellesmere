@@ -91,13 +91,14 @@ parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvect
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
 %.pdf: %.dot
+	#neato -Tpdf < $< > $@
 	dot -Tpdf < $< > $@
 
 states.dot: parser.t
-	./parser.t > states.dot
+	./parser.t > states.dot 3> trace.txt
 
 clean:
 	rm -f memreport.txt ellesmere tags _merged.c gmon.out *.gcda $(GEN_C_FILES) $(GEN_H_FILES) $(O_FILES) $(I_FILES) $(D_FILES)
-	rm -f bitvector.t parser.t states.dot states.pdf
+	rm -f bitvector.t parser.t states.dot states.pdf trace.txt
 
 .PHONY: all merged memreport.txt

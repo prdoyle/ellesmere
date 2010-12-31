@@ -25,6 +25,9 @@ static inline int AR_PREFIXED( _capacity )( AR_TYPE ar )
 static inline AR_ELEMENT *AR_PREFIXED( _element )( AR_TYPE ar, int index )
 	{ return (AR_ELEMENT*)ar_element( (Array)ar, index, sizeof(AR_ELEMENT) ); }
 
+static inline int AR_PREFIXED( _elementIndex )( AR_TYPE ar, AR_ELEMENT *element )
+	{ return element - (AR_ELEMENT*)ar_element( (Array)ar, 0, sizeof(AR_ELEMENT) ); }
+
 static inline AR_ELEMENT *AR_PREFIXED( _last )( AR_TYPE ar, int indexFromEnd )
 	{ return (AR_ELEMENT*)ar_last( (Array)ar, indexFromEnd, sizeof(AR_ELEMENT) ); }
 

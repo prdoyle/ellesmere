@@ -38,7 +38,6 @@ typedef struct sste_struct
 	ItemVector expectingItems; // items with dot immediately before sy
 	SymbolVector first;
 	SymbolVector follow;
-	SymbolVector lookahead;
 	} *SymbolSideTableEntry;
 
 typedef struct sst_struct *SymbolSideTable;
@@ -160,11 +159,13 @@ static ItemSet pg_createItemSet( ParserGenerator pg, ItemVector items )
 	ItemSet result = itst_nextElement( pg->itemSets );
 	result->items = items;
 	result->stateNode = ob_create( sy_byIndex( SYM_STATE_NODE, pg->st ), pg->heap );
+#if 0
 	ob_setField(
 		result->stateNode,
 		sy_byIndex( SYM_ITEM_SET_NUM, pg->st ),
 		ob_fromInt( its_index( result, pg ), pg->heap ),
 		pg->heap );
+#endif
 	result->isExpanded = false;
 	return result;
 	}
@@ -262,7 +263,6 @@ static void pg_populateSymbolSideTable( ParserGenerator pg )
 		SymbolSideTableEntry sste = sst_element( pg->sst, i );
 		sste->first     = bv_new( numSymbols, pg->generateTime );
 		sste->follow    = bv_new( numSymbols, pg->generateTime );
-		sste->lookahead = bv_new( numSymbols, pg->generateTime );
 		bv_set( sste->first, i );
 		}
 	}
@@ -413,53 +413,29 @@ static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 		}
 	}
 
-static bool pg_orFirstChanged( ParserGenerator pg, SymbolVector sv, Item it )
+static void pg_computeReduceNodes( ParserGenerator pg, File traceFile )
 	{
-	bool result = false;
-	int i;
-	Production pn = it->pn;
-	for( i = it->dot; i < pn_length( pn, pg->gr ); i++ )
+	// For now we're doing SLR
+	Grammar gr = pg->gr; ObjectHeap heap = pg->heap;
+	int i,j,k;
+	ItemVector iv = bv_new( ita_count(pg->items), pg->generateTime );
+	for( i=0; i < itst_count( pg->itemSets ); i++ )
 		{
-		int token = pg_symbolSideTableIndex( pg, pn_token( pn, i, pg->gr ) );
-		result |= bv_orChanged( sv, sst_element( pg->sst, token )->first );
-		if( !bv_isSet( pg->nullableSymbols, token ) )
-			break;
-		}
-	return result;
-	}
-
-static void pg_computeLookaheadSets( ParserGenerator pg, File traceFile )
-	{
-	// This is meant to be the "channel algorithm" from PTPG2e
-	// What I don't understand is how channels can lead to different lookahead sets for items with the same LHS.
-	// Something is fishy in states 1 and 2 in figure 9.34
-	int itNum;
-	bool somethingChanged = true;
-	while( somethingChanged )
-		{
-		somethingChanged = false;
-		for( itNum=0; itNum < ita_count( pg->items ); itNum++ )
+		ItemSet its = itst_element( pg->itemSets, i );
+		Object stateNode = its->stateNode;
+		bv_copy ( iv, pg->rightmostItems );
+		bv_and  ( iv, its->items );
+		for( j = bv_firstBit( iv ); j != bv_END; j = bv_nextBit( iv, j ) )
 			{
-			Item it = ita_element( pg->items, itNum );
+			Item it = ita_element( pg->items, j );
 			Production pn = it->pn;
-			int lhsIndex  = pg_symbolSideTableIndex( pg, pn_lhs( pn, pg->gr ) );
-			SymbolSideTableEntry lhs = sst_element( pg->sst, lhsIndex );
-			trace( traceFile, "    Item %d: ", itNum );
-			pn_sendItemTo( pn, it->dot, traceFile, pg->gr, pg->st );
-			trace( traceFile, "\n" );
-			if( it->dot == pn_length( pn, pg->gr ) )
+			SymbolSideTableEntry lhs = pg_sideTableEntry( pg, pn_lhs( pn, gr ) );
+			SymbolVector follow = lhs->follow;
+			for( k = bv_firstBit( follow ); k != bv_END; k = bv_nextBit( follow, k ) )
 				{
-				SymbolSideTableEntry last = sst_element( pg->sst, 
-					pg_symbolSideTableIndex( pg, pn_token( pn, pn_length( pn, pg->gr ) - 1, pg->gr ) ) );
-				somethingChanged |= bv_orChanged( last->lookahead, lhs->lookahead );
-				trace( traceFile, "      %s lookahead merged into %s\n", sy_name( lhs->sy, pg->st ), sy_name( last->sy, pg->st ) );
-				}
-			else if( it->dot >= 1 )
-				{
-				SymbolSideTableEntry cur = sst_element( pg->sst, pg_symbolSideTableIndex( pg,
-					pn_token( pn, it->dot-1, pg->gr ) ) );
-				somethingChanged |= pg_orFirstChanged( pg, cur->lookahead, it );
-				trace( traceFile, "      FIRST merged into %s\n", sy_name( cur->sy, pg->st ) );
+				SymbolSideTableEntry reduceOn = sst_element( pg->sst, k );
+				check( !ob_hasField( stateNode, reduceOn->sy, heap ) );
+				ob_setField( stateNode, reduceOn->sy, ob_fromInt( pn_index( pn, gr ), heap ), heap );
 				}
 			}
 		}
@@ -475,7 +451,7 @@ FUNC Parser ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml )
 	pg_computeStateNodes( pg, NULL );
 	pg_computeFirstSets( pg, NULL );
 	pg_computeFollowSets( pg, NULL );
-	pg_computeLookaheadSets( pg, NULL );
+	pg_computeReduceNodes( pg, NULL );
 	ml_end( generateTime );
 	return pg? NULL: NULL;
 	}
@@ -487,7 +463,9 @@ enum
 	Shift,
 	Reduce,
 	Accept,
-	ShiftReduceConflict,
+
+	FirstConflict,
+	ShiftReduceConflict = FirstConflict,
 	ReduceReduceConflict,
 	} LR0StateKinds;
 
@@ -500,7 +478,7 @@ static char *LR0StateKindNames[] =
 	"Reduce/Reduce conflict",
 	};
 
-static int its_stateKind( ItemSet its, ParserGenerator pg )
+static int its_LR0StateKind( ItemSet its, ParserGenerator pg )
 	{
 	int numShifts, numReduces; ItemVector items;
 
@@ -548,7 +526,7 @@ static GrammarLine grammar[] =
 	};
 #endif
 
-#if 0
+#if 1
 static GrammarLine grammar[] =
 	{
 	{ "S",  "E", "$" },
@@ -610,8 +588,8 @@ static GrammarLine grammar[] = // http://www.scribd.com/doc/7185137/First-and-Fo
 	};
 #endif
 
-#if 1
-static GrammarLine grammar[] = // http://www.scribd.com/doc/7185137/First-and-Follow-Set
+#if 0
+static GrammarLine grammar[] = // LR0
 	{
 	{ "S", "E", "#" },
 	{ "E", "E", "-", "T" },
@@ -683,26 +661,9 @@ int main( int argc, char *argv[] )
 		}
 
 	pg_computeStateNodes( pg, traceFile );
-	//ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
-	fprintf( dotFile, "digraph \"G\" {\n" );
-	for( i=0; i < itst_count( pg->itemSets ); i++ )
-		{
-		ItemSet its = itst_element( pg->itemSets, i );
-		fprintf( dotFile, "n%p [label=\"%d %s\\n", its->stateNode, i, LR0StateKindNames[ its_stateKind( its, pg ) ] );
-		for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
-			{
-			Item it = ita_element( pg->items, j );
-			pn_sendItemTo( it->pn, it->dot, dotFile, pg->gr, pg->st );
-			fprintf( dotFile, "\\n" );
-			}
-		fprintf( dotFile, "\"]\n" );
-		}
-	ob_sendDotEdgesTo( itst_element( pg->itemSets, 0 )->stateNode, dotFile, pg->heap );
-	fprintf( dotFile, "}\n" );
 
 	pg_computeFirstSets( pg, traceFile );
 	pg_computeFollowSets( pg, traceFile );
-	pg_computeLookaheadSets( pg, traceFile );
 	fl_write( traceFile, "Symbol sets:\n" );
 	for( i=1; i < sst_count( pg->sst ); i++ )
 		{
@@ -714,10 +675,26 @@ int main( int argc, char *argv[] )
 		fl_write( traceFile, "     follow: " );
 		bv_sendTo( sste->follow, traceFile );
 		fl_write( traceFile, "\n" );
-		fl_write( traceFile, "     lookahead: " );
-		bv_sendTo( sste->lookahead, traceFile );
-		fl_write( traceFile, "\n" );
 		}
+
+	pg_computeReduceNodes( pg, traceFile );
+	ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
+
+	fprintf( dotFile, "digraph \"G\" { overlap=false \n" );
+	for( i=0; i < itst_count( pg->itemSets ); i++ )
+		{
+		ItemSet its = itst_element( pg->itemSets, i );
+		fprintf( dotFile, "n%p [label=\"%d %s\\n", its->stateNode, i, LR0StateKindNames[ its_LR0StateKind( its, pg ) ] );
+		for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
+			{
+			Item it = ita_element( pg->items, j );
+			pn_sendItemTo( it->pn, it->dot, dotFile, pg->gr, pg->st );
+			fprintf( dotFile, "\\n" );
+			}
+		fprintf( dotFile, "\"]\n" );
+		}
+	ob_sendDotEdgesTo( itst_element( pg->itemSets, 0 )->stateNode, dotFile, pg->heap );
+	fprintf( dotFile, "}\n" );
 
 	return 0;
 	}

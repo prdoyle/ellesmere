@@ -409,6 +409,12 @@ static int sendDotEdgesTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 						ob, field->value, sy_name( sy, heap->st ) );
 					charsSent += sendDotEdgesTo( field->value, fl, heap, cl );
 					}
+				else if( ob_isInt( field->value, heap ) )
+					{
+					charsSent += fl_write( fl,
+						"n%p -> %d [label=\"%s\"]\n",
+						ob, ob_toInt( field->value, heap ), sy_name( sy, heap->st ) );
+					}
 				}
 			}
 		}
