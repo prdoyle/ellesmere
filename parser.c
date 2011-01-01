@@ -574,7 +574,7 @@ typedef char *GrammarLine[10];
 #if 0
 static GrammarLine grammar[] =
 	{
-	{ "S",  "E", "$" },
+	{ "S",  "E", ":END_OF_INPUT" },
 	{ "E",  "E", "*", "B" },
 	{ "E",  "E", "+", "B" },
 	{ "E",  "B" },
@@ -583,10 +583,10 @@ static GrammarLine grammar[] =
 	};
 #endif
 
-#if 1
+#if 0
 static GrammarLine grammar[] =
 	{
-	{ "S",  "E", "$" },
+	{ "S",  "E", ":END_OF_INPUT" },
 	{ "E",  "E", "+", "T" },
 	{ "E",  "E", "-", "T" },
 	{ "E",  "T" },
@@ -606,10 +606,42 @@ static char *sentence[] =
 
 #endif
 
+#if 1
+static GrammarLine grammar[] =
+	{
+	{ "PROGRAM",      "STATEMENTS", ":END_OF_INPUT" },
+
+	{ "STATEMENTS",   "STATEMENT" },
+	{ "STATEMENTS",   "STATEMENTS", "STATEMENT" },
+
+	{ "STATEMENT",    ":INT" },
+
+	{ ":INT",         "INFIX" },
+	{ "INFIX",        "(", "INFIX", ")" },
+	{ "INFIX",        "INFIX", "+", "TERM" },
+	{ "INFIX",        "INFIX", "-", "TERM" },
+	{ "INFIX",        "TERM" },
+	{ "TERM",         "TERM", "*", "FACTOR" },
+	{ "TERM",         "TERM", "/", "FACTOR" },
+	{ "TERM",         "FACTOR" },
+	//{ "FACTOR",       ":INT" }, // hmm, how do I allow a user to put any int expression in here?
+	{ "FACTOR",  "0" },
+	{ "FACTOR",  "1" },
+	{ "FACTOR",  "2" },
+	{ "FACTOR",  "3" },
+	};
+
+static char *sentence[] =
+	{
+	"1", "+", "2", "*", "2", "/", "2", "+", "3"
+	};
+
+#endif
+
 #if 0
 static GrammarLine grammar[] =
 	{
-	{ "S",  "E", "$" },
+	{ "S",  "E", ":END_OF_INPUT" },
 	{ "E",  "E", "*", "B" },
 	{ "E",  "E", "+", "B" },
 	{ "E",  "B" },
@@ -621,7 +653,7 @@ static GrammarLine grammar[] =
 #if 0
 static GrammarLine grammar[] =
 	{
-	{ "program",    "statements", "$" },
+	{ "program",    "statements", ":END_OF_INPUT" },
 	{ "statements", "statements", "statement" },
 	{ "statements" },
 
@@ -764,10 +796,11 @@ int main( int argc, char *argv[] )
 	fprintf( traceFile, "Parsing...\n" );
 	Parser ps = ps_new( gr, st, ml_indefinite() );
 	ObjectHeap heap = theObjectHeap();
-	for( i=0; i < asizeof( sentence ); i++ )
+	int stop = asizeof( sentence );
+	for( i=0; i <= stop; i++ )
 		{
-		char *cur = sentence[i];
-		char *next = (i == asizeof( sentence )-1 )? "$" : sentence[i+1];
+		char *cur  = (i >= stop)?   ":END_OF_INPUT" : sentence[i];
+		char *next = (i+1 >= stop)? ":END_OF_INPUT" : sentence[i+1];
 		fprintf( traceFile, "  Token: %s\n", cur );
 		Symbol sy = sy_byName( cur, st );
 		ps_push( ps, oh_symbolToken( heap, sy ) );
@@ -777,7 +810,9 @@ int main( int argc, char *argv[] )
 			{
 			fprintf( traceFile, "    Reduce: " );
 			pn_sendTo( handle, traceFile, gr, st );
-			fprintf( traceFile, "\n" );
+			fprintf( traceFile, " -- new state is %d\n", ob_toInt( ob_getField(
+				sk_top( ps->stateStack ),
+				sy_byIndex( SYM_ITEM_SET_NUM, st ), heap ), heap ) );
 			ps_popN( ps, pn_length( handle, gr ) );
 			ps_push( ps, oh_symbolToken( heap, pn_lhs( handle, gr ) ) );
 			handle = ps_handle( ps, lookahead );
