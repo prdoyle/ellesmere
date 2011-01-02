@@ -637,14 +637,9 @@ static GrammarLine grammar[] =
 	{ "F",  "3" },
 	};
 
-static char *sentence[] =
-	{
-	"1", "+", "2", "*", "2", "/", "2", "+", "3"
-	};
-
 #endif
 
-#if 1
+#if 0
 static GrammarLine grammar[] =
 	{
 	{ "PROGRAM",      "STATEMENTS", ":END_OF_INPUT" },
@@ -669,12 +664,32 @@ static GrammarLine grammar[] =
 	{ "FACTOR",  "3" },
 	};
 
-static char *sentence[] =
+#endif
+
+static GrammarLine grammar[] =
 	{
-	"1", "+", "2", "*", "2", "/", "2", "+", "3"
+	{ "PROGRAM",      "STATEMENTS", ":END_OF_INPUT" },
+
+	{ "STATEMENTS",   "STATEMENT" },
+	{ "STATEMENTS",   "STATEMENTS", "STATEMENT" },
+
+	{ "STATEMENT",    ":INT" },
+
+	{ ":INT",    ":INT", "+", ":INT" },
+	{ ":INT",    ":INT", "-", ":INT" },
+	{ ":INT",    "(", ":INT", ")" },
+
+	{ "FACTOR",  "0" },
+	{ "FACTOR",  "1" },
+	{ "FACTOR",  "2" },
+	{ "FACTOR",  "3" },
 	};
 
-#endif
+static GrammarLine grammar2[] =
+	{
+	{ ":INT",    ":INT", "*", ":INT" },
+	{ ":INT",    ":INT", "/", ":INT" },
+	};
 
 #if 0
 static GrammarLine grammar[] =
@@ -734,6 +749,13 @@ static GrammarLine grammar[] = // LR0
 	};
 #endif
 
+#if 0
+static char *sentence[] =
+	{
+	"1", "+", "2", "*", "2", "/", "2", "+", "3"
+	};
+#endif
+
 int main( int argc, char *argv[] )
 	{
 	int i, j; SymbolTable st; Symbol goal; Grammar gr; ParserGenerator pg;
@@ -748,7 +770,18 @@ int main( int argc, char *argv[] )
 		Production pn = pn_new( gr, sy_byName( grammar[i][0], st ), 10 );
 		for( j=1; grammar[i][j]; j++ )
 			pn_append( pn, sy_byName( grammar[i][j], st ), gr );
+		pn_stopAppending( pn, gr );
 		}
+	gr_stopAdding( gr );
+	gr = gr_nested( gr, asizeof( grammar2 ), ml_indefinite() );
+	for( i=0; i < asizeof( grammar2 ); i++ )
+		{
+		Production pn = pn_new( gr, sy_byName( grammar2[i][0], st ), 10 );
+		for( j=1; grammar2[i][j]; j++ )
+			pn_append( pn, sy_byName( grammar2[i][j], st ), gr );
+		pn_stopAppending( pn, gr );
+		}
+	gr_stopAdding( gr );
 	gr_sendTo( gr, traceFile, st );
 
 	pg = pg_new( gr, st, ml_begin( 10000, ml_indefinite() ), ml_indefinite(), theObjectHeap() );
@@ -812,7 +845,7 @@ int main( int argc, char *argv[] )
 		fl_write( traceFile, "\n" );
 		}
 
-	pg_computeReduceNodes( pg, traceFile );
+	//pg_computeReduceNodes( pg, traceFile );
 	ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
 
 	fl_write( dotFile, "digraph \"G\" { overlap=false \n" );
@@ -831,6 +864,7 @@ int main( int argc, char *argv[] )
 	ob_sendDotEdgesTo( itst_element( pg->itemSets, 0 )->stateNode, dotFile, pg->heap );
 	fl_write( dotFile, "}\n" );
 
+#if 0
 	fl_write( traceFile, "Parsing...\n" );
 	Parser ps = ps_new( gr, st, ml_indefinite() );
 	ObjectHeap heap = theObjectHeap();
@@ -865,6 +899,7 @@ int main( int argc, char *argv[] )
 			}
 		}
 	fl_write( traceFile, "...done\n" );
+#endif
 
 	return 0;
 	}
