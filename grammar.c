@@ -126,7 +126,7 @@ FUNC int gr_numItems( Grammar gr )
 
 FUNC void gr_stopAdding( Grammar gr )
 	{
-	pra_setCapacity( gr->pra, gr_numProductions(gr) );
+	pra_shrinkWrap( gr->pra );
 	}
 
 FUNC Symbol gr_goal( Grammar gr )

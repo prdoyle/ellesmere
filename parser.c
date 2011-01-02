@@ -6,6 +6,8 @@
 #include "stack.h"
 #include <string.h>
 
+#define ITEM_SET_NUMS
+
 typedef BitVector ItemVector;   // BitVectors of item indexes
 typedef BitVector SymbolVector; // BitVectors of symbol side-table indexes
 
@@ -160,7 +162,7 @@ static ItemSet pg_createItemSet( ParserGenerator pg, ItemVector items )
 	ItemSet result = itst_nextElement( pg->itemSets );
 	result->items = items;
 	result->stateNode = ob_create( sy_byIndex( SYM_STATE_NODE, pg->st ), pg->heap );
-#if 0
+#ifdef ITEM_SET_NUMS
 	ob_setField(
 		result->stateNode,
 		sy_byIndex( SYM_ITEM_SET_NUM, pg->st ),
@@ -388,18 +390,32 @@ static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 	while( somethingChanged )
 		{
 		somethingChanged = false;
+		fl_write( traceFile, "  Looping through productions\n" );
 		for( pnNum=0; pnNum < gr_numProductions( pg->gr ); pnNum++ )
 			{
 			Production pn = gr_production( pg->gr, pnNum );
+			fl_write( traceFile, "    #%d: ", pnNum );
+			pn_sendTo( pn, traceFile, pg->gr, pg->st );
+			fl_write( traceFile, "\n" );
 			int lhsIndex  = pg_symbolSideTableIndex( pg, pn_lhs( pn, pg->gr ) );
 			SymbolSideTableEntry lhs = sst_element( pg->sst, lhsIndex );
 			int i = pn_length( pn, pg->gr ) - 1;
 			// Last token has no successor so treat it specially
-			if( i >= 1 )
+			if( i >= 0 )
 				{
 				int lastIndex = pg_symbolSideTableIndex( pg, pn_token( pn, i, pg->gr ) );
 				SymbolSideTableEntry last = sst_element( pg->sst, lastIndex );
 				somethingChanged |= bv_orChanged( last->follow, lhs->follow );
+				if( traceFile )
+					{
+					fl_write( traceFile, "      Copied follow from lhs " );
+					sy_sendTo( lhs->sy, traceFile, pg->st );
+					fl_write( traceFile, " to " );
+					sy_sendTo( last->sy, traceFile, pg->st );
+					fl_write( traceFile, ": " );
+					bv_sendTo( lhs->follow, traceFile );
+					fl_write( traceFile, "\n" );
+					}
 				}
 			// Loop through the other tokens right-to-left propagating follow info across nullable tokens
 			for( i--; i >= 0; i-- )
@@ -409,8 +425,30 @@ static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 				int nextIndex = pg_symbolSideTableIndex( pg, pn_token( pn, i+1, pg->gr ) );
 				SymbolSideTableEntry next = sst_element( pg->sst, nextIndex );
 				somethingChanged |= bv_orChanged( cur->follow, next->first );
+				if( traceFile )
+					{
+					fl_write( traceFile, "      Copied first from " );
+					sy_sendTo( next->sy, traceFile, pg->st );
+					fl_write( traceFile, " to follow of " );
+					sy_sendTo( cur->sy, traceFile, pg->st );
+					fl_write( traceFile, ": " );
+					bv_sendTo( next->first, traceFile );
+					fl_write( traceFile, "\n" );
+					}
 				if( bv_isSet( pg->nullableSymbols, nextIndex ) )
+					{
 					somethingChanged |= bv_orChanged( cur->follow, next->follow );
+					if( traceFile )
+						{
+						fl_write( traceFile, "      Copied follow from " );
+						sy_sendTo( next->sy, traceFile, pg->st );
+						fl_write( traceFile, " to " );
+						sy_sendTo( cur->sy, traceFile, pg->st );
+						fl_write( traceFile, ": " );
+						bv_sendTo( next->follow, traceFile );
+						fl_write( traceFile, "\n" );
+						}
+					}
 				}
 			}
 		}
@@ -777,23 +815,23 @@ int main( int argc, char *argv[] )
 	pg_computeReduceNodes( pg, traceFile );
 	ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
 
-	fprintf( dotFile, "digraph \"G\" { overlap=false \n" );
+	fl_write( dotFile, "digraph \"G\" { overlap=false \n" );
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
 		{
 		ItemSet its = itst_element( pg->itemSets, i );
-		fprintf( dotFile, "n%p [label=\"%d %s\\n", its->stateNode, i, LR0StateKindNames[ its_LR0StateKind( its, pg ) ] );
+		fl_write( dotFile, "n%p [label=\"%d %s\\n", its->stateNode, i, LR0StateKindNames[ its_LR0StateKind( its, pg ) ] );
 		for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
 			{
 			Item it = ita_element( pg->items, j );
 			pn_sendItemTo( it->pn, it->dot, dotFile, pg->gr, pg->st );
-			fprintf( dotFile, "\\n" );
+			fl_write( dotFile, "\\n" );
 			}
-		fprintf( dotFile, "\"]\n" );
+		fl_write( dotFile, "\"]\n" );
 		}
 	ob_sendDotEdgesTo( itst_element( pg->itemSets, 0 )->stateNode, dotFile, pg->heap );
-	fprintf( dotFile, "}\n" );
+	fl_write( dotFile, "}\n" );
 
-	fprintf( traceFile, "Parsing...\n" );
+	fl_write( traceFile, "Parsing...\n" );
 	Parser ps = ps_new( gr, st, ml_indefinite() );
 	ObjectHeap heap = theObjectHeap();
 	int stop = asizeof( sentence );
@@ -801,24 +839,32 @@ int main( int argc, char *argv[] )
 		{
 		char *cur  = (i >= stop)?   ":END_OF_INPUT" : sentence[i];
 		char *next = (i+1 >= stop)? ":END_OF_INPUT" : sentence[i+1];
-		fprintf( traceFile, "  Token: %s\n", cur );
+		fl_write( traceFile, "  Token: %s\n", cur );
 		Symbol sy = sy_byName( cur, st );
 		ps_push( ps, oh_symbolToken( heap, sy ) );
+#ifdef ITEM_SET_NUMS
+		fl_write( traceFile, " -- new state is %d\n", ob_toInt( ob_getField(
+			sk_top( ps->stateStack ),
+			sy_byIndex( SYM_ITEM_SET_NUM, st ), heap ), heap ) );
+#endif
 		Object lookahead = oh_symbolToken( heap, sy_byName( next, st ) );
 		Production handle = ps_handle( ps, lookahead );
 		while( handle )
 			{
-			fprintf( traceFile, "    Reduce: " );
+			fl_write( traceFile, "    Reduce: " );
 			pn_sendTo( handle, traceFile, gr, st );
-			fprintf( traceFile, " -- new state is %d\n", ob_toInt( ob_getField(
-				sk_top( ps->stateStack ),
-				sy_byIndex( SYM_ITEM_SET_NUM, st ), heap ), heap ) );
+			fl_write( traceFile, "\n" );
 			ps_popN( ps, pn_length( handle, gr ) );
 			ps_push( ps, oh_symbolToken( heap, pn_lhs( handle, gr ) ) );
+#ifdef ITEM_SET_NUMS
+			fl_write( traceFile, " -- new state is %d\n", ob_toInt( ob_getField(
+				sk_top( ps->stateStack ),
+				sy_byIndex( SYM_ITEM_SET_NUM, st ), heap ), heap ) );
+#endif
 			handle = ps_handle( ps, lookahead );
 			}
 		}
-	fprintf( traceFile, "...done\n" );
+	fl_write( traceFile, "...done\n" );
 
 	return 0;
 	}
