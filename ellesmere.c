@@ -11,7 +11,7 @@ static TokenStream tokenStream;
 static Stack       stack;
 static Context     currentScope;
 static ObjectHeap  heap;
-static Parser      ps;
+static Dispatcher  di;
 FILE *diagnostics;
 
 #ifdef NDEBUG
@@ -322,6 +322,7 @@ static Context populateScope( Context cx )
 	return cx;
 	}
 
+#if 0
 typedef char *GrammarLine[10];
 
 static GrammarLine initialGrammar[] =
@@ -343,6 +344,7 @@ static GrammarLine initialGrammar[] =
 	{ "TERM",         "FACTOR" },
 	{ "FACTOR",       ":INT" },
 	};
+#endif
 
 int main(int argc, char **argv)
 	{
