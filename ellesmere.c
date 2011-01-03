@@ -138,6 +138,7 @@ static void divAction( Parser ps, Production handle, GrammarLine gl )
 static void printAction( Parser ps, Production handle, GrammarLine gl )
 	{
 	ob_sendTo( sk_top( stack ), stdout, heap );
+	printf("\n");
 	nopAction( ps, handle, gl );
 	}
 
@@ -149,6 +150,7 @@ static struct gl_struct grammar1[] =
 	{ nopAction,     { "STATEMENTS",   "STATEMENTS", "STATEMENT" } },
 
 	{ printAction,   { "STATEMENT",    ":INT" } },
+	{ printAction,   { "STATEMENT",    "print", ":INT" } },
 
 	{ passThrough,   { ":INT",         "(", ":INT", ")" }, 2 },
 	{ addAction,     { ":INT",         ":INT", "+", ":INT" } },
