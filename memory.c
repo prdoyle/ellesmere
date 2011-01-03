@@ -42,6 +42,7 @@ struct ml_struct
 
 // These macros are for users of memory.h, not the implementation
 #undef ml_alloc
+#undef ml_allocZeros
 #undef ml_realloc
 
 static Header lastHeader = NULL;
@@ -59,6 +60,13 @@ FUNC void *ml_allocAnnotated(MemoryLifetime ml, int size, const char *file, int 
 	result->next = NULL;
 	lastHeader = result;
 	return result+1;
+	}
+
+FUNC void *ml_allocZerosAnnotated(MemoryLifetime ml, int size, const char *file, int line)
+	{
+	void *result = ml_allocAnnotated( ml, size, file, line );
+	memset( result, 0, size );
+	return result;
 	}
 
 FUNC void *ml_reallocAnnotated(MemoryLifetime ml, void *oldStorage, int oldSize, int newSize, const char *file, int line)
@@ -132,6 +140,13 @@ FUNC void *ml_alloc( MemoryLifetime ml, int numBytes )
 		result = hunk->alloc;
 		hunk->alloc += numBytes;
 		}
+	return result;
+	}
+
+FUNC void *ml_allocZeros( MemoryLifetime ml, int numBytes )
+	{
+	void *result = ml_alloc( ml, numBytes );
+	memset( result, 0, numBytes );
 	return result;
 	}
 

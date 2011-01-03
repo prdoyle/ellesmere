@@ -39,10 +39,11 @@ FUNC BitVector bv_new( int numBits, MemoryLifetime ml )
 	int numBytes = numWords * sizeof( Word );
 	BitVector result;
 	result    = (BitVector)ml_alloc( ml, sizeof(*result) );
+	//result->words = (Word*)ml_allocZeros( ml, numBytes );
 	result->words = (Word*)ml_alloc( ml, numBytes );
+	memset( result->words, 0, numBytes );
 	result->numWords = numWords;
 	result->ml       = ml;
-	memset( result->words, 0, numBytes );
 	return result;
 	}
 
@@ -113,9 +114,30 @@ FUNC int bv_nextBit( BitVector bv, int prevBit )
 	return bv_END;
 	}
 
+FUNC int bv_prevBit( BitVector bv, int nextBit )
+	{
+	int bitIndex = bit2shift( nextBit-1 );
+	int wordIndex, i;
+	for( wordIndex = bit2word ( nextBit-1 ); wordIndex >= 0; wordIndex-- )
+		{
+		Word w = bv->words[ wordIndex ];
+		if( w )
+			for( i = bitIndex; i >= 0; i-- )
+				if( (w>>i) & 1 )
+					return wordIndex * BITS_PER_WORD + i;
+		bitIndex = BITS_PER_WORD;
+		}
+	return bv_END;
+	}
+
 FUNC int bv_firstBit( BitVector bv )
 	{
 	return bv_nextBit( bv, -1 );
+	}
+
+FUNC int bv_lastBit( BitVector bv )
+	{
+	return bv_prevBit( bv, bv->numWords * BITS_PER_WORD );
 	}
 
 FUNC int bv_population( BitVector bv )
@@ -142,8 +164,14 @@ FUNC bool bv_isEmpty( BitVector bv )
 
 FUNC void bv_clear( BitVector bv )
 	{
+#if 0 // This works too, but it is counterproductive if the user has pre-allocated the proper number of words
 	if( bv->numWords > 0 )
 		bv_reallocWords( bv, 0 );
+#else
+	int i;
+	for( i=0; i < bv->numWords; i++ )
+		bv->words[i] = 0;
+#endif
 	}
 
 FUNC bool bv_equals( BitVector bv, BitVector other )
@@ -175,6 +203,15 @@ FUNC bool bv_contains( BitVector bv, BitVector other )
 	bv_and( tempBV, other );
 	bool result = bv_equals( tempBV, other );
 	ml_end( tempML );
+	return result;
+	}
+
+FUNC bool bv_intersects( BitVector target, BitVector source )
+	{
+	bool result = false;
+	int i, stop = min( target->numWords, source->numWords );
+	for( i=0; i < stop && !result; i++ )
+		result = result || ( target->words[ i ] & source->words[ i ] );
 	return result;
 	}
 
@@ -406,6 +443,11 @@ int main( int argc, char **argv )
 	errorOccurred |= bv_equals( a, b );
 	errorOccurred |= !bv_contains( a, b );
 	errorOccurred |= bv_contains( b, a );
+	errorOccurred |= 150    != bv_lastBit( a );
+	errorOccurred |= 5      != bv_prevBit( a, 150 );
+	errorOccurred |= 3      != bv_prevBit( a, 5 );
+	errorOccurred |= 1      != bv_prevBit( a, 3 );
+	errorOccurred |= bv_END != bv_prevBit( a, 1 );
 
 	return errorOccurred? 1 : 0;
 	}

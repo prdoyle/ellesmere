@@ -12,16 +12,19 @@ FUNC MemoryLifetime ml_indefinite(); // Never ends
 #define ml_undecided ml_indefinite // To mark uses I probably want to change later
 #define ml_singleton ml_indefinite // To mark uses for singletons that might not always be singletons
 
-FUNC void *ml_alloc   ( MemoryLifetime ml, int numBytes );
-FUNC void *ml_realloc ( MemoryLifetime ml, void *oldStorage, int oldNumBytes, int newNumBytes );
+FUNC void *ml_alloc      ( MemoryLifetime ml, int numBytes );
+FUNC void *ml_allocZeros ( MemoryLifetime ml, int numBytes );
+FUNC void *ml_realloc    ( MemoryLifetime ml, void *oldStorage, int oldNumBytes, int newNumBytes );
 
 #ifndef NDEBUG
-	FUNC void *ml_allocAnnotated   ( MemoryLifetime ml, int numBytes, const char *file, int line );
-	FUNC void *ml_reallocAnnotated ( MemoryLifetime ml, void *oldStorage, int oldNumBytes, int newNumBytes, const char *file, int line );
-	FUNC int   ml_sendReportTo     ( File fl );
+	FUNC void *ml_allocAnnotated      ( MemoryLifetime ml, int numBytes, const char *file, int line );
+	FUNC void *ml_allocZerosAnnotated ( MemoryLifetime ml, int numBytes, const char *file, int line );
+	FUNC void *ml_reallocAnnotated    ( MemoryLifetime ml, void *oldStorage, int oldNumBytes, int newNumBytes, const char *file, int line );
+	FUNC int   ml_sendReportTo        ( File fl );
 
-	#define ml_alloc(ml,s)       ml_allocAnnotated   ((ml),(s),         __FILE__, __LINE__)
-	#define ml_realloc(ml,p,o,n) ml_reallocAnnotated ((ml),(p),(o),(n), __FILE__, __LINE__)
+	#define ml_alloc(ml,s)       ml_allocAnnotated       ((ml),(s),         __FILE__, __LINE__)
+	#define ml_allocZeros(ml,s)  ml_allocZerosAnnotated  ((ml),(s),         __FILE__, __LINE__)
+	#define ml_realloc(ml,p,o,n) ml_reallocAnnotated     ((ml),(p),(o),(n), __FILE__, __LINE__)
 #endif
 
 #endif

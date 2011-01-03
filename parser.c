@@ -5,8 +5,9 @@
 #include "objects.h"
 #include "stack.h"
 #include <string.h>
+#include <stdlib.h>
 
-#define ITEM_SET_NUMS
+#undef ITEM_SET_NUMS
 
 typedef BitVector ItemVector;   // BitVectors of item indexes
 typedef BitVector SymbolVector; // BitVectors of symbol side-table indexes
@@ -25,6 +26,7 @@ typedef struct it_struct
 	{
 	Production pn;
 	int dot; // "Current" position of the dot is before the token at this index
+	SymbolVector lookahead;  // May not be the optimal lookahead (ie. for LALR)
 	} *Item;
 
 typedef struct ita_struct *ItemArray;
@@ -55,8 +57,13 @@ struct its_struct
 	{
 	ItemVector items;
 	Object     stateNode;
-	bool       isExpanded;
+	int       *edgePriorities; // 1 + the nest depth of the production that wants an outgoing edge for each symbol.  Lower = more important
 	};
+
+static bool its_isExpanded( ItemSet its )
+	{
+	return its->edgePriorities != NULL;
+	}
 
 typedef struct itst_struct *ItemSetTable;
 #define AR_PREFIX  itst
@@ -108,6 +115,11 @@ static int its_index( ItemSet its, ParserGenerator pg )
 	return its - itst_element( pg->itemSets, 0 );
 	}
 
+static bool pg_itemIsRightmost( ParserGenerator pg, int itemIndex )
+	{
+	return bv_isSet( pg->rightmostItems, itemIndex );
+	}
+
 static void pg_closeItemVector( ParserGenerator pg, ItemVector itemVector )
 	{
 	int i;
@@ -120,7 +132,7 @@ static void pg_closeItemVector( ParserGenerator pg, ItemVector itemVector )
 			{
 			Item it = ita_element( pg->items, i );
 			Production pn = it->pn;
-			if( !bv_isSet( pg->rightmostItems, i ) ) // Note: this skips empty productions
+			if( !pg_itemIsRightmost( pg, i ) )
 				{
 				Symbol nextToken = pn_token( pn, it->dot, pg->gr );
 				SymbolSideTableEntry lhs = pg_sideTableEntry( pg, nextToken );
@@ -169,7 +181,7 @@ static ItemSet pg_createItemSet( ParserGenerator pg, ItemVector items )
 		ob_fromInt( its_index( result, pg ), pg->heap ),
 		pg->heap );
 #endif
-	result->isExpanded = false;
+	result->edgePriorities = NULL;
 	return result;
 	}
 
@@ -224,9 +236,7 @@ static void pg_populateSymbolSideTable( ParserGenerator pg )
 	Grammar gr = pg->gr;
 	SymbolTable st = pg->st;
 	int itemIndex;
-	const int sstIndexesSize = st_count(st) * sizeof(pg->sstIndexes[0]);
-	pg->sstIndexes = (int*)ml_alloc( ml, sstIndexesSize );
-	memset( pg->sstIndexes, 0, sstIndexesSize );
+	pg->sstIndexes = (int*)ml_allocZeros( ml, st_count(st) * sizeof(pg->sstIndexes[0]));
 	pg->sst = sst_new( 100, ml );
 	pg->nullableSymbols = bv_new( 100, ml );
 	sst_incCount( pg->sst ); // sst index zero is used for "null" so skip that one
@@ -270,7 +280,7 @@ static void pg_populateSymbolSideTable( ParserGenerator pg )
 		}
 	}
 
-static Object pg_computeStateNodes( ParserGenerator pg, File traceFile )
+static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 	{
 	MemoryLifetime ml = pg->generateTime;
 	SymbolTable st = pg->st;
@@ -297,8 +307,10 @@ static Object pg_computeStateNodes( ParserGenerator pg, File traceFile )
 		traceBVX( itemsLeft, traceFile, "    minus rightmost: %d", ", %d" );
 		trace( traceFile, "\n" );
 
-		assert( !curItemSet->isExpanded );
-		curItemSet->isExpanded = true;
+		assert( !its_isExpanded( curItemSet ) );
+		int size = sst_count(pg->sst) * sizeof(curItemSet->edgePriorities[0]);
+		curItemSet->edgePriorities = (int*)ml_allocZeros( pg->generateTime, size );
+		assert( its_isExpanded( curItemSet ) );
 		for( i = bv_firstBit( itemsLeft ); i != bv_END; i = bv_nextBit( itemsLeft, i ) )
 			{
 			Item it = ita_element( pg->items, i ); ItemSet nextItemSet;
@@ -308,6 +320,12 @@ static Object pg_computeStateNodes( ParserGenerator pg, File traceFile )
 			pg_computeItemsExpectingToken( pg, nextItems, itemsLeft, expected );
 			traceBVX( nextItems, traceFile, "      similar items: %d", ", %d" );
 			trace( traceFile, "\n" );
+
+			Item shallowestItem = ita_element( pg->items, bv_lastBit( nextItems ) );
+			int highestPriority = 1 + pn_nestDepth( shallowestItem->pn, pg->gr );
+			int ssti = pg_symbolSideTableIndex( pg, expected );
+			curItemSet->edgePriorities[ ssti ] = highestPriority;
+			trace( traceFile, "      edgePriorities[ %d ] = %d\n", ssti, highestPriority );
 
 			bv_minus( itemsLeft, nextItems );
 			traceBVX( itemsLeft, traceFile, "          itemsLeft: %d", ", %d" );
@@ -340,10 +358,10 @@ static Object pg_computeStateNodes( ParserGenerator pg, File traceFile )
 		for( i = its_index( curItemSet, pg ); i < itst_count( pg->itemSets ); i++ )
 			{
 			curItemSet = itst_element( pg->itemSets, i );
-			if( !curItemSet->isExpanded )
+			if( !its_isExpanded( curItemSet ) )
 				break;
 			}
-		if( curItemSet->isExpanded )
+		if( its_isExpanded( curItemSet ) )
 			{
 			curItemSet = NULL;
 			trace( traceFile, "All ItemSets are expanded\n" );
@@ -454,32 +472,192 @@ static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 		}
 	}
 
-static void pg_computeReduceNodes( ParserGenerator pg, File traceFile )
+static void pg_computeSLRLookaheads( ParserGenerator pg, File traceFile )
 	{
-	// For now we're doing SLR
+	int i;
+	int numItems = ita_count( pg->items );
+	Item *items = (Item*)ml_alloc( pg->generateTime, numItems * sizeof(*items) );
+	for( i=0; i < numItems; i++ )
+		{
+		Item it = ita_element( pg->items, i );
+		items[i] = it;
+		SymbolSideTableEntry lhs = pg_sideTableEntry( pg, pn_lhs( it->pn, pg->gr ) );
+		it->lookahead = bv_new( sst_count( pg->sst ), pg->generateTime );
+		bv_copy( it->lookahead, lhs->follow );
+		}
+	}
+
+#if 0
+static void pg_adjustLookaheadsForNesting( ParserGenerator pg, File traceFile )
+	{
+	int i;
+	int numItems = ita_count( pg->items );
+	int numSymbols = sst_count( pg->sst );
+
+	// Account for nesting by masking off conflicting lookaheads at lower depths
+	// Items are naturally in descending order of depth so we just need to
+	// process them in reverse order.
+	//
+	SymbolVector overridden = bv_new( numSymbols, pg->generateTime );
+	SymbolVector willBeOverridden = bv_new( numSymbols, pg->generateTime );
+	int prevDepth = -1;
+	for( i=numItems-1; i >= 0; i-- )
+		{
+		Item it = ita_element( pg->items, i );
+		int depth = pn_nestDepth( it->pn, pg->gr );
+		if( depth > prevDepth )
+			{
+			bv_or( overridden, willBeOverridden );
+			bv_clear( willBeOverridden );
+			prevDepth = depth;
+			}
+		bv_minus( it->lookahead, overridden );
+		bv_or( willBeOverridden, it->lookahead );
+		}
+	}
+#endif
+
+#if 0
+static void its_getItemsActivatedBy( ItemSet its, int token, ItemVector result, ParserGenerator pg )
+	{
+	int i;
+	bv_copy ( result, sst_element( pg->sst, token )->expectingItems );
+	bv_and  ( result, its->items );
+	for( i = bv_firstBit( its->items ); i != bv_END; i = bv_nextBit( its->items, i ) )
+		{
+		Item it = ita_element( pg->items, i );
+		if( pg_itemIsRightmost( pg, i ) )
+			if( bv_isSet( it->lookahead, token ) )
+				bv_set( result, i );
+		}
+	}
+#endif
+
+static void it_getFollow( Item it, SymbolVector result, ParserGenerator pg, File traceFile )
+	{
+	// TODO: There's probably an efficient way to pre-compute these
+	int i;
+	fl_write( traceFile, "          Computing follow for: " );
+	pn_sendItemTo( it->pn, it->dot, traceFile, pg->gr, pg->st );
+	fl_write( traceFile, "\n" );
+	bv_clear( result );
+	for( i = it->dot; i < pn_length( it->pn, pg->gr ); i++ )
+		{
+		int curIndex = pg_symbolSideTableIndex( pg, pn_token( it->pn, i, pg->gr ) );
+		SymbolVector curFirst = sst_element( pg->sst, curIndex )->first;
+		bv_or( result, curFirst );
+		fl_write( traceFile, "            Symbol %s at %d adds ", sy_name( sst_element( pg->sst, curIndex )->sy, pg->st ), i );
+		bv_sendTo( curFirst, traceFile );
+		fl_write( traceFile, "\n" );
+		if( !bv_isSet( pg->nullableSymbols, curIndex ) )
+			break;
+		}
+	if( i == pn_length( it->pn, pg->gr ) )
+		{
+		bv_or( result, it->lookahead );
+		fl_write( traceFile, "            Adding lookahead " );
+		bv_sendTo( it->lookahead, traceFile );
+		fl_write( traceFile, "\n" );
+		}
+	}
+
+static void pg_computeReduceActions( ParserGenerator pg, File traceFile )
+	{
 	Grammar gr = pg->gr; ObjectHeap heap = pg->heap;
 	int i,j,k;
-	ItemVector iv = bv_new( ita_count(pg->items), pg->generateTime );
+
+	fl_write( traceFile, "Computing reduce actions\n" );
+	ItemVector   reduceItems       = bv_new( ita_count(pg->items), pg->generateTime );
+	SymbolVector reduceSymbols     = bv_new( sst_count(pg->sst),   pg->generateTime );
+	SymbolVector competitorSymbols = bv_new( sst_count(pg->sst),   pg->generateTime );
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
 		{
+		fl_write( traceFile, "  ItemSet %d:\n", i );
 		ItemSet its = itst_element( pg->itemSets, i );
 		Object stateNode = its->stateNode;
-		bv_copy ( iv, pg->rightmostItems );
-		bv_and  ( iv, its->items );
-		for( j = bv_firstBit( iv ); j != bv_END; j = bv_nextBit( iv, j ) )
+		bv_copy ( reduceItems, pg->rightmostItems );
+		bv_and  ( reduceItems, its->items );
+		fl_write( traceFile, "    Items: " );
+		bv_sendTo( its->items, traceFile );
+		fl_write( traceFile, "\n" );
+		fl_write( traceFile, "    ReduceItems: " );
+		bv_sendTo( reduceItems, traceFile );
+		fl_write( traceFile, "\n" );
+		for( j = bv_firstBit( reduceItems ); j != bv_END; j = bv_nextBit( reduceItems, j ) )
 			{
 			Item it = ita_element( pg->items, j );
 			Production pn = it->pn;
-			SymbolSideTableEntry lhs = pg_sideTableEntry( pg, pn_lhs( pn, gr ) );
-			SymbolVector follow = lhs->follow;
-			for( k = bv_firstBit( follow ); k != bv_END; k = bv_nextBit( follow, k ) )
+			fl_write( traceFile, "    Item %d: ", j );
+			pn_sendItemTo( pn, it->dot, traceFile, pg->gr, pg->st );
+			fl_write( traceFile, "\n" );
+			bv_copy( reduceSymbols, it->lookahead );
+			fl_write( traceFile, "      Original ReduceSymbols: " );
+			bv_sendTo( reduceSymbols, traceFile );
+			fl_write( traceFile, "\n" );
+			
+			// Filter out reduceSymbols covered by higher-priority items
+			//
+			for( k = bv_nextBit( its->items, j ); k != bv_END; k = bv_nextBit( its->items, k ) )
+				{
+				Item competitor = ita_element( pg->items, k );
+				fl_write( traceFile, "      Checking item %d: ", k );
+				pn_sendItemTo( competitor->pn, competitor->dot, traceFile, pg->gr, pg->st );
+				fl_write( traceFile, " follow: " );
+				bv_sendTo( competitorSymbols, traceFile );
+				fl_write( traceFile, "\n" );
+				it_getFollow( competitor, competitorSymbols, pg, traceFile );
+				if( !bv_intersects( reduceSymbols, competitorSymbols ) )
+					{
+					fl_write( traceFile, "        No conflict\n" );
+					continue;
+					}
+				int winningMargin = pn_nestDepth( competitor->pn, pg->gr ) - pn_nestDepth( it->pn, pg->gr );
+				if( winningMargin > 0 )
+					{
+					fl_write( traceFile, "        Competitor loses\n" );
+					continue;
+					}
+				else if( winningMargin == 0 )
+					{
+					if( !pg_itemIsRightmost( pg, k ) )
+						{
+						if( it->pn == competitor->pn && !pg_itemIsRightmost( pg, k ) )
+							{
+							fl_write( traceFile, "        Self-left-associativity favours reduce\n" );
+							continue;
+							}
+						else
+							{
+							fl_write( traceFile, "        Favouring reduce over shift until I figure out something better\n" );
+							continue;
+							}
+						}
+					else
+						{
+						fl_write( traceFile, "        CONFLICT\n" );
+						check( 0 ); // Conflict
+						}
+					}
+
+				bv_minus( reduceSymbols, competitorSymbols );
+				fl_write( traceFile, "        Competitor wins; removing lookaheads: " );
+				bv_sendTo( competitorSymbols, traceFile );
+				fl_write( traceFile, "\n" );
+				}
+			fl_write( traceFile, "      Filtered ReduceSymbols: " );
+			bv_sendTo( reduceSymbols, traceFile );
+			fl_write( traceFile, "\n" );
+
+			// Add reduce edges
+			//
+			for( k = bv_firstBit( reduceSymbols ); k != bv_END; k = bv_nextBit( reduceSymbols, k ) )
 				{
 				SymbolSideTableEntry reduceOn = sst_element( pg->sst, k );
-				check( !ob_hasField( stateNode, reduceOn->sy, heap ) );
 				ob_setField( stateNode, reduceOn->sy, ob_fromInt( pn_index( pn, gr ), heap ), heap );
 				}
 			}
 		}
+
 	}
 
 struct ps_struct
@@ -495,10 +673,11 @@ FUNC Parser ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml )
 	ParserGenerator pg = pg_new( gr, st, generateTime, ml, theObjectHeap() );
 	pg_populateItemTable( pg );
 	pg_populateSymbolSideTable( pg );
-	Object startState = pg_computeStateNodes( pg, NULL );
+	Object startState = pg_computeLR0StateNodes( pg, NULL );
 	pg_computeFirstSets( pg, NULL );
 	pg_computeFollowSets( pg, NULL );
-	pg_computeReduceNodes( pg, NULL );
+	pg_computeSLRLookaheads( pg, NULL );
+	pg_computeReduceActions( pg, NULL );
 	ml_end( generateTime );
 
 	Parser result = (Parser)ml_alloc( ml, sizeof(*result) );
@@ -756,6 +935,21 @@ static char *sentence[] =
 	};
 #endif
 
+static void dumpItemLookaheads( ParserGenerator pg, File traceFile )
+	{
+	int i;
+	fl_write( traceFile, "Item lookaheads:\n" );
+	for( i=0; i < ita_count( pg->items ); i++ )
+		{
+		Item it = ita_element( pg->items, i );
+		fl_write( traceFile, "  %3d: ", i );
+		pn_sendItemTo( it->pn, it->dot, traceFile, pg->gr, pg->st );
+		fl_write( traceFile, "\n    lookahead: " );
+		bv_sendTo( it->lookahead, traceFile );
+		fl_write( traceFile, "\n" );
+		}
+	}
+
 int main( int argc, char *argv[] )
 	{
 	int i, j; SymbolTable st; Symbol goal; Grammar gr; ParserGenerator pg;
@@ -828,7 +1022,7 @@ int main( int argc, char *argv[] )
 			}
 		}
 
-	pg_computeStateNodes( pg, traceFile );
+	pg_computeLR0StateNodes( pg, traceFile );
 
 	pg_computeFirstSets( pg, traceFile );
 	pg_computeFollowSets( pg, traceFile );
@@ -845,7 +1039,9 @@ int main( int argc, char *argv[] )
 		fl_write( traceFile, "\n" );
 		}
 
-	//pg_computeReduceNodes( pg, traceFile );
+	pg_computeSLRLookaheads( pg, traceFile );
+	dumpItemLookaheads( pg, traceFile );
+	pg_computeReduceActions( pg, traceFile );
 	ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
 
 	fl_write( dotFile, "digraph \"G\" { overlap=false \n" );

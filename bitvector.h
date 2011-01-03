@@ -12,12 +12,15 @@ FUNC void      bv_unset   ( BitVector bv, int bitIndex );
 
 enum { bv_END=-1 }; // indicates there are no more bits
 FUNC int       bv_firstBit   ( BitVector bv );
+FUNC int       bv_lastBit    ( BitVector bv );
 FUNC int       bv_nextBit    ( BitVector bv, int prevBit );
+FUNC int       bv_prevBit    ( BitVector bv, int nextBit );
 FUNC int       bv_population ( BitVector bv );
 FUNC int       bv_hash       ( BitVector bv );
 FUNC bool      bv_isEmpty    ( BitVector bv );
 FUNC bool      bv_equals     ( BitVector bv, BitVector other );
 FUNC bool      bv_contains   ( BitVector bv, BitVector other );
+FUNC bool      bv_intersects ( BitVector bv, BitVector other );
 
 FUNC void      bv_clear ( BitVector target );
 FUNC void      bv_copy  ( BitVector target, BitVector source );
