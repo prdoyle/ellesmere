@@ -212,6 +212,25 @@ FUNC Symbol gr_goal( Grammar gr )
 	assert(0);
 	}
 
+FUNC Grammar gr_outerNth( Grammar gr, int depth )
+	{
+	if( depth == 0 )
+		return gr;
+	else switch( gr->kind )
+		{
+		case OUTERMOST:
+			return NULL;
+		case NESTED:
+			return gr_outerNth( gr->data.outer, depth-1 );
+		}
+	assert(0);
+	}
+
+FUNC Grammar gr_outer( Grammar gr )
+	{
+	return gr_outerNth( gr, 1 );
+	}
+
 FUNC Production gr_production( Grammar gr, int index )
 	{
 	if( gr_productionIsInherited( gr, index ) )

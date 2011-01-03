@@ -141,7 +141,7 @@ static void printAction( Parser ps, Production handle, GrammarLine gl )
 	nopAction( ps, handle, gl );
 	}
 
-static struct gl_struct initialGrammar[] =
+static struct gl_struct grammar1[] =
 	{
 	{ nopAction,     { "PROGRAM",      "STATEMENTS", ":END_OF_INPUT" } },
 
@@ -154,24 +154,50 @@ static struct gl_struct initialGrammar[] =
 	{ addAction,     { ":INT",         ":INT", "+", ":INT" } },
 	{ subAction,     { ":INT",         ":INT", "-", ":INT" } },
 
-	// TODO: Use a nested grammar for BEDMAS
+	{ NULL },
+	};
+
+static struct gl_struct grammar2[] =
+	{
 	{ mulAction,     { ":INT",         ":INT", "*", ":INT" } },
 	{ divAction,     { ":INT",         ":INT", "/", ":INT" } },
+	{ NULL },
 	};
+
+static GrammarLine initialGrammarNest[] = { grammar1, grammar2 };
 
 static Grammar populateGrammar( SymbolTable st )
 	{
-	Grammar gr = gr_new( sy_byName( initialGrammar[0].tokens[0], st ), asizeof( initialGrammar ), ml_indefinite() );
-	int i,j;
-	for( i=0; i < asizeof( initialGrammar ); i++ )
+	Grammar gr = NULL;
+	int i,j,k;
+	for( i=0; i < asizeof( initialGrammarNest ); i++ )
 		{
-		Production pn = pn_new( gr, sy_byName( initialGrammar[i].tokens[0], st ), asizeof( initialGrammar[i].tokens ) );
-		for( j=1; j < asizeof( initialGrammar[i].tokens ) && initialGrammar[i].tokens[j]; j++ )
-			pn_append( pn, sy_byName( initialGrammar[i].tokens[j], st ), gr );
-		pn_stopAppending( pn, gr );
+		GrammarLine *curArray = initialGrammarNest + i;
+		if( gr )
+			gr = gr_nested( gr, 20, ml_indefinite() );
+		else
+			gr = gr_new( sy_byName( (*curArray)[0].tokens[0], st ), 20, ml_indefinite() );
+		for( j=0; (*curArray)[j].action; j++ )
+			{
+			Production pn = pn_new( gr, sy_byName( (*curArray)[j].tokens[0], st ), asizeof( (*curArray)[j].tokens ) );
+			for( k=1; k < asizeof( (*curArray)[j].tokens ) && (*curArray)[j].tokens[k]; k++ )
+				pn_append( pn, sy_byName( (*curArray)[j].tokens[k], st ), gr );
+			pn_stopAppending( pn, gr );
+			}
 		}
 	gr_stopAdding( gr );
 	return gr;
+	}
+
+static GrammarLine lookupGrammarLine( Production pn, Grammar gr )
+	{
+	int depth = pn_nestDepth( pn, gr );
+	Grammar definingGrammar = gr_outerNth( gr, depth );
+	GrammarLine array = initialGrammarNest[ gr_nestDepth( gr ) - depth ];
+	int index = pn_index( pn, gr );
+	if( gr_outer( definingGrammar ) )
+		index -= gr_numProductions( gr_outer( definingGrammar ) );
+	return array + index;
 	}
 
 int main( int argc, char **argv )
@@ -205,8 +231,7 @@ int main( int argc, char **argv )
 			trace( diagnostics, "  Found handle production %d: ", pn_index( handle, gr ) );
 			pn_sendTo( handle, diagnostics, gr, st );
 			trace( diagnostics, "\n" );
-			assert( pn_index( handle, gr ) < asizeof( initialGrammar ) );
-			GrammarLine line = initialGrammar + pn_index( handle, gr );
+			GrammarLine line = lookupGrammarLine( handle, gr );
 			NativeAction action = line->action;
 			action( ps, handle, line );
 			handle = ps_handle( ps, nextOb );

@@ -9,6 +9,8 @@ FUNC Grammar    gr_nested ( Grammar outer, int numProductionsEstimate, MemoryLif
 
 FUNC void       gr_stopAdding     ( Grammar gr );
 FUNC Symbol     gr_goal           ( Grammar gr );
+FUNC Grammar    gr_outer          ( Grammar gr );
+FUNC Grammar    gr_outerNth       ( Grammar gr, int depth );
 FUNC int        gr_numProductions ( Grammar gr );
 FUNC int        gr_numItems       ( Grammar gr );
 FUNC Production gr_production     ( Grammar gr, int index );
