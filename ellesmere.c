@@ -2,16 +2,16 @@
 #include "lex.h"
 #include "lex.l.h"
 #include "stack.h"
-#include "dispatcher.h"
+#include "parser.h"
 #include "tokens.h"
 #include "memory.h"
 #include <stdarg.h>
 
 static TokenStream tokenStream;
 static Stack       stack;
-static Context     currentScope;
+//static Context     currentScope;
 static ObjectHeap  heap;
-static Dispatcher  di;
+static Parser      ps;
 FILE *diagnostics;
 
 #ifdef NDEBUG
@@ -31,15 +31,23 @@ static int trace( FILE *file, const char *format, ... )
 	}
 #endif
 
-static Action push( Object ob )
+static void push( Object ob )
 	{
 	sk_push( stack, ob );
-	return di_action( di, ob, currentScope );
+	ps_push( ps, ob );
 	}
 
 static Object pop()
 	{
+	ps_popN( ps, 1 );
 	return sk_pop( stack );
+	}
+
+static int popInt()
+	{
+	Object popped = pop();
+	assert( ob_isInt( popped, heap ) );
+	return ob_toInt( popped, heap );
 	}
 
 static Symbol popToken()
@@ -49,85 +57,7 @@ static Symbol popToken()
 	return ob_toSymbol( popped, heap );
 	}
 
-static Action valueof( Action an, Context cx )
-	{
-	Symbol symbol = ob_toSymbol( pop(), heap );
-	return push( sy_value( symbol, cx ) );
-	}
-
-static Action popAction( Action an, Context cx )
-	{
-	Symbol symbol = ob_toSymbol( pop(), heap );
-	popToken();
-	sy_setValue( symbol, pop(), cx );
-	sy_setImmediateAction( symbol, an_fromFunctionAndSymbol( valueof, symbol ), cx );
-	trace( diagnostics, "  sy_setValue( %p, %p, %p )\n", symbol, sy_value( symbol, cx ), cx );
-	return NULL;
-	}
-
-static Action dupAction( Action an, Context cx )
-	{
-	popToken();
-	return push( sk_top(stack) );
-	}
-
-static Action deep( Action an, Context cx )
-	{
-	int depth = ob_toInt( pop(), heap );
-	popToken();
-	push( sk_item( stack, depth ) );
-	return NULL;
-	}
-
-static Action print( Action an, Context cx )
-	{
-	popToken();
-	ob_sendTo( pop(), stdout, heap );
-	printf("\n");
-	return NULL;
-	}
-
-static Action add( Action an, Context cx )
-	{
-	int right = ob_toInt( pop(), heap );
-	int left  = ob_toInt( pop(), heap );
-	popToken();
-	return push( ob_fromInt( left + right, heap ) );
-	}
-
-static Action sub( Action an, Context cx )
-	{
-	int right = ob_toInt( pop(), heap );
-	int left  = ob_toInt( pop(), heap );
-	popToken();
-	return push( ob_fromInt( left - right, heap ) );
-	}
-
-static Action set( Action an, Context cx )
-	{
-	Object value  = pop();
-	Object ob     = pop();
-	Symbol field  = ob_toSymbol( pop(), heap );
-	popToken();
-	ob_setField( ob, field, value, heap );
-	return NULL;
-	}
-
-static Action get( Action an, Context cx )
-	{
-	Object ob     = pop();
-	Symbol field  = ob_toSymbol( pop(), heap );
-	popToken();
-	return push( ob_getField( ob, field, heap ) );
-	}
-
-static Action new( Action an, Context cx )
-	{
-	Symbol tag = ob_toSymbol( pop(), heap );
-	popToken();
-	return push( ob_create( tag, heap ) );
-	}
-
+#if 0
 static Action eatUntilObject( Object target )
 	{
 	trace( diagnostics, "  eatUntilObject( " );
@@ -144,246 +74,160 @@ static Action eatUntilObject( Object target )
 		}
 	return NULL;
 	}
-
-static Action brancheq( Action an, Context cx )
-	{
-	int right = ob_toInt( pop(), heap );
-	int left  = ob_toInt( pop(), heap );
-	Object target = pop();
-	popToken();
-	if( left == right )
-		return eatUntilObject( target );
-	else
-		return NULL;
-	}
-
-static Action branchne( Action an, Context cx )
-	{
-	int right = ob_toInt( pop(), heap );
-	int left  = ob_toInt( pop(), heap );
-	Object target = pop();
-	popToken();
-	if( left != right )
-		return eatUntilObject( target );
-	else
-		return NULL;
-	}
-
-static Action branchlt( Action an, Context cx )
-	{
-	int right = ob_toInt( pop(), heap );
-	int left  = ob_toInt( pop(), heap );
-	Object target = pop();
-	popToken();
-	if( left < right )
-		return eatUntilObject( target );
-	else
-		return NULL;
-	}
-
-static Action branchle( Action an, Context cx )
-	{
-	int right = ob_toInt( pop(), heap );
-	int left  = ob_toInt( pop(), heap );
-	Object target = pop();
-	popToken();
-	if( left <= right )
-		return eatUntilObject( target );
-	else
-		return NULL;
-	}
-
-static Action branchgt( Action an, Context cx )
-	{
-	int right = ob_toInt( pop(), heap );
-	int left  = ob_toInt( pop(), heap );
-	Object target = pop();
-	popToken();
-	if( left > right )
-		return eatUntilObject( target );
-	else
-		return NULL;
-	}
-
-static Action branchge( Action an, Context cx )
-	{
-	int right = ob_toInt( pop(), heap );
-	int left  = ob_toInt( pop(), heap );
-	Object target = pop();
-	popToken();
-	if( left >= right )
-		return eatUntilObject( target );
-	else
-		return NULL;
-	}
-
-static Action hop( Action an, Context cx )
-	{
-	popToken();
-	ts_next( tokenStream );
-	return NULL;
-	}
-
-static Action blockto( Action an, Context cx )
-	{
-	Symbol terminator = ob_toSymbol( pop(), heap );
-	popToken();
-	TokenBlock tb = ts_recordUntil( tokenStream, terminator );
-	return push( ob_fromTokenBlock( tb, heap ) );
-	}
-
-static Action call( Action an, Context cx )
-	{
-	TokenBlock block = ob_toTokenBlock( pop(), heap );
-	popToken();
-	tokenStream = ts_fromBlock( block, heap, tokenStream );
-	return NULL;
-	}
-
-static Action gotoAction( Action an, Context cx )
-	{
-	TokenBlock block = ob_toTokenBlock( pop(), heap );
-	popToken();
-	tokenStream = ts_fromBlock( block, heap, ts_caller( tokenStream ) );
-	return NULL;
-	}
-
-static Action returnAction( Action an, Context cx )
-	{
-	popToken();
-	check( ts_caller( tokenStream ) != NULL );
-	tokenStream = ts_close( tokenStream );
-	cx_restore( currentScope );
-	return NULL;
-	}
-
-static Action reduce( Action an, Context cx )
-	{
-	TokenBlock block = ob_toTokenBlock( sy_value( an_symbol(an), cx ), heap );
-	tokenStream = ts_fromBlock( block, heap, tokenStream );
-	cx_save( currentScope );
-	return NULL;
-	}
-
-static Action def( Action an, Context cx )
-	{
-	TokenBlock block = ob_toTokenBlock( pop(), heap );
-	int        arity = ob_toInt( pop(), heap );
-	Symbol    symbol = ob_toSymbol( pop(), heap );
-	popToken();
-	sy_setImmediateAction( symbol, an_fromFunctionAndSymbol( reduce, symbol ), cx );
-	sy_setArity( symbol, arity, cx );
-	sy_setValue( symbol, ob_fromTokenBlock( block, heap ), cx );
-	return NULL;
-	}
-
-static struct ist_struct
-	{
-	char *name;
-	ActionFunction function;
-	int arity;
-	bool isSymbolic;
-	} initialSymbolTable [] =
-	{
-	{ "add",                   add                ,2   },
-	{ "blockto",               blockto            ,1,1 },
-	{ "brancheq",              brancheq           ,3   },
-	{ "branchge",              branchge           ,3   },
-	{ "branchgt",              branchgt           ,3   },
-	{ "branchle",              branchle           ,3   },
-	{ "branchlt",              branchlt           ,3   },
-	{ "branchne",              branchne           ,3   },
-	{ "call",                  call               ,1   },
-	{ "deep",                  deep               ,1   },
-	{ "def",                   def                ,3,1 },
-	{ "dup",                   dupAction               },
-	{ "get",                   get                ,2,1 },
-	{ "goto",                  gotoAction         ,1   },
-	{ "hop",                   hop                     },
-	{ "new",                   new                ,1,1 },
-	{ "pop",                   popAction          ,1,1 },
-	{ "print",                 print                   },
-	{ "return",                returnAction            },
-	{ "set",                   set                ,3,1 },
-	{ "sub",                   sub                ,2   },
-	};
-
-static Context populateScope( Context cx )
-	{
-	int i;
-	for( i=0; i < sizeof( initialSymbolTable ) / sizeof( initialSymbolTable[0] ); i++ )
-		{
-		struct ist_struct *entry = initialSymbolTable + i;
-		Symbol sy = sy_byName( entry->name, cx_symbolTable(cx) );
-		sy_setImmediateAction ( sy, an_fromFunction( entry->function ), cx );
-		sy_setArity           ( sy, entry->arity, cx );
-		sy_setIsSymbolic      ( sy, entry->isSymbolic, cx );
-		}
-	return cx;
-	}
-
-#if 0
-typedef char *GrammarLine[10];
-
-static GrammarLine initialGrammar[] =
-	{
-	{ "PROGRAM",      "STATEMENTS", ":END_OF_INPUT" },
-
-	{ "STATEMENTS",   "STATEMENT" },
-	{ "STATEMENTS",   "STATEMENTS", "STATEMENT" },
-
-	{ "STATEMENT",    ":INT" },
-
-	{ ":INT",         "INFIX" },
-	{ "INFIX",        "(", "INFIX", ")" },
-	{ "INFIX",        "INFIX", "+", "TERM" },
-	{ "INFIX",        "INFIX", "-", "TERM" },
-	{ "INFIX",        "TERM" },
-	{ "TERM",         "TERM", "*", "FACTOR" },
-	{ "TERM",         "TERM", "/", "FACTOR" },
-	{ "TERM",         "FACTOR" },
-	{ "FACTOR",       ":INT" },
-	};
 #endif
 
-int main(int argc, char **argv)
+typedef struct gl_struct *GrammarLine;
+	 
+typedef void (*NativeAction)( Parser ps, Production handle, GrammarLine gl );
+
+struct gl_struct
+	{
+	NativeAction action;
+	char *tokens[10];
+	int parm1;
+	};
+	 
+static void nopAction( Parser ps, Production handle, GrammarLine gl )
+	{
+	Grammar gr = ps_grammar( ps );
+	ps_popN( ps, pn_length( handle, gr ) );
+	ps_push( ps, oh_symbolToken( heap, pn_lhs( handle, gr ) ) );
+	}
+
+static void passThrough( Parser ps, Production handle, GrammarLine gl )
+	{
+	Grammar gr = ps_grammar( ps );
+	int depth = gl->parm1;
+	Object result = sk_item( stack, depth );
+	ps_popN( ps, pn_length( handle, gr ) );
+	push( result );
+	}
+
+static void addAction( Parser ps, Production handle, GrammarLine gl )
+	{
+	int right = popInt();
+	popToken();
+	int left = popInt();
+	push( ob_fromInt( left + right, heap ) );
+	}
+
+static void subAction( Parser ps, Production handle, GrammarLine gl )
+	{
+	int right = popInt();
+	popToken();
+	int left = popInt();
+	push( ob_fromInt( left - right, heap ) );
+	}
+
+static void mulAction( Parser ps, Production handle, GrammarLine gl )
+	{
+	int right = popInt();
+	popToken();
+	int left = popInt();
+	push( ob_fromInt( left * right, heap ) );
+	}
+
+static void divAction( Parser ps, Production handle, GrammarLine gl )
+	{
+	int right = popInt();
+	popToken();
+	int left = popInt();
+	push( ob_fromInt( left / right, heap ) );
+	}
+
+static void printAction( Parser ps, Production handle, GrammarLine gl )
+	{
+	ob_sendTo( sk_top( stack ), stdout, heap );
+	nopAction( ps, handle, gl );
+	}
+
+static struct gl_struct initialGrammar[] =
+	{
+	{ nopAction,     { "PROGRAM",      "STATEMENTS", ":END_OF_INPUT" } },
+
+	{ nopAction,     { "STATEMENTS",   "STATEMENT" } },
+	{ nopAction,     { "STATEMENTS",   "STATEMENTS", "STATEMENT" } },
+
+	{ printAction,   { "STATEMENT",    ":INT" } },
+
+	{ passThrough,   { ":INT",         "(", ":INT", ")" }, 2 },
+	{ addAction,     { ":INT",         ":INT", "+", ":INT" } },
+	{ subAction,     { ":INT",         ":INT", "-", ":INT" } },
+
+	// TODO: Use a nested grammar for BEDMAS
+	{ mulAction,     { ":INT",         ":INT", "*", ":INT" } },
+	{ divAction,     { ":INT",         ":INT", "/", ":INT" } },
+	};
+
+static Grammar populateGrammar( SymbolTable st )
+	{
+	Grammar gr = gr_new( sy_byName( initialGrammar[0].tokens[0], st ), asizeof( initialGrammar ), ml_indefinite() );
+	int i,j;
+	for( i=0; i < asizeof( initialGrammar ); i++ )
+		{
+		Production pn = pn_new( gr, sy_byName( initialGrammar[i].tokens[0], st ), asizeof( initialGrammar[i].tokens ) );
+		for( j=1; j < asizeof( initialGrammar[i].tokens ) && initialGrammar[i].tokens[j]; j++ )
+			pn_append( pn, sy_byName( initialGrammar[i].tokens[j], st ), gr );
+		pn_stopAppending( pn, gr );
+		}
+	gr_stopAdding( gr );
+	return gr;
+	}
+
+int main( int argc, char **argv )
 	{
 	diagnostics = fdopen( 3, "wt" );
 	SymbolTable st = theSymbolTable();
-	currentScope = populateScope( cx_new( st ) );
 	heap = theObjectHeap();
-	di = di_new( heap, st, NULL, diagnostics );
+	Grammar gr = populateGrammar( st );
+	ps = ps_new( gr, st, ml_indefinite(), diagnostics );
 	stack = sk_new( ml_indefinite() );
 	tokenStream = theLexTokenStream( heap, st );
+	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
 	Object ob = ts_next( tokenStream );
-	while( ob )
+	while( ob != endOfInput )
 		{
-		Action an = NULL;
+		Object nextOb = ts_next( tokenStream );
+		if( !nextOb )
+			nextOb = endOfInput;
 		if( diagnostics )
 			{
 			trace( diagnostics, "# Token from %p is ", tokenStream );
 			ob_sendTo( ob, diagnostics, heap );
+			trace( diagnostics, "; next is ");
+			ob_sendTo( nextOb, diagnostics, heap );
 			trace( diagnostics, "\n");
 			}
-		an = push( ob );
-		while( an )
-			an = an_perform( an, currentScope );
+		push( ob );
+		Production handle = ps_handle( ps, nextOb );
+		while( handle )
+			{
+			trace( diagnostics, "  Found handle production %d: ", pn_index( handle, gr ) );
+			pn_sendTo( handle, diagnostics, gr, st );
+			trace( diagnostics, "\n" );
+			assert( pn_index( handle, gr ) < asizeof( initialGrammar ) );
+			GrammarLine line = initialGrammar + pn_index( handle, gr );
+			NativeAction action = line->action;
+			action( ps, handle, line );
+			handle = ps_handle( ps, nextOb );
+			}
 		if( diagnostics )
 			{
 			trace( diagnostics, "  ");
 			sk_sendTo( stack, diagnostics, heap );
 			trace( diagnostics, "\n  ");
-			di_sendTo( di, diagnostics );
-			trace( diagnostics, "\n  ");
+#if 0
 			cx_sendTo( currentScope, diagnostics );
 			trace( diagnostics, "\n");
+#endif
 			}
-		ob = ts_next( tokenStream );
+		ob = nextOb;
 		}
 #ifndef NDEBUG
 	File memreport = fdopen( 4, "wt" );
 	ml_sendReportTo( memreport );
 #endif
+	return 0;
 	}
 
 //MERGE:70

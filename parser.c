@@ -7,7 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#undef ITEM_SET_NUMS
+#define ITEM_SET_NUMS
 
 typedef BitVector ItemVector;   // BitVectors of item indexes
 typedef BitVector SymbolVector; // BitVectors of symbol side-table indexes
@@ -667,17 +667,17 @@ struct ps_struct
 	ObjectHeap stateHeap;
 	};
 
-FUNC Parser ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml )
+FUNC Parser ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File diagnostics )
 	{
 	MemoryLifetime generateTime = ml_begin( 10000, ml );
 	ParserGenerator pg = pg_new( gr, st, generateTime, ml, theObjectHeap() );
 	pg_populateItemTable( pg );
 	pg_populateSymbolSideTable( pg );
-	Object startState = pg_computeLR0StateNodes( pg, NULL );
-	pg_computeFirstSets( pg, NULL );
-	pg_computeFollowSets( pg, NULL );
-	pg_computeSLRLookaheads( pg, NULL );
-	pg_computeReduceActions( pg, NULL );
+	Object startState = pg_computeLR0StateNodes( pg, diagnostics );
+	pg_computeFirstSets( pg, diagnostics );
+	pg_computeFollowSets( pg, diagnostics );
+	pg_computeSLRLookaheads( pg, diagnostics );
+	pg_computeReduceActions( pg, diagnostics );
 	ml_end( generateTime );
 
 	Parser result = (Parser)ml_alloc( ml, sizeof(*result) );
@@ -705,6 +705,11 @@ static Object ps_nextState( Parser ps, Object ob )
 		return NULL;
 	else
 		return ob_getField( curState, token, oh );
+	}
+
+FUNC bool ps_expects( Parser ps, Object ob )
+	{
+	return ps_nextState( ps, ob ) != NULL;
 	}
 
 FUNC void ps_push( Parser ps, Object ob )
@@ -858,10 +863,10 @@ static GrammarLine grammar[] =
 	{ ":INT",    ":INT", "-", ":INT" },
 	{ ":INT",    "(", ":INT", ")" },
 
-	{ "FACTOR",  "0" },
-	{ "FACTOR",  "1" },
-	{ "FACTOR",  "2" },
-	{ "FACTOR",  "3" },
+	{ ":INT",  "0" },
+	{ ":INT",  "1" },
+	{ ":INT",  "2" },
+	{ ":INT",  "3" },
 	};
 
 static GrammarLine grammar2[] =
@@ -925,13 +930,6 @@ static GrammarLine grammar[] = // LR0
 	{ "E", "T" },
 	{ "T", "n" },
 	{ "T", "(", "E", ")" },
-	};
-#endif
-
-#if 0
-static char *sentence[] =
-	{
-	"1", "+", "2", "*", "2", "/", "2", "+", "3"
 	};
 #endif
 
@@ -1060,13 +1058,19 @@ int main( int argc, char *argv[] )
 	ob_sendDotEdgesTo( itst_element( pg->itemSets, 0 )->stateNode, dotFile, pg->heap );
 	fl_write( dotFile, "}\n" );
 
-#if 0
+#if 1
 	fl_write( traceFile, "Parsing...\n" );
-	Parser ps = ps_new( gr, st, ml_indefinite() );
+	Parser ps = ps_new( gr, st, ml_indefinite(), traceFile );
 	ObjectHeap heap = theObjectHeap();
+	static char *sentence[] = { "1", "+", "2", "*", "2", "/", "2", "+", "3" };
 	int stop = asizeof( sentence );
 	for( i=0; i <= stop; i++ )
 		{
+#ifdef ITEM_SET_NUMS
+		fl_write( traceFile, "State is %d\n", ob_toInt( ob_getField(
+			sk_top( ps->stateStack ),
+			sy_byIndex( SYM_ITEM_SET_NUM, st ), heap ), heap ) );
+#endif
 		char *cur  = (i >= stop)?   ":END_OF_INPUT" : sentence[i];
 		char *next = (i+1 >= stop)? ":END_OF_INPUT" : sentence[i+1];
 		fl_write( traceFile, "  Token: %s\n", cur );
