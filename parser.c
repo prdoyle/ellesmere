@@ -12,7 +12,7 @@
 typedef BitVector ItemVector;   // BitVectors of item indexes
 typedef BitVector SymbolVector; // BitVectors of symbol side-table indexes
 
-#ifdef PARSER_T
+#if 1
 	#define trace   fl_write
 	#define traceBV bv_sendTo
 	#define traceBVX bv_sendFormattedTo
@@ -207,21 +207,25 @@ static ParserGenerator pg_new( Grammar gr, SymbolTable st, MemoryLifetime genera
 	return pg;
 	}
 
-static void pg_populateItemTable( ParserGenerator pg )
+static void pg_populateItemTable( ParserGenerator pg, File traceFile )
 	{
 	int i,j;
 	MemoryLifetime ml = pg->generateTime;
 	Grammar gr = pg->gr;
 	pg->items = ita_new( 1000, ml );
 	pg->rightmostItems = bv_new( gr_numProductions(gr), ml );
+	fl_write( traceFile, "Populating item table\n" );
 	for( i=0; i < gr_numProductions(gr); i++ )
 		{
 		Production pn = gr_production( gr, i );
 		for( j=0; j <= pn_length( pn, gr ); j++ )
 			{
+			fl_write( traceFile, "  %3d: ", ita_count( pg->items ) );
 			Item it = ita_nextElement( pg->items );
 			it->pn  = pn;
 			it->dot = j;
+			pn_sendItemTo( it->pn, it->dot, traceFile, gr, pg->st );
+			fl_write( traceFile, "\n" );
 			}
 		bv_set( pg->rightmostItems, ita_count(pg->items) - 1 );
 		}
@@ -282,6 +286,7 @@ static void pg_populateSymbolSideTable( ParserGenerator pg )
 
 static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 	{
+	trace( traceFile, "Computing LR0 state nodes\n" );
 	MemoryLifetime ml = pg->generateTime;
 	SymbolTable st = pg->st;
 	ItemSet curItemSet, startItemSet;
@@ -405,6 +410,7 @@ static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 	{
 	int pnNum;
 	bool somethingChanged = true;
+	fl_write( traceFile, "Computing follow sets\n" );
 	while( somethingChanged )
 		{
 		somethingChanged = false;
@@ -671,7 +677,7 @@ FUNC Parser ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File diagnost
 	{
 	MemoryLifetime generateTime = ml_begin( 10000, ml );
 	ParserGenerator pg = pg_new( gr, st, generateTime, ml, theObjectHeap() );
-	pg_populateItemTable( pg );
+	pg_populateItemTable( pg, diagnostics );
 	pg_populateSymbolSideTable( pg );
 	Object startState = pg_computeLR0StateNodes( pg, diagnostics );
 	pg_computeFirstSets( pg, diagnostics );
@@ -699,7 +705,7 @@ static Object ps_nextState( Parser ps, Object ob )
 	Object curState = sk_top( ps->stateStack );
 	Symbol token = ob_tag( ob, oh );
 	// Not sure how I'm dealing with tokens as first-class objects yet...
-	if( ob_isToken( ob, oh ) )
+	if( ob_isToken( ob, oh ) && !ob_hasField( curState, token, oh ) )
 		token = ob_toSymbol( ob, oh );
 	if( !ob_hasField( curState, token, oh ) )
 		return NULL;
@@ -733,6 +739,28 @@ FUNC void ps_popN( Parser ps, int count )
 	{
 	assert( sk_depth( ps->stateStack ) >= count+1 ); // must always leave the startState on the stack
 	sk_popN( ps->stateStack, count );
+	}
+
+FUNC int ps_sendTo( Parser ps, File fl, ObjectHeap heap, SymbolTable st )
+	{
+	Object startState = sk_item( ps->stateStack, sk_depth( ps->stateStack )-1 );
+	return ob_sendDeepTo( startState, fl, heap );
+	}
+
+FUNC int ps_sendStateTo( Parser ps, File fl, ObjectHeap heap, SymbolTable st )
+	{
+	int charsSent = 0;
+#ifdef ITEM_SET_NUMS
+	int i;
+	char *sep = "";
+	Symbol isn = sy_byIndex( SYM_ITEM_SET_NUM, st );
+	for( i=0; i < sk_depth( ps->stateStack ); i++ )
+		{
+		charsSent += fl_write( fl, "%s%d", sep, ob_toInt( ob_getField( sk_item( ps->stateStack, i ), isn, heap ), heap ) );
+		sep = " ";
+		}
+#endif
+	return charsSent;
 	}
 
 #ifdef PARSER_T
@@ -850,6 +878,7 @@ static GrammarLine grammar[] =
 
 #endif
 
+#if 0
 static GrammarLine grammar[] =
 	{
 	{ "PROGRAM",      "STATEMENTS", ":END_OF_INPUT" },
@@ -874,6 +903,36 @@ static GrammarLine grammar2[] =
 	{ ":INT",    ":INT", "*", ":INT" },
 	{ ":INT",    ":INT", "/", ":INT" },
 	};
+#endif
+
+#if 1
+static GrammarLine grammar[] =
+	{
+	{ ":PROGRAM", ":VOIDS", ":END_OF_INPUT"              },
+	{ ":VOIDS",   ":VOID"                                },
+	{ ":VOIDS",   ":VOIDS", ":VOID"                      },
+
+	{ ":TOKEN_BLOCK",  ":TB_START", ":VOIDS", "}"        },
+	{ ":TB_START",     "{",                              },
+
+	{ ":VOID",          ":TOKEN_STREAM"                  },
+	{ ":TOKEN_STREAM",  ":TOKEN_BLOCK"                   },
+
+	{ ":VOID",    ":INT"                                 },
+	{ ":VOID",    "def", ":TOKEN", ":TOKEN_BLOCK"        },
+	{ ":VOID",    "print", ":INT"                        },
+
+	{ ":INT",         ":INT", "+", ":INT" },
+	{ ":INT",         ":INT", "-", ":INT" },
+	};
+
+static GrammarLine grammar2[] =
+	{
+	{ ":INT",         ":INT", "*", ":INT" },
+	{ ":INT",         ":INT", "/", ":INT" },
+	{ ":INT",         "(", ":INT", ")" },
+	};
+#endif
 
 #if 0
 static GrammarLine grammar[] =
@@ -978,7 +1037,7 @@ int main( int argc, char *argv[] )
 
 	pg = pg_new( gr, st, ml_begin( 10000, ml_indefinite() ), ml_indefinite(), theObjectHeap() );
 
-	pg_populateItemTable( pg );
+	pg_populateItemTable( pg, traceFile );
 	fl_write( traceFile, "Items:\n" );
 	for( i=0; i < ita_count( pg->items ); i++ )
 		{
@@ -1058,7 +1117,7 @@ int main( int argc, char *argv[] )
 	ob_sendDotEdgesTo( itst_element( pg->itemSets, 0 )->stateNode, dotFile, pg->heap );
 	fl_write( dotFile, "}\n" );
 
-#if 1
+#if 0
 	fl_write( traceFile, "Parsing...\n" );
 	Parser ps = ps_new( gr, st, ml_indefinite(), traceFile );
 	ObjectHeap heap = theObjectHeap();

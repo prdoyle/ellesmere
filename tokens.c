@@ -20,6 +20,8 @@ struct ts_struct
 		struct
 			{
 			SymbolTable st;
+			Object current;
+			Object next;
 			} lex;
 		struct
 			{
@@ -36,35 +38,37 @@ typedef struct tss_struct *TokenStreamStack;
 #define AR_BYVALUE
 #include "array_template.h"
 
+typedef struct oba_struct *ObjectArray;
+#define AR_PREFIX  oba
+#define AR_TYPE    ObjectArray
+#define AR_ELEMENT Object
+#define AR_BYVALUE
+#include "array_template.h"
+
 struct tb_struct
 	{
-	int count;
+	ObjectArray      tokens;
 	TokenStreamStack streams;
-	Object tokens[1];
 	};
 
-static int tb_size( int count )
+static Object getLexToken( TokenStream ts )
 	{
-	TokenBlock tb;
-	return
-		  sizeof(*tb)
-		- sizeof(tb->tokens)
-		+ sizeof(tb->tokens[0]) * count;
-	}
-
-static TokenBlock tb_alloc( int count, MemoryLifetime ml )
-	{
-	TokenBlock result = (TokenBlock)ml_alloc( ml, tb_size(count) );
-	result->count = count;
-	result->streams = tss_new( 2, ml ); // more than 2x recursion probably means deep recursion
-	return result;
-	}
-
-static TokenBlock tb_realloc( TokenBlock tb, int oldCount, int count, MemoryLifetime ml )
-	{
-	TokenBlock result = (TokenBlock)ml_realloc( ml, tb, tb_size(oldCount), tb_size(count) );
-	result->count = count;
-	return result;
+	switch( yylex() )
+		{
+		case NUM_TOKENS:
+		case ERROR:
+			check(!"Error token!");
+			// fall through
+		case NO_TOKEN:
+			break;
+		case INT:
+			return ob_fromInt( lastInt(), ts->heap );
+		case STRING:
+			return ob_fromString( lastString(), ts->heap );
+		case WORD:
+			return oh_symbolToken( ts->heap, sy_byName( lastWord(), ts->data.lex.st ) );
+		}
+	return NULL;
 	}
 
 FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st )
@@ -76,7 +80,9 @@ FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st )
 		result->kind   = LEX;
 		result->heap   = heap;
 		result->caller = NULL;
-		result->data.lex.st = st;
+		result->data.lex.st      = st;
+		result->data.lex.current = getLexToken( result );
+		result->data.lex.next    = getLexToken( result );
 		}
 	return result;
 	}
@@ -99,33 +105,54 @@ FUNC TokenStream ts_fromBlock( TokenBlock block, ObjectHeap heap, TokenStream ca
 	return result;
 	}
 
+static Object blockToken( TokenStream ts, int index )
+	{
+	int stopIndex = oba_count( ts->data.block.tb->tokens );
+	if( index < stopIndex )
+		return oba_get( ts->data.block.tb->tokens, index );
+	else
+		return NULL;
+	}
+
+FUNC Object ts_current( TokenStream ts )
+	{
+	switch( ts->kind )
+		{
+		case LEX:
+			return ts->data.lex.current;
+		case BLOCK:
+			return blockToken( ts, ts->data.block.index );
+		}
+	assert(0);
+	return NULL;
+	}
+
 FUNC Object ts_next( TokenStream ts )
 	{
 	switch( ts->kind )
 		{
 		case LEX:
-			switch( yylex() )
-				{
-				case NUM_TOKENS:
-				case ERROR:
-					check(!"Error token!");
-					// fall through
-				case NO_TOKEN:
-					break;
-				case INT:
-					return ob_fromInt( lastInt(), ts->heap );
-				case STRING:
-					return ob_fromString( lastString(), ts->heap );
-				case WORD:
-					return oh_symbolToken( ts->heap, sy_byName( lastWord(), ts->data.lex.st ) );
-				}
+			return ts->data.lex.next;
+		case BLOCK:
+			return blockToken( ts, ts->data.block.index + 1);
+		}
+	assert(0);
+	return NULL;
+	}
+
+FUNC void ts_advance( TokenStream ts )
+	{
+	switch( ts->kind )
+		{
+		case LEX:
+			ts->data.lex.current = ts->data.lex.next;
+			ts->data.lex.next    = getLexToken( ts );
 			break;
 		case BLOCK:
-			if( ts->data.block.index < ts->data.block.tb->count )
-				return ts->data.block.tb->tokens[ ts->data.block.index++ ];
+			if( ts->data.block.index < oba_count( ts->data.block.tb->tokens ) )
+				ts->data.block.index += 1;
 			break;
 		}
-	return NULL;
 	}
 
 FUNC TokenStream ts_caller( TokenStream ts )
@@ -145,24 +172,24 @@ FUNC TokenStream ts_close( TokenStream ts )
 	return ts->caller;
 	}
 
-FUNC TokenBlock ts_recordUntil( TokenStream ts, Symbol terminator )
+enum { DEFAULT_TOKEN_BLOCK_LENGTH=29 };
+
+FUNC TokenBlock tb_new( MemoryLifetime ml )
 	{
-	int capacity = 100;
-	int count = 0;
-	MemoryLifetime ml = ml_undecided();
-	TokenBlock tb = tb_alloc( capacity, ml );
-	Object terminatorToken = oh_symbolToken( ts->heap, terminator );
-	Object curToken;
-	for( curToken = ts_next(ts); curToken && curToken != terminatorToken; curToken = ts_next(ts) )
-		{
-		if( count == capacity )
-			{
-			tb = tb_realloc( tb, capacity, capacity*2, ml );
-			capacity *= 2;
-			}
-		tb->tokens[ count++ ] = curToken;
-		}
-	return tb_realloc( tb, capacity, count, ml ); // shrink to the proper size
+	TokenBlock result = (TokenBlock)ml_alloc( ml, sizeof(*result) );
+	result->tokens  = oba_new( DEFAULT_TOKEN_BLOCK_LENGTH, ml );
+	result->streams = tss_new( 2, ml ); // more than 2x recursion probably means deep recursion
+	return result;
+	}
+
+FUNC void tb_append( TokenBlock tb, Object token )
+	{
+	oba_append( tb->tokens, token );
+	}
+
+FUNC void tb_stopAppending( TokenBlock tb )
+	{
+	oba_shrinkWrap( tb->tokens );
 	}
 
 //MERGE:30

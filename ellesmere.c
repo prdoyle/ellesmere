@@ -7,6 +7,7 @@
 #include "memory.h"
 #include <stdarg.h>
 
+static SymbolTable st;
 static TokenStream tokenStream;
 static Stack       stack;
 //static Context     currentScope;
@@ -31,16 +32,43 @@ static int trace( FILE *file, const char *format, ... )
 	}
 #endif
 
+static void dumpStack()
+	{
+	fl_write( diagnostics, "    -- Stack: " );
+	sk_sendTo( stack, diagnostics, heap );
+	fl_write( diagnostics, "\n" );
+	}
+
+static void dumpParserState()
+	{
+	fl_write( diagnostics, "    -- Parser state: " );
+	ps_sendStateTo( ps, diagnostics, heap, st );
+	fl_write( diagnostics, "\n" );
+	}
+
 static void push( Object ob )
 	{
 	sk_push( stack, ob );
+	dumpStack();
 	ps_push( ps, ob );
+	dumpParserState();
 	}
 
 static Object pop()
 	{
+	Object result = sk_pop( stack );
+	dumpStack();
 	ps_popN( ps, 1 );
-	return sk_pop( stack );
+	dumpParserState();
+	return result;
+	}
+
+static void popN( int n )
+	{
+	sk_popN( stack, n );
+	dumpStack();
+	ps_popN( ps, n );
+	dumpParserState();
 	}
 
 static int popInt()
@@ -82,16 +110,16 @@ typedef void (*NativeAction)( Parser ps, Production handle, GrammarLine gl );
 
 struct gl_struct
 	{
-	NativeAction action;
 	char *tokens[10];
+	NativeAction action;
 	int parm1;
 	};
 	 
 static void nopAction( Parser ps, Production handle, GrammarLine gl )
 	{
 	Grammar gr = ps_grammar( ps );
-	ps_popN( ps, pn_length( handle, gr ) );
-	ps_push( ps, oh_symbolToken( heap, pn_lhs( handle, gr ) ) );
+	popN( pn_length( handle, gr ) );
+	push( oh_symbolToken( heap, pn_lhs( handle, gr ) ) );
 	}
 
 static void passThrough( Parser ps, Production handle, GrammarLine gl )
@@ -99,7 +127,7 @@ static void passThrough( Parser ps, Production handle, GrammarLine gl )
 	Grammar gr = ps_grammar( ps );
 	int depth = gl->parm1;
 	Object result = sk_item( stack, depth );
-	ps_popN( ps, pn_length( handle, gr ) );
+	popN( pn_length( handle, gr ) );
 	push( result );
 	}
 
@@ -142,31 +170,92 @@ static void printAction( Parser ps, Production handle, GrammarLine gl )
 	nopAction( ps, handle, gl );
 	}
 
+#if 0
+static Symbol _wrappeeField = NULL;
+
+static Symbol wrappeeField()
+	{
+	if( !_wrappeeField )
+		_wrappeeField = sy_byName( ":", st );
+	return _wrappeeField;
+	}
+
+static Object wrap( Object wrappee, Production handle )
+	{
+	Symbol tag = pn_lhs( handle, ps_grammar(ps) );
+	Object result = ob_create( tag, heap );
+	ob_setField( result, wrappeeField(), wrappee, heap );
+	return result;
+	}
+
+static Object unwrap( Object wrapper )
+	{
+	return ob_getField( wrapper, wrappeeField(), heap );
+	}
+
+static void unwrapAction( Parser ps, Production handle, GrammarLine gl ) 
+	{
+	Object wrapped = sk_item( stack, gl->parm1 );
+	popN( pn_length( handle, ps_grammar(ps) ) );
+	push( unwrap( wrapped ) );
+	}
+
+#endif
+
+static void recordTokenBlockAction( Parser ps, Production handle, GrammarLine gl );
+
+static void stopRecordingTokenBlockAction( Parser ps, Production handle, GrammarLine gl )
+	{
+	assert(0); // Never actually gets called.  It's a kind of null terminator.
+	}
+
+static void callAction( Parser ps, Production handle, GrammarLine gl )
+	{
+	//TODO
+	nopAction( ps, handle, gl );
+	}
+
+static void defAction( Parser ps, Production handle, GrammarLine gl )
+	{
+	//TODO
+	nopAction( ps, handle, gl );
+	}
+
 static struct gl_struct grammar1[] =
 	{
-	{ nopAction,     { "PROGRAM",      "STATEMENTS", ":END_OF_INPUT" } },
+	{ { ":PROGRAM",       ":VOIDS", ":END_OF_INPUT"              }, nopAction },
+	{ { ":VOIDS",         ":VOID"                                }, nopAction },
+	{ { ":VOIDS",         ":VOIDS", ":VOID"                      }, nopAction },
 
-	{ nopAction,     { "STATEMENTS",   "STATEMENT" } },
-	{ nopAction,     { "STATEMENTS",   "STATEMENTS", "STATEMENT" } },
+	{ { ":TOKEN_BLOCK",   ":TB_START", ":VOIDS", "}"        }, stopRecordingTokenBlockAction },
+	{ { ":TB_START",      "{",                              }, recordTokenBlockAction },
 
-	{ printAction,   { "STATEMENT",    ":INT" } },
-	{ printAction,   { "STATEMENT",    "print", ":INT" } },
+	{ { ":VOID",          ":TOKEN_STREAM"                  }, callAction },
 
-	{ passThrough,   { ":INT",         "(", ":INT", ")" }, 2 },
-	{ addAction,     { ":INT",         ":INT", "+", ":INT" } },
-	{ subAction,     { ":INT",         ":INT", "-", ":INT" } },
+	{ { ":VOID",          ":INT"                                 }, printAction },
+	{ { ":VOID",          "def", ":TOKEN", ":TOKEN_BLOCK"        }, defAction },
+	{ { ":VOID",          "print", ":INT"                        }, printAction },
 
-	{ NULL },
+	{{NULL}},
 	};
 
-static struct gl_struct grammar2[] =
+static struct gl_struct arithmetic1[] =
 	{
-	{ mulAction,     { ":INT",         ":INT", "*", ":INT" } },
-	{ divAction,     { ":INT",         ":INT", "/", ":INT" } },
-	{ NULL },
+	{ { ":INT",         ":INT", "+", ":INT" }, addAction },
+	{ { ":INT",         ":INT", "-", ":INT" }, subAction },
+
+	{{NULL}},
 	};
 
-static GrammarLine initialGrammarNest[] = { grammar1, grammar2 };
+static struct gl_struct arithmetic2[] =
+	{
+	{ { ":INT",         ":INT", "*", ":INT" }, mulAction },
+	{ { ":INT",         ":INT", "/", ":INT" }, divAction },
+	{ { ":INT",         "(", ":INT", ")" },    passThrough, 2 },
+	{{NULL}},
+	};
+
+static GrammarLine initialGrammarNest[] = { grammar1, arithmetic1, arithmetic2 };
 
 static Grammar populateGrammar( SymbolTable st )
 	{
@@ -202,19 +291,70 @@ static GrammarLine lookupGrammarLine( Production pn, Grammar gr )
 	return array + index;
 	}
 
+static void recordTokenBlockAction( Parser ps, Production handle, GrammarLine gl )
+	{
+	trace( diagnostics, "  Begin recording token block\n" );
+	TokenBlock tb = tb_new( ml_undecided() );
+	nopAction( ps, handle, gl );
+	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
+	Grammar gr = ps_grammar( ps );
+	ts_advance( tokenStream );
+	while( ts_current( tokenStream ) )
+		{
+		Object ob     = ts_current( tokenStream );
+		Object nextOb = ts_next( tokenStream );
+		if( !nextOb )
+			nextOb = endOfInput;
+		trace( diagnostics, "# Token from %p is ", tokenStream );
+		ob_sendTo( ob, diagnostics, heap );
+		trace( diagnostics, "; next is ");
+		ob_sendTo( nextOb, diagnostics, heap );
+		trace( diagnostics, "\n");
+		push( ob );
+		handle = ps_handle( ps, nextOb );
+		while( handle )
+			{
+			trace( diagnostics, "    Recording handle production %d: ", pn_index( handle, gr ) );
+			pn_sendTo( handle, diagnostics, gr, st );
+			trace( diagnostics, "\n" );
+			GrammarLine line = lookupGrammarLine( handle, gr );
+			NativeAction action = line->action;
+			if( action == stopRecordingTokenBlockAction )
+				goto done;
+			nopAction( ps, handle, line );
+			handle = ps_handle( ps, nextOb );
+			}
+		tb_append( tb, ob ); // If we get to here, we didn't hit stopRecordingTokenBlockAction
+		trace( diagnostics, "# Recorded token " );
+		ob_sendTo( ob, diagnostics, heap );
+		trace( diagnostics, "\n");
+		ts_advance( tokenStream );
+		}
+	done:
+	tb_stopAppending( tb );
+	popN( pn_length( handle, gr ) );
+	push( ob_fromTokenBlock( tb_new( ml_undecided() ), heap ) );
+	trace( diagnostics, "    Stack after recording: " );
+	sk_sendTo( stack, diagnostics, heap );
+	trace( diagnostics, "\n" );
+	}
+
 int main( int argc, char **argv )
 	{
 	diagnostics = fdopen( 3, "wt" );
-	SymbolTable st = theSymbolTable();
+	st = theSymbolTable();
 	heap = theObjectHeap();
 	Grammar gr = populateGrammar( st );
-	ps = ps_new( gr, st, ml_indefinite(), diagnostics );
+	ps = ps_new( gr, st, ml_indefinite(), fdopen( 4, "wt" ) );
+	trace( diagnostics, "Parser:\n" );
+	ps_sendTo( ps, diagnostics, heap, st );
+	trace( diagnostics, "\n" );
 	stack = sk_new( ml_indefinite() );
-	tokenStream = theLexTokenStream( heap, st );
 	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
-	Object ob = ts_next( tokenStream );
-	while( ob != endOfInput )
+	tokenStream = theLexTokenStream( heap, st );
+	while( ts_current( tokenStream ) )
 		{
+		Object ob     = ts_current( tokenStream );
 		Object nextOb = ts_next( tokenStream );
 		if( !nextOb )
 			nextOb = endOfInput;
@@ -238,17 +378,7 @@ int main( int argc, char **argv )
 			action( ps, handle, line );
 			handle = ps_handle( ps, nextOb );
 			}
-		if( diagnostics )
-			{
-			trace( diagnostics, "  ");
-			sk_sendTo( stack, diagnostics, heap );
-			trace( diagnostics, "\n  ");
-#if 0
-			cx_sendTo( currentScope, diagnostics );
-			trace( diagnostics, "\n");
-#endif
-			}
-		ob = nextOb;
+		ts_advance( tokenStream );
 		}
 #ifndef NDEBUG
 	File memreport = fdopen( 4, "wt" );

@@ -13,5 +13,8 @@ FUNC void       ps_push    ( Parser ps, Object ob );
 FUNC Production ps_handle  ( Parser ps, Object lookahead ); // OK, the "handle" is actually the symbols, not the production.  So sue me.
 FUNC void       ps_popN    ( Parser ps, int count );
 
+FUNC int        ps_sendTo      ( Parser ps, File fl, ObjectHeap heap, SymbolTable st );
+FUNC int        ps_sendStateTo ( Parser ps, File fl, ObjectHeap heap, SymbolTable st );
+
 #endif
 

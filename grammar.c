@@ -72,6 +72,7 @@ static int gr_numInheritedProductions( Grammar gr )
 			return gr_numProductions( gr->data.outer );
 		}
 	assert(0);
+	return 0;
 	}
 
 static bool gr_productionIsInherited( Grammar gr, int index )
@@ -84,6 +85,7 @@ static bool gr_productionIsInherited( Grammar gr, int index )
 			return index < gr_numInheritedProductions( gr );
 		}
 	assert(0);
+	return false;
 	}
 
 static inline Production pns2pn( ProductionStorage pns, Grammar gr )
@@ -210,6 +212,7 @@ FUNC Symbol gr_goal( Grammar gr )
 			return gr_goal( gr->data.outer );
 		}
 	assert(0);
+	return NULL;
 	}
 
 FUNC Grammar gr_outerNth( Grammar gr, int depth )
@@ -224,6 +227,7 @@ FUNC Grammar gr_outerNth( Grammar gr, int depth )
 			return gr_outerNth( gr->data.outer, depth-1 );
 		}
 	assert(0);
+	return NULL;
 	}
 
 FUNC Grammar gr_outer( Grammar gr )
