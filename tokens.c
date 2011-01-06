@@ -192,5 +192,36 @@ FUNC void tb_stopAppending( TokenBlock tb )
 	oba_shrinkWrap( tb->tokens );
 	}
 
+FUNC int ts_sendTo( TokenStream ts, File fl )
+	{
+	int charsSent = fl_write( fl, "TokenStream_%p: ", ts );
+	charsSent += ob_sendTo( ts_current( ts ), fl, ts->heap );
+	charsSent += fl_write( fl, " (" );
+	charsSent += ob_sendTo( ts_next( ts ), fl, ts->heap );
+	charsSent += fl_write( fl, ") " );
+	switch( ts->kind )
+		{
+		case LEX:
+			charsSent += fl_write( fl, "LEX" );
+			break;
+		case BLOCK:
+			charsSent += tb_sendTo( ts->data.block.tb, fl, ts->heap );
+			break;
+		}
+	return charsSent;
+	}
+
+FUNC int tb_sendTo( TokenBlock tb, File fl, ObjectHeap heap )
+	{
+	int i;
+	int charsSent = fl_write( fl, "TokenBlock_%p length %d:", tb, oba_count( tb->tokens ) );
+	for( i=0; i < oba_count( tb->tokens ); i++ )
+		{
+		charsSent += fl_write( fl, " " );
+		charsSent += ob_sendTo( oba_get( tb->tokens, i ), fl, heap );
+		}
+	return charsSent;
+	}
+
 //MERGE:30
 

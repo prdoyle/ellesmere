@@ -80,7 +80,7 @@ lex.l.c: lex.l
 	flex -o $@ --header-file=lex.l.h $<
 
 memreport.txt: ellesmere
-	./ellesmere < fib.el 4>&1 1>&2 | sort -k2 -nk3 | uniq -c | sort -rn > $@
+	./ellesmere < fib.el 5>&1 1>&2 | sort -k2 -nk3 | uniq -c | sort -rn > $@
 
 bitvector.t: CFLAGS += -DBITVECTOR_T
 bitvector.t: bitvector.o memory.o file.o

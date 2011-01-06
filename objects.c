@@ -310,40 +310,45 @@ FUNC bool cl_isChecked( CheckList cl, Object ob )
 FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 	{
 	int charsSent=0;
-	if( fl ) switch( sy_index( ob_tag(ob,heap), heap->st ) )
+	if( fl )
 		{
-		case SYM_INT:
+		if( ob == NULL )
+			return fl_write( fl, "(null)" );
+		else switch( sy_index( ob_tag(ob,heap), heap->st ) )
 			{
-			fl_write( fl, "%d", ob_toInt(ob,heap) );
-			break;
-			}
-		case SYM_STRING:
-			{
-			fl_write( fl, "\"%s\"", ob_toString(ob,heap) );
-			break;
-			}
-		case SYM_TOKEN:
-			{
-			Symbol sy = ob_toSymbol( ob, heap );
-			fl_write( fl, "{%s#%d}", sy_name( sy, heap->st ), sy_index( sy, heap->st ) );
-			break;
-			}
-		case SYM_TOKEN_BLOCK:
-			{
-			TokenBlock tb = ob_toTokenBlock( ob, heap );
-			fl_write( fl, ":TOKEN_BLOCK_%p", tb );
-			break;
-			}
-		case SYM_TOKEN_STREAM:
-			{
-			TokenStream ts = ob_toTokenStream( ob, heap );
-			fl_write( fl, ":TOKEN_STREAM_%p", ts );
-			break;
-			}
-		default:
-			{
-			fl_write( fl, "%s_%p", sy_name( ob_tag(ob,heap), heap->st ), ob );
-			break;
+			case SYM_INT:
+				{
+				fl_write( fl, "%d", ob_toInt(ob,heap) );
+				break;
+				}
+			case SYM_STRING:
+				{
+				fl_write( fl, "\"%s\"", ob_toString(ob,heap) );
+				break;
+				}
+			case SYM_TOKEN:
+				{
+				Symbol sy = ob_toSymbol( ob, heap );
+				fl_write( fl, "{%s#%d}", sy_name( sy, heap->st ), sy_index( sy, heap->st ) );
+				break;
+				}
+			case SYM_TOKEN_BLOCK:
+				{
+				TokenBlock tb = ob_toTokenBlock( ob, heap );
+				fl_write( fl, ":TOKEN_BLOCK_%p", tb );
+				break;
+				}
+			case SYM_TOKEN_STREAM:
+				{
+				TokenStream ts = ob_toTokenStream( ob, heap );
+				fl_write( fl, ":TOKEN_STREAM_%p", ts );
+				break;
+				}
+			default:
+				{
+				fl_write( fl, "%s_%p", sy_name( ob_tag(ob,heap), heap->st ), ob );
+				break;
+				}
 			}
 		}
 	return charsSent;

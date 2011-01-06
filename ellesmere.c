@@ -14,6 +14,16 @@ static Stack       stack;
 static ObjectHeap  heap;
 static Parser      ps;
 FILE *diagnostics;
+FILE *parserGenTrace;
+
+typedef struct tba_struct *TokenBlockArray;
+#define AR_PREFIX  tba
+#define AR_TYPE    TokenBlockArray
+#define AR_ELEMENT TokenBlock
+#define AR_BYVALUE
+#include "array_template.h"
+
+static TokenBlockArray productionBodies;
 
 #ifdef NDEBUG
 #define trace(...)
@@ -106,7 +116,7 @@ static Action eatUntilObject( Object target )
 
 typedef struct gl_struct *GrammarLine;
 	 
-typedef void (*NativeAction)( Parser ps, Production handle, GrammarLine gl );
+typedef void (*NativeAction)( Production handle, GrammarLine gl );
 
 struct gl_struct
 	{
@@ -115,14 +125,14 @@ struct gl_struct
 	int parm1;
 	};
 	 
-static void nopAction( Parser ps, Production handle, GrammarLine gl )
+static void nopAction( Production handle, GrammarLine gl )
 	{
 	Grammar gr = ps_grammar( ps );
 	popN( pn_length( handle, gr ) );
 	push( oh_symbolToken( heap, pn_lhs( handle, gr ) ) );
 	}
 
-static void passThrough( Parser ps, Production handle, GrammarLine gl )
+static void passThrough( Production handle, GrammarLine gl )
 	{
 	Grammar gr = ps_grammar( ps );
 	int depth = gl->parm1;
@@ -131,7 +141,7 @@ static void passThrough( Parser ps, Production handle, GrammarLine gl )
 	push( result );
 	}
 
-static void addAction( Parser ps, Production handle, GrammarLine gl )
+static void addAction( Production handle, GrammarLine gl )
 	{
 	int right = popInt();
 	popToken();
@@ -139,7 +149,7 @@ static void addAction( Parser ps, Production handle, GrammarLine gl )
 	push( ob_fromInt( left + right, heap ) );
 	}
 
-static void subAction( Parser ps, Production handle, GrammarLine gl )
+static void subAction( Production handle, GrammarLine gl )
 	{
 	int right = popInt();
 	popToken();
@@ -147,7 +157,7 @@ static void subAction( Parser ps, Production handle, GrammarLine gl )
 	push( ob_fromInt( left - right, heap ) );
 	}
 
-static void mulAction( Parser ps, Production handle, GrammarLine gl )
+static void mulAction( Production handle, GrammarLine gl )
 	{
 	int right = popInt();
 	popToken();
@@ -155,7 +165,7 @@ static void mulAction( Parser ps, Production handle, GrammarLine gl )
 	push( ob_fromInt( left * right, heap ) );
 	}
 
-static void divAction( Parser ps, Production handle, GrammarLine gl )
+static void divAction( Production handle, GrammarLine gl )
 	{
 	int right = popInt();
 	popToken();
@@ -163,11 +173,11 @@ static void divAction( Parser ps, Production handle, GrammarLine gl )
 	push( ob_fromInt( left / right, heap ) );
 	}
 
-static void printAction( Parser ps, Production handle, GrammarLine gl )
+static void printAction( Production handle, GrammarLine gl )
 	{
 	ob_sendTo( sk_top( stack ), stdout, heap );
 	printf("\n");
-	nopAction( ps, handle, gl );
+	nopAction( handle, gl );
 	}
 
 #if 0
@@ -193,7 +203,7 @@ static Object unwrap( Object wrapper )
 	return ob_getField( wrapper, wrappeeField(), heap );
 	}
 
-static void unwrapAction( Parser ps, Production handle, GrammarLine gl ) 
+static void unwrapAction( Production handle, GrammarLine gl ) 
 	{
 	Object wrapped = sk_item( stack, gl->parm1 );
 	popN( pn_length( handle, ps_grammar(ps) ) );
@@ -202,39 +212,56 @@ static void unwrapAction( Parser ps, Production handle, GrammarLine gl )
 
 #endif
 
-static void recordTokenBlockAction( Parser ps, Production handle, GrammarLine gl );
+static void recordTokenBlockAction( Production handle, GrammarLine gl );
 
-static void stopRecordingTokenBlockAction( Parser ps, Production handle, GrammarLine gl )
+static void stopRecordingTokenBlockAction( Production handle, GrammarLine gl )
 	{
 	assert(0); // Never actually gets called.  It's a kind of null terminator.
 	}
 
-static void callAction( Parser ps, Production handle, GrammarLine gl )
+static void defAction( Production handle, GrammarLine gl )
 	{
-	//TODO
-	nopAction( ps, handle, gl );
-	}
+	TokenBlock block = ob_toTokenBlock( pop(), heap );
+	int arity = popInt();
+	Symbol token = popToken();
+	popToken(); // "def" keyword
 
-static void defAction( Parser ps, Production handle, GrammarLine gl )
-	{
-	//TODO
-	nopAction( ps, handle, gl );
+	// Define the nested grammar with this extra production
+	Grammar gr = gr_nested( ps_grammar(ps), 1, ml_indefinite() );
+	Symbol intToken = sy_byIndex( SYM_INT, st );
+	Production pn = pn_new( gr, intToken, arity );
+	pn_append( pn, token, gr );
+	int i;
+	for( i=0; i < arity; i++ )
+		pn_append( pn, intToken, gr );
+	pn_stopAppending( pn, gr );
+	gr_stopAdding( gr );
+	ps = ps_new( gr, st, ml_indefinite(), parserGenTrace );
+	fl_write( diagnostics, "    NEW PARSER\n" );
+
+	// Prime the parser state with the current stack contents
+	for( i = sk_depth(stack) - 1; i >= 0; i-- )
+		ps_push( ps, sk_item( stack, i ) );
+	dumpParserState();
+
+	// Store the TokenBlock body from the definition
+	int pnIndex = pn_index( pn, gr );
+	tba_setCount( productionBodies, pnIndex+1 );
+	tba_set( productionBodies, pnIndex, block );
 	}
 
 static struct gl_struct grammar1[] =
 	{
-	{ { ":PROGRAM",       ":VOIDS", ":END_OF_INPUT"              }, nopAction },
-	{ { ":VOIDS",         ":VOID"                                }, nopAction },
-	{ { ":VOIDS",         ":VOIDS", ":VOID"                      }, nopAction },
+	{ { ":PROGRAM",       ":VOIDS", ":END_OF_INPUT"                 }, nopAction },
+	{ { ":VOIDS",         ":VOID"                                   }, nopAction },
+	{ { ":VOIDS",         ":VOIDS", ":VOID"                         }, nopAction },
 
-	{ { ":TOKEN_BLOCK",   ":TB_START", ":VOIDS", "}"        }, stopRecordingTokenBlockAction },
-	{ { ":TB_START",      "{",                              }, recordTokenBlockAction },
+	{ { ":TOKEN_BLOCK",   ":TB_START", ":VOIDS", "}"                }, stopRecordingTokenBlockAction },
+	{ { ":TB_START",      "{",                                      }, recordTokenBlockAction },
 
-	{ { ":VOID",          ":TOKEN_STREAM"                  }, callAction },
-
-	{ { ":VOID",          ":INT"                                 }, printAction },
-	{ { ":VOID",          "def", ":TOKEN", ":TOKEN_BLOCK"        }, defAction },
-	{ { ":VOID",          "print", ":INT"                        }, printAction },
+	{ { ":VOID",          ":INT"                                    }, printAction },
+	{ { ":VOID",          "def", ":TOKEN", ":INT", ":TOKEN_BLOCK"   }, defAction },
+	{ { ":VOID",          "print", ":INT"                           }, printAction },
 
 	{{NULL}},
 	};
@@ -291,11 +318,11 @@ static GrammarLine lookupGrammarLine( Production pn, Grammar gr )
 	return array + index;
 	}
 
-static void recordTokenBlockAction( Parser ps, Production handle, GrammarLine gl )
+static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	{
 	trace( diagnostics, "  Begin recording token block\n" );
 	TokenBlock tb = tb_new( ml_undecided() );
-	nopAction( ps, handle, gl );
+	nopAction( handle, gl );
 	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
 	Grammar gr = ps_grammar( ps );
 	ts_advance( tokenStream );
@@ -305,7 +332,7 @@ static void recordTokenBlockAction( Parser ps, Production handle, GrammarLine gl
 		Object nextOb = ts_next( tokenStream );
 		if( !nextOb )
 			nextOb = endOfInput;
-		trace( diagnostics, "# Token from %p is ", tokenStream );
+		trace( diagnostics, "# token from %p is ", tokenStream );
 		ob_sendTo( ob, diagnostics, heap );
 		trace( diagnostics, "; next is ");
 		ob_sendTo( nextOb, diagnostics, heap );
@@ -317,11 +344,13 @@ static void recordTokenBlockAction( Parser ps, Production handle, GrammarLine gl
 			trace( diagnostics, "    Recording handle production %d: ", pn_index( handle, gr ) );
 			pn_sendTo( handle, diagnostics, gr, st );
 			trace( diagnostics, "\n" );
-			GrammarLine line = lookupGrammarLine( handle, gr );
-			NativeAction action = line->action;
-			if( action == stopRecordingTokenBlockAction )
-				goto done;
-			nopAction( ps, handle, line );
+			if( !tba_get( productionBodies, pn_index( handle, gr ) ) )
+				{
+				NativeAction action = lookupGrammarLine( handle, gr )->action;
+				if( action == stopRecordingTokenBlockAction )
+					goto done; // end marker
+				}
+			nopAction( handle, NULL );
 			handle = ps_handle( ps, nextOb );
 			}
 		tb_append( tb, ob ); // If we get to here, we didn't hit stopRecordingTokenBlockAction
@@ -333,7 +362,7 @@ static void recordTokenBlockAction( Parser ps, Production handle, GrammarLine gl
 	done:
 	tb_stopAppending( tb );
 	popN( pn_length( handle, gr ) );
-	push( ob_fromTokenBlock( tb_new( ml_undecided() ), heap ) );
+	push( ob_fromTokenBlock( tb, heap ) );
 	trace( diagnostics, "    Stack after recording: " );
 	sk_sendTo( stack, diagnostics, heap );
 	trace( diagnostics, "\n" );
@@ -342,10 +371,13 @@ static void recordTokenBlockAction( Parser ps, Production handle, GrammarLine gl
 int main( int argc, char **argv )
 	{
 	diagnostics = fdopen( 3, "wt" );
+	parserGenTrace = fdopen( 4, "wt" );
 	st = theSymbolTable();
 	heap = theObjectHeap();
 	Grammar gr = populateGrammar( st );
-	ps = ps_new( gr, st, ml_indefinite(), fdopen( 4, "wt" ) );
+	productionBodies = tba_new( 20 + gr_numProductions( gr ), ml_indefinite() );
+	tba_setCount( productionBodies, gr_numProductions( gr ) );
+	ps = ps_new( gr, st, ml_indefinite(), parserGenTrace );
 	trace( diagnostics, "Parser:\n" );
 	ps_sendTo( ps, diagnostics, heap, st );
 	trace( diagnostics, "\n" );
@@ -368,20 +400,41 @@ int main( int argc, char **argv )
 			}
 		push( ob );
 		Production handle = ps_handle( ps, nextOb );
+		TokenBlock bodyToCall = NULL;
 		while( handle )
 			{
-			trace( diagnostics, "  Found handle production %d: ", pn_index( handle, gr ) );
+			gr = ps_grammar( ps ); // Grammar can change as the program proceeds
+			trace( diagnostics, "  Found handle production %d in grammar %p: ", pn_index( handle, gr ), gr );
 			pn_sendTo( handle, diagnostics, gr, st );
 			trace( diagnostics, "\n" );
-			GrammarLine line = lookupGrammarLine( handle, gr );
-			NativeAction action = line->action;
-			action( ps, handle, line );
-			handle = ps_handle( ps, nextOb );
+			bodyToCall = tba_get( productionBodies, pn_index( handle, gr ) );
+			if( bodyToCall )
+				{
+				break;
+				}
+			else
+				{
+				GrammarLine line = lookupGrammarLine( handle, gr );
+				line->action( handle, line );
+				handle = ps_handle( ps, nextOb );
+				}
 			}
 		ts_advance( tokenStream );
+		if( bodyToCall )
+			{
+			assert( handle );
+			popN( pn_length( handle, gr ) );
+			tokenStream = ts_fromBlock( bodyToCall, heap, tokenStream );
+			trace( diagnostics, "    Calling body for production %d token stream %p\n", pn_index( handle, gr ), tokenStream );
+			}
+		while( !ts_current( tokenStream ) && ts_caller( tokenStream ) )
+			{
+			tokenStream = ts_close( tokenStream ); // return
+			trace( diagnostics, "  Returned to TokenStream %p\n", tokenStream );
+			}
 		}
 #ifndef NDEBUG
-	File memreport = fdopen( 4, "wt" );
+	File memreport = fdopen( 5, "wt" );
 	ml_sendReportTo( memreport );
 #endif
 	return 0;

@@ -59,7 +59,9 @@ enum { OUTERMOST_INDEX_OFFSET=1 };
 
 FUNC int pn_index( Production pn, Grammar gr )
 	{
-	return pn2int(pn) - OUTERMOST_INDEX_OFFSET;
+	int result = pn2int(pn) - OUTERMOST_INDEX_OFFSET;
+	assert( 0 <= result && result < gr_numProductions(gr) );
+	return result;
 	}
 
 static int gr_numInheritedProductions( Grammar gr )
