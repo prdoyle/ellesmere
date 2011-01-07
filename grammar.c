@@ -155,7 +155,7 @@ FUNC Symbol pn_token( Production pn, int index, Grammar gr )
 
 FUNC Symbol pn_name( Production pn, int index, Grammar gr )
 	{
-	return rhs_element( pn2pns(pn,gr)->rhs, index )->token;
+	return rhs_element( pn2pns(pn,gr)->rhs, index )->name;
 	}
 
 FUNC Grammar gr_new( Symbol goal, int numProductionsEstimate, MemoryLifetime ml )

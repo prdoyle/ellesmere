@@ -6,7 +6,7 @@
    - AR_PREFIX
 	- AR_TYPE
 	- AR_ELEMENT
-	- AR_BYVALUE
+	- AR_BYVALUE (optional)
 */
 
 #define AR_PASTE0( left, right ) left ## right

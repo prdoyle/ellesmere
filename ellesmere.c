@@ -16,14 +16,20 @@ static Parser      ps;
 FILE *diagnostics;
 FILE *parserGenTrace;
 
-typedef struct tba_struct *TokenBlockArray;
-#define AR_PREFIX  tba
-#define AR_TYPE    TokenBlockArray
-#define AR_ELEMENT TokenBlock
+typedef struct fn_struct
+	{
+	Object     parameterList;
+	TokenBlock body;
+	} *Function;
+
+typedef struct fna_struct *FunctionArray;
+#define AR_PREFIX  fna
+#define AR_TYPE    FunctionArray
+#define AR_ELEMENT Function
 #define AR_BYVALUE
 #include "array_template.h"
 
-static TokenBlockArray productionBodies;
+static FunctionArray productionBodies;
 
 #ifdef NDEBUG
 #define trace(...)
@@ -219,49 +225,78 @@ static void stopRecordingTokenBlockAction( Production handle, GrammarLine gl )
 	assert(0); // Never actually gets called.  It's a kind of null terminator.
 	}
 
+static void parseTreeAction( Production handle, GrammarLine gl )
+	{
+	Grammar gr = ps_grammar( ps );
+	Symbol lhs = pn_lhs( handle, gr );
+	Object result = ob_create( lhs, heap );
+	int i;
+	for( i = pn_length(handle, gr) - 1; i >= 0; i-- )
+		{
+		Symbol field = pn_name( handle, i, gr );
+		if( !field )
+			field = pn_token( handle, i, gr );
+		Object value = pop();
+		ob_setField( result, field, value, heap );
+		}
+	push( result );
+	}
+
 static void defAction( Production handle, GrammarLine gl )
 	{
 	TokenBlock block = ob_toTokenBlock( pop(), heap );
-	int arity = popInt();
+	Object parameterList = pop();
 	Symbol token = popToken();
 	popToken(); // "def" keyword
 
 	// Define the nested grammar with this extra production
 	Grammar gr = gr_nested( ps_grammar(ps), 1, ml_indefinite() );
 	Symbol intToken = sy_byIndex( SYM_INT, st );
-	Production pn = pn_new( gr, intToken, arity );
+	Production pn = pn_new( gr, intToken, 3 );
 	pn_append( pn, token, gr );
-	int i;
-	for( i=0; i < arity; i++ )
-		pn_append( pn, intToken, gr );
+	Symbol tokenField = sy_byIndex( SYM_TOKEN, st );
+	Symbol parmListField = sy_byName( ":PARAMETER_LIST", st );
+	Object parm;
+	for( parm = parameterList; ob_hasField( parm, tokenField, heap ); parm = ob_getField( parm, parmListField, heap ) )
+		{
+		Symbol name = ob_toSymbol( ob_getField( parm, tokenField, heap ), heap );
+		pn_appendWithName( pn, name, intToken, gr );
+		}
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
 	ps = ps_new( gr, st, ml_indefinite(), parserGenTrace );
 	fl_write( diagnostics, "    NEW PARSER\n" );
 
 	// Prime the parser state with the current stack contents
+	int i;
 	for( i = sk_depth(stack) - 1; i >= 0; i-- )
 		ps_push( ps, sk_item( stack, i ) );
 	dumpParserState();
 
-	// Store the TokenBlock body from the definition
+	// Store the body from the definition
+	Function fn = (Function)ml_alloc( ml_indefinite(), sizeof(*fn) );
+	fn->parameterList = parameterList;
+	fn->body = block;
 	int pnIndex = pn_index( pn, gr );
-	tba_setCount( productionBodies, pnIndex+1 );
-	tba_set( productionBodies, pnIndex, block );
+	fna_setCount( productionBodies, pnIndex+1 );
+	fna_set( productionBodies, pnIndex, fn );
 	}
 
 static struct gl_struct grammar1[] =
 	{
-	{ { ":PROGRAM",       ":VOIDS", ":END_OF_INPUT"                 }, nopAction },
-	{ { ":VOIDS",         ":VOID"                                   }, nopAction },
-	{ { ":VOIDS",         ":VOIDS", ":VOID"                         }, nopAction },
+	{ { ":PROGRAM",         ":VOIDS", ":END_OF_INPUT"                 }, nopAction },
+	{ { ":VOIDS",           ":VOID"                                   }, nopAction },
+	{ { ":VOIDS",           ":VOIDS", ":VOID"                         }, nopAction },
 
-	{ { ":TOKEN_BLOCK",   ":TB_START", ":VOIDS", "}"                }, stopRecordingTokenBlockAction },
-	{ { ":TB_START",      "{",                                      }, recordTokenBlockAction },
+	{ { ":TOKEN_BLOCK",     ":TB_START", ":VOIDS", "}"                }, stopRecordingTokenBlockAction },
+	{ { ":TB_START",        "{",                                      }, recordTokenBlockAction },
 
-	{ { ":VOID",          ":INT"                                    }, printAction },
-	{ { ":VOID",          "def", ":TOKEN", ":INT", ":TOKEN_BLOCK"   }, defAction },
-	{ { ":VOID",          "print", ":INT"                           }, printAction },
+	{ { ":VOID",            ":INT"                                    }, printAction },
+	{ { ":VOID",            "print", ":INT"                           }, printAction },
+
+	{ { ":PARAMETER_LIST"                                             }, parseTreeAction },
+	{ { ":PARAMETER_LIST",  ":PARAMETER_LIST", "@", ":TOKEN"          }, parseTreeAction },
+	{ { ":VOID",            "def", ":TOKEN", ":PARAMETER_LIST", ":TOKEN_BLOCK" }, defAction, true },
 
 	{{NULL}},
 	};
@@ -344,7 +379,7 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 			trace( diagnostics, "    Recording handle production %d: ", pn_index( handle, gr ) );
 			pn_sendTo( handle, diagnostics, gr, st );
 			trace( diagnostics, "\n" );
-			if( !tba_get( productionBodies, pn_index( handle, gr ) ) )
+			if( !fna_get( productionBodies, pn_index( handle, gr ) ) )
 				{
 				NativeAction action = lookupGrammarLine( handle, gr )->action;
 				if( action == stopRecordingTokenBlockAction )
@@ -375,8 +410,8 @@ int main( int argc, char **argv )
 	st = theSymbolTable();
 	heap = theObjectHeap();
 	Grammar gr = populateGrammar( st );
-	productionBodies = tba_new( 20 + gr_numProductions( gr ), ml_indefinite() );
-	tba_setCount( productionBodies, gr_numProductions( gr ) );
+	productionBodies = fna_new( 20 + gr_numProductions( gr ), ml_indefinite() );
+	fna_setCount( productionBodies, gr_numProductions( gr ) );
 	ps = ps_new( gr, st, ml_indefinite(), parserGenTrace );
 	trace( diagnostics, "Parser:\n" );
 	ps_sendTo( ps, diagnostics, heap, st );
@@ -400,15 +435,15 @@ int main( int argc, char **argv )
 			}
 		push( ob );
 		Production handle = ps_handle( ps, nextOb );
-		TokenBlock bodyToCall = NULL;
+		Function functionToCall = NULL;
 		while( handle )
 			{
 			gr = ps_grammar( ps ); // Grammar can change as the program proceeds
 			trace( diagnostics, "  Found handle production %d in grammar %p: ", pn_index( handle, gr ), gr );
 			pn_sendTo( handle, diagnostics, gr, st );
 			trace( diagnostics, "\n" );
-			bodyToCall = tba_get( productionBodies, pn_index( handle, gr ) );
-			if( bodyToCall )
+			functionToCall = fna_get( productionBodies, pn_index( handle, gr ) );
+			if( functionToCall )
 				{
 				break;
 				}
@@ -420,11 +455,11 @@ int main( int argc, char **argv )
 				}
 			}
 		ts_advance( tokenStream );
-		if( bodyToCall )
+		if( functionToCall )
 			{
 			assert( handle );
 			popN( pn_length( handle, gr ) );
-			tokenStream = ts_fromBlock( bodyToCall, heap, tokenStream );
+			tokenStream = ts_fromBlock( functionToCall->body, heap, tokenStream );
 			trace( diagnostics, "    Calling body for production %d token stream %p\n", pn_index( handle, gr ), tokenStream );
 			}
 		while( !ts_current( tokenStream ) && ts_caller( tokenStream ) )
