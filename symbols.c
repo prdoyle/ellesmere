@@ -2,6 +2,7 @@
 #include "symbols.h"
 #include "memory.h"
 #include "symbols_impl.h"
+#include "objects.h"
 #include <string.h>
 #include <stdint.h>
 
@@ -10,12 +11,6 @@
 #define AR_ELEMENT struct sy_struct
 #undef AR_BYVALUE
 #include "array_template.h"
-
-struct an_struct
-	{
-	ActionFunction function;
-	Symbol         sy;
-	};
 
 static struct sy_struct predefinedSymbols[] =
 	{
@@ -170,6 +165,18 @@ FUNC SymbolTable cx_symbolTable( Context cx )
 	return cx->st;
 	}
 
+FUNC Object cx_filter( Context cx, Object ob, ObjectHeap heap )
+	{
+	if( ob && ob_isToken( ob, heap ) )
+		{
+		Symbol sy = ob_toSymbol( ob, heap );
+		Object value = sy_value( sy, cx );
+		if( value )
+			return value;
+		}
+	return ob;
+	}
+
 FUNC int sy_sendTo( Symbol sy, File fl, SymbolTable st )
 	{
 	if( !fl )
@@ -198,21 +205,6 @@ FUNC int cx_sendTo( Context cx, File fl )
 	return charsSent;
 	}
 
-FUNC Action sy_immediateAction( Symbol sy, Context cx )
-	{
-	return sy->scopedDefs.immediateAction;
-	}
-
-FUNC int sy_arity( Symbol sy, Context cx )
-	{
-	return sy->scopedDefs.arity;
-	}
-
-FUNC bool sy_isSymbolic( Symbol sy, Context cx )
-	{
-	return sy->scopedDefs.isSymbolic;
-	}
-
 FUNC Object sy_value( Symbol sy, Context cx )
 	{
 	return sy->scopedDefs.value;
@@ -228,57 +220,10 @@ static void sy_save( Symbol sy, Context cx )
 		}
 	}
 
-FUNC void sy_setImmediateAction ( Symbol sy, Action an, Context cx )
-	{
-	sy_save( sy, cx );
-	sy->scopedDefs.immediateAction = an;
-	}
-
-FUNC void sy_setArity( Symbol sy, int arity, Context cx )
-	{
-	sy_save( sy, cx );
-	sy->scopedDefs.arity = arity;
-	}
-
-FUNC void sy_setIsSymbolic( Symbol sy, bool isSymbolic, Context cx )
-	{
-	sy_save( sy, cx );
-	sy->scopedDefs.isSymbolic = isSymbolic;
-	}
-
 FUNC void sy_setValue( Symbol sy, Object value, Context cx )
 	{
 	sy_save( sy, cx );
 	sy->scopedDefs.value = value;
-	}
-
-FUNC Action an_perform( Action an, Context cx )
-	{
-	assert( an && cx );
-	return an->function( an, cx );
-	}
-
-FUNC Action an_fromFunctionAndSymbol( ActionFunction af, Symbol sy )
-	{
-	Action result = sy->recentAction;
-	if( !result || result->function != af )
-		sy->recentAction = result = (Action)ml_alloc( ml_undecided(), sizeof(*result) );
-	result->function = af;
-	result->sy       = sy;
-	return result;
-	}
-
-FUNC Action an_fromFunction( ActionFunction af )
-	{
-	Action result = (Action)ml_alloc( ml_undecided(), sizeof(*result) );
-	result->function = af;
-	result->sy = NULL;
-	return result;
-	}
-
-FUNC Symbol an_symbol( Action an )
-	{
-	return an->sy;
 	}
 
 //MERGE:20

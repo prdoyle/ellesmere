@@ -10,7 +10,7 @@
 static SymbolTable st;
 static TokenStream tokenStream;
 static Stack       stack;
-//static Context     currentScope;
+static Context     curContext;
 static ObjectHeap  heap;
 static Parser      ps;
 FILE *diagnostics;
@@ -403,12 +403,23 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	trace( diagnostics, "\n" );
 	}
 
+static void returnAsNecessary()
+	{
+	while( !ts_current( tokenStream ) && ts_caller( tokenStream ) )
+		{
+		tokenStream = ts_close( tokenStream );
+		cx_restore( curContext );
+		trace( diagnostics, "  Returned to TokenStream %p\n", tokenStream );
+		}
+	}
+
 int main( int argc, char **argv )
 	{
 	diagnostics = fdopen( 3, "wt" );
 	parserGenTrace = fdopen( 4, "wt" );
 	st = theSymbolTable();
 	heap = theObjectHeap();
+	curContext = cx_new( st );
 	Grammar gr = populateGrammar( st );
 	productionBodies = fna_new( 20 + gr_numProductions( gr ), ml_indefinite() );
 	fna_setCount( productionBodies, gr_numProductions( gr ) );
@@ -421,8 +432,8 @@ int main( int argc, char **argv )
 	tokenStream = theLexTokenStream( heap, st );
 	while( ts_current( tokenStream ) )
 		{
-		Object ob     = ts_current( tokenStream );
-		Object nextOb = ts_next( tokenStream );
+		Object ob     = cx_filter( curContext, ts_current( tokenStream ), heap );
+		Object nextOb = cx_filter( curContext, ts_next( tokenStream ),    heap );
 		if( !nextOb )
 			nextOb = endOfInput;
 		if( diagnostics )
@@ -458,15 +469,15 @@ int main( int argc, char **argv )
 		if( functionToCall )
 			{
 			assert( handle );
-			popN( pn_length( handle, gr ) );
+			returnAsNecessary(); // tail call optimization
+			cx_save( curContext );
+			int i;
+			for( i = pn_length( handle, gr ) - 1; i >= 0; i-- )
+				sy_setValue( pn_token( handle, i, gr ), pop(), curContext );
 			tokenStream = ts_fromBlock( functionToCall->body, heap, tokenStream );
 			trace( diagnostics, "    Calling body for production %d token stream %p\n", pn_index( handle, gr ), tokenStream );
 			}
-		while( !ts_current( tokenStream ) && ts_caller( tokenStream ) )
-			{
-			tokenStream = ts_close( tokenStream ); // return
-			trace( diagnostics, "  Returned to TokenStream %p\n", tokenStream );
-			}
+		returnAsNecessary();
 		}
 #ifndef NDEBUG
 	File memreport = fdopen( 5, "wt" );

@@ -34,24 +34,12 @@ FUNC Context      cx_new( SymbolTable st );
 FUNC void         cx_save( Context cx );
 FUNC void         cx_restore( Context cx );
 FUNC SymbolTable  cx_symbolTable( Context cx );
+FUNC Object       cx_filter( Context cx, Object ob, ObjectHeap heap );
 FUNC int          cx_sendTo( Context cx, File fl );
 
 // Attributes of symbols
-FUNC Action            sy_immediateAction    ( Symbol sy, Context cx );
-FUNC void              sy_setImmediateAction ( Symbol sy, Action an, Context cx );
-FUNC int               sy_arity              ( Symbol sy, Context cx );
-FUNC void              sy_setArity           ( Symbol sy, int arity, Context cx );
-FUNC bool              sy_isSymbolic         ( Symbol sy, Context cx );
-FUNC void              sy_setIsSymbolic      ( Symbol sy, bool isSymbolic, Context cx );
 FUNC Object            sy_value              ( Symbol sy, Context cx );
 FUNC void              sy_setValue           ( Symbol sy, Object value, Context cx );
-
-// Action handling
-typedef Action (*ActionFunction)( Action an, Context cx );
-FUNC Action an_perform( Action an, Context cx );
-FUNC Action an_fromFunction( ActionFunction af );
-FUNC Action an_fromFunctionAndSymbol( ActionFunction af, Symbol sy );
-FUNC Symbol an_symbol( Action an );
 
 #endif
 

@@ -18,7 +18,6 @@ typedef char bool;
 #define FUNC
 #endif
 
-typedef struct an_struct *Action;
 typedef struct ar_struct *Array;
 typedef struct bv_struct *BitVector;
 typedef struct cl_struct *CheckList;
