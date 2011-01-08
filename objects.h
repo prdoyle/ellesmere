@@ -23,9 +23,9 @@ FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy );
 FUNC bool   ob_isToken( Object ob, ObjectHeap heap );
 FUNC Symbol ob_toSymbol( Object ob, ObjectHeap heap );
 
-FUNC Object     ob_fromTokenBlock( TokenBlock tb, ObjectHeap heap );
-FUNC bool       ob_isTokenBlock( Object ob, ObjectHeap heap );
-FUNC TokenBlock ob_toTokenBlock( Object ob, ObjectHeap heap );
+FUNC Object     ob_fromFunction( Function fn, ObjectHeap heap );
+FUNC bool       ob_isFunction( Object ob, ObjectHeap heap );
+FUNC Function   ob_toFunction( Object ob, ObjectHeap heap );
 
 FUNC Object      ob_fromTokenStream( TokenStream ts, ObjectHeap heap );
 FUNC bool        ob_isTokenStream( Object ob, ObjectHeap heap );

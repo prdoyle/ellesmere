@@ -18,7 +18,7 @@ static struct sy_struct predefinedSymbols[] =
 	{ ":INT" },
 	{ ":STRING" },
 	{ ":TOKEN" },
-	{ ":TOKEN_BLOCK" },
+	{ ":FUNCTION" },
 	{ ":TOKEN_STREAM" },
 	{ ":END_OF_INPUT" },
 	{ ":STATE_NODE" },

@@ -71,7 +71,7 @@ struct ob_struct
 		FieldList   fields;
 		const char *characters;
 		Symbol      symbol;
-		TokenBlock  tokenBlock;
+		Function    function;
 		TokenStream tokenStream;
 		} data;
 	int checkListIndex;
@@ -136,24 +136,24 @@ FUNC Symbol ob_toSymbol( Object ob, ObjectHeap heap )
 	return ob->data.symbol;
 	}
 
-FUNC Object ob_fromTokenBlock( TokenBlock tb, ObjectHeap heap )
+FUNC Object ob_fromFunction( Function fn, ObjectHeap heap )
 	{
 	Object result = (Object)ml_alloc( heap->ml, (sizeof(*result)) );
-	result->tag = SYM_TOKEN_BLOCK;
-	result->data.tokenBlock = tb;
+	result->tag = SYM_FUNCTION;
+	result->data.function = fn;
 	assert( ob_kind( result ) == OB_STRUCT );
 	return result;
 	}
 
-FUNC bool ob_isTokenBlock( Object ob, ObjectHeap heap )
+FUNC bool ob_isFunction( Object ob, ObjectHeap heap )
 	{
-	return ob_kind( ob ) == OB_STRUCT && ob->tag == SYM_TOKEN_BLOCK;
+	return ob_kind( ob ) == OB_STRUCT && ob->tag == SYM_FUNCTION;
 	}
 
-FUNC TokenBlock ob_toTokenBlock( Object ob, ObjectHeap heap )
+FUNC Function ob_toFunction( Object ob, ObjectHeap heap )
 	{
-	assert( ob_isTokenBlock( ob, heap ) );
-	return ob->data.tokenBlock;
+	assert( ob_isFunction( ob, heap ) );
+	return ob->data.function;
 	}
 
 FUNC Object ob_fromTokenStream( TokenStream ts, ObjectHeap heap )
@@ -332,10 +332,10 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 				fl_write( fl, "{%s#%d}", sy_name( sy, heap->st ), sy_index( sy, heap->st ) );
 				break;
 				}
-			case SYM_TOKEN_BLOCK:
+			case SYM_FUNCTION:
 				{
-				TokenBlock tb = ob_toTokenBlock( ob, heap );
-				fl_write( fl, ":TOKEN_BLOCK_%p", tb );
+				Function fn = ob_toFunction( ob, heap );
+				fl_write( fl, ":FUNCTION_%p", fn );
 				break;
 				}
 			case SYM_TOKEN_STREAM:
