@@ -6,6 +6,7 @@
 #include "tokens.h"
 #include "memory.h"
 #include <stdarg.h>
+#include <string.h>
 
 static SymbolTable st;
 static TokenStream tokenStream;
@@ -29,7 +30,7 @@ typedef struct fna_struct *FunctionArray;
 #define AR_BYVALUE
 #include "array_template.h"
 
-static FunctionArray productionFunctions;
+static FunctionArray productionBodies;
 
 #ifdef NDEBUG
 #define trace(...)
@@ -218,9 +219,9 @@ static void unwrapAction( Production handle, GrammarLine gl )
 
 #endif
 
-static void recordFunctionAction( Production handle, GrammarLine gl );
+static void recordTokenBlockAction( Production handle, GrammarLine gl );
 
-static void stopRecordingFunctionAction( Production handle, GrammarLine gl )
+static void stopRecordingTokenBlockAction( Production handle, GrammarLine gl )
 	{
 	assert(0); // Never actually gets called.  It's a kind of null terminator.
 	}
@@ -244,8 +245,8 @@ static void parseTreeAction( Production handle, GrammarLine gl )
 
 static void defAction( Production handle, GrammarLine gl )
 	{
-	Function fn = ob_toFunction( pop(), heap );
-	Object parameterList = fn->parameterList;
+	TokenBlock block = ob_toTokenBlock( pop(), heap );
+	Object parameterList = pop();
 	Symbol token = popToken();
 	popToken(); // "def" keyword
 
@@ -273,10 +274,13 @@ static void defAction( Production handle, GrammarLine gl )
 		ps_push( ps, sk_item( stack, i ) );
 	dumpParserState();
 
-	// Store the function from the definition
+	// Store the body from the definition
+	Function fn = (Function)ml_alloc( ml_indefinite(), sizeof(*fn) );
+	fn->parameterList = parameterList;
+	fn->body = block;
 	int pnIndex = pn_index( pn, gr );
-	fna_setCount( productionFunctions, pnIndex+1 );
-	fna_set( productionFunctions, pnIndex, fn );
+	fna_setCount( productionBodies, pnIndex+1 );
+	fna_set( productionBodies, pnIndex, fn );
 	}
 
 static struct gl_struct grammar1[] =
@@ -285,15 +289,16 @@ static struct gl_struct grammar1[] =
 	{ { ":VOIDS",           ":VOID"                                   }, nopAction },
 	{ { ":VOIDS",           ":VOIDS", ":VOID"                         }, nopAction },
 
-	{ { ":FUNCTION",        ":FN_START", ":VOIDS", "}"                }, stopRecordingFunctionAction },
-	{ { ":FN_START",        ":PARAMETER_LIST", "{",                   }, recordFunctionAction, 1 },
-
 	{ { ":VOID",            ":INT"                                    }, printAction },
 	{ { ":VOID",            "print", ":INT"                           }, printAction },
 
 	{ { ":PARAMETER_LIST"                                             }, parseTreeAction },
-	{ { ":PARAMETER_LIST",  ":PARAMETER_LIST", "@", ":TOKEN"          }, parseTreeAction },
-	{ { ":VOID",            "def", ":TOKEN", ":FUNCTION"              }, defAction, true },
+	{ { ":PARAMETER_LIST",  ":PARAMETER_LIST@prev", ":TOKEN@tag", "!" }, parseTreeAction },
+	{ { ":PARAMETER_LIST",  ":PARAMETER_LIST@prev", ":TOKEN@tag", "@", ":TOKEN@name" }, parseTreeAction },
+	{ { ":PRODUCTION",      ":TOKEN@result", ":PARAMETER_LIST"        }, parseTreeAction },
+ 	{ { ":TOKEN_BLOCK",     ":TB_START", ":VOIDS", "}"                }, stopRecordingTokenBlockAction },
+ 	{ { ":TB_START",        "{",                                      }, recordTokenBlockAction },
+	{ { ":VOID",            "def", ":PRODUCTION", ":TOKEN_BLOCK"      }, defAction },
 
 	{{NULL}},
 	};
@@ -324,14 +329,28 @@ static Grammar populateGrammar( SymbolTable st )
 		{
 		GrammarLine *curArray = initialGrammarNest + i;
 		if( gr )
-			gr = gr_nested( gr, 20, ml_indefinite() );
+			gr = gr_nested( gr, 5, ml_indefinite() );
 		else
 			gr = gr_new( sy_byName( (*curArray)[0].tokens[0], st ), 20, ml_indefinite() );
 		for( j=0; (*curArray)[j].action; j++ )
 			{
 			Production pn = pn_new( gr, sy_byName( (*curArray)[j].tokens[0], st ), asizeof( (*curArray)[j].tokens ) );
 			for( k=1; k < asizeof( (*curArray)[j].tokens ) && (*curArray)[j].tokens[k]; k++ )
-				pn_append( pn, sy_byName( (*curArray)[j].tokens[k], st ), gr );
+				{
+				char *token = (*curArray)[j].tokens[k];
+				char *at = strchr( token, '@' );
+				if( at != NULL && at != token )
+					{
+					char *tag = (char*)ml_alloc( ml_indefinite(), at - token + 1 );
+					memcpy( tag, token, at-token );
+					tag[ at-token ] = 0;
+					pn_appendWithName( pn, sy_byName( at+1, st ), sy_byName( tag, st ), gr );
+					}
+				else
+					{
+					pn_append( pn, sy_byName( token, st ), gr );
+					}
+				}
 			pn_stopAppending( pn, gr );
 			}
 		}
@@ -350,12 +369,13 @@ static GrammarLine lookupGrammarLine( Production pn, Grammar gr )
 	return array + index;
 	}
 
-static void recordFunctionAction( Production handle, GrammarLine gl )
+static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	{
-	trace( diagnostics, "  Begin recording function\n" );
+	trace( diagnostics, "  Begin recording token block\n" );
 	TokenBlock tb = tb_new( ml_undecided() );
 	cx_save( curContext );
 	Symbol tokenField = sy_byIndex( SYM_TOKEN, st );
+	HEY! Make a grammar augmented with :PRODUCTION and use that to record the block
 	Symbol parmListField = sy_byName( ":PARAMETER_LIST", st );
 	Object intToken = oh_symbolToken( heap, sy_byIndex( SYM_INT, st ) );
 	Object parameterList = sk_item( stack, gl->parm1 ); Object parm;
@@ -386,16 +406,16 @@ static void recordFunctionAction( Production handle, GrammarLine gl )
 			trace( diagnostics, "    Recording handle production %d: ", pn_index( handle, gr ) );
 			pn_sendTo( handle, diagnostics, gr, st );
 			trace( diagnostics, "\n" );
-			if( !fna_get( productionFunctions, pn_index( handle, gr ) ) )
+			if( !fna_get( productionBodies, pn_index( handle, gr ) ) )
 				{
 				NativeAction action = lookupGrammarLine( handle, gr )->action;
-				if( action == stopRecordingFunctionAction )
+				if( action == stopRecordingTokenBlockAction )
 					goto done; // end marker
 				}
 			nopAction( handle, NULL );
 			handle = ps_handle( ps, nextOb );
 			}
-		tb_append( tb, ob ); // If we get to here, we didn't hit stopRecordingFunctionAction
+		tb_append( tb, ob ); // If we get to here, we didn't hit stopRecordingTokenBlockAction
 		trace( diagnostics, "# Recorded token " );
 		ob_sendTo( ob, diagnostics, heap );
 		trace( diagnostics, "\n");
@@ -405,10 +425,7 @@ static void recordFunctionAction( Production handle, GrammarLine gl )
 	tb_stopAppending( tb );
 	popN( pn_length( handle, gr ) );
 	cx_restore( curContext );
-	Function result = (Function)ml_alloc( ml_indefinite(), sizeof(*result) );
-	result->body = tb;
-	result->parameterList = parameterList;
-	push( ob_fromFunction( result, heap ) );
+	push( ob_fromTokenBlock( tb, heap ) );
 	trace( diagnostics, "    Stack after recording: " );
 	sk_sendTo( stack, diagnostics, heap );
 	trace( diagnostics, "\n" );
@@ -432,8 +449,8 @@ int main( int argc, char **argv )
 	heap = theObjectHeap();
 	curContext = cx_new( st );
 	Grammar gr = populateGrammar( st );
-	productionFunctions = fna_new( 20 + gr_numProductions( gr ), ml_indefinite() );
-	fna_setCount( productionFunctions, gr_numProductions( gr ) );
+	productionBodies = fna_new( 20 + gr_numProductions( gr ), ml_indefinite() );
+	fna_setCount( productionBodies, gr_numProductions( gr ) );
 	ps = ps_new( gr, st, ml_indefinite(), parserGenTrace );
 	trace( diagnostics, "Parser:\n" );
 	ps_sendTo( ps, diagnostics, heap, st );
@@ -464,7 +481,7 @@ int main( int argc, char **argv )
 			trace( diagnostics, "  Found handle production %d in grammar %p: ", pn_index( handle, gr ), gr );
 			pn_sendTo( handle, diagnostics, gr, st );
 			trace( diagnostics, "\n" );
-			functionToCall = fna_get( productionFunctions, pn_index( handle, gr ) );
+			functionToCall = fna_get( productionBodies, pn_index( handle, gr ) );
 			if( functionToCall )
 				{
 				break;

@@ -1,4 +1,4 @@
-def fib @n { 1+n }
+def :INT fib! :INT @n { 1+n }
 2
 fib 3
 fib 4

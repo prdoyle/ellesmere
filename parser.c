@@ -92,7 +92,7 @@ static int pg_symbolSideTableIndex( ParserGenerator pg, Symbol sy )
 	return pg->sstIndexes[ sy_index( sy, pg->st ) ];
 	}
 
-static SymbolSideTableEntry pg_sideTableEntry( ParserGenerator pg, Symbol sy )
+static SymbolSideTableEntry pg_sideTableEntry( ParserGenerator pg, Symbol sy, File traceFile )
 	{
 	SymbolSideTableEntry result;
 	int sstIndex = pg_symbolSideTableIndex( pg, sy );
@@ -100,7 +100,9 @@ static SymbolSideTableEntry pg_sideTableEntry( ParserGenerator pg, Symbol sy )
 		result = sst_element( pg->sst, sstIndex );
 	else
 		{
-		pg->sstIndexes[ sy_index( sy, pg->st ) ] = sst_count( pg->sst );
+		sstIndex = sst_count( pg->sst );
+		fl_write( traceFile, "  -- SST#%d = %s --\n", sstIndex, sy_name( sy, pg->st ) );
+		pg->sstIndexes[ sy_index( sy, pg->st ) ] = sstIndex;
 		result = sst_nextElement( pg->sst );
 		result->sy = sy;
 		result->leftmostItems  = NULL;
@@ -120,7 +122,7 @@ static bool pg_itemIsRightmost( ParserGenerator pg, int itemIndex )
 	return bv_isSet( pg->rightmostItems, itemIndex );
 	}
 
-static void pg_closeItemVector( ParserGenerator pg, ItemVector itemVector )
+static void pg_closeItemVector( ParserGenerator pg, ItemVector itemVector, File traceFile )
 	{
 	int i;
 	int oldPopulation = 0;
@@ -135,7 +137,7 @@ static void pg_closeItemVector( ParserGenerator pg, ItemVector itemVector )
 			if( !pg_itemIsRightmost( pg, i ) )
 				{
 				Symbol nextToken = pn_token( pn, it->dot, pg->gr );
-				SymbolSideTableEntry lhs = pg_sideTableEntry( pg, nextToken );
+				SymbolSideTableEntry lhs = pg_sideTableEntry( pg, nextToken, traceFile );
 				ItemVector itemsToAdd = lhs->leftmostItems;
 				if( itemsToAdd )
 					bv_or( itemVector, itemsToAdd );
@@ -145,9 +147,9 @@ static void pg_closeItemVector( ParserGenerator pg, ItemVector itemVector )
 		}
 	}
 
-static void pg_computeItemsExpectingToken( ParserGenerator pg, ItemVector result, ItemVector itemSet, Symbol token )
+static void pg_computeItemsExpectingToken( ParserGenerator pg, ItemVector result, ItemVector itemSet, Symbol token, File traceFile )
 	{
-	ItemVector expectingItems = pg_sideTableEntry( pg, token )->expectingItems;
+	ItemVector expectingItems = pg_sideTableEntry( pg, token, traceFile )->expectingItems;
 	if( !expectingItems )
 		{
 		bv_clear( result );
@@ -233,7 +235,7 @@ static void pg_populateItemTable( ParserGenerator pg, File traceFile )
 	 bv_shrinkWrap( pg->rightmostItems );
 	}
 
-static void pg_populateSymbolSideTable( ParserGenerator pg )
+static void pg_populateSymbolSideTable( ParserGenerator pg, File traceFile )
 	{
 	int i,j;
 	MemoryLifetime ml = pg->generateTime;
@@ -249,7 +251,7 @@ static void pg_populateSymbolSideTable( ParserGenerator pg )
 		{
 		Production pn = gr_production( gr, i );
 		Symbol lhs = pn_lhs( pn, gr );
-		SymbolSideTableEntry entry = pg_sideTableEntry( pg, lhs );
+		SymbolSideTableEntry entry = pg_sideTableEntry( pg, lhs, traceFile );
 		Item it = ita_element( pg->items, itemIndex );
 		if( !entry->leftmostItems )
 			entry->leftmostItems = bv_new( ita_count( pg->items ), ml );
@@ -259,7 +261,7 @@ static void pg_populateSymbolSideTable( ParserGenerator pg )
 		for( j=0; j < pn_length( pn, gr ); j++ )
 			{
 			it = ita_element( pg->items, itemIndex );
-			entry = pg_sideTableEntry( pg, pn_token( it->pn, j, gr ) );
+			entry = pg_sideTableEntry( pg, pn_token( it->pn, j, gr ), traceFile );
 			if( !entry->expectingItems )
 				entry->expectingItems = bv_new( ita_count( pg->items ), ml );
 			bv_set( entry->expectingItems, itemIndex );
@@ -293,9 +295,9 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 	int itemCount = gr_numItems( pg->gr );
 	ItemVector nextItems = bv_new( itemCount, ml );
 	pg->itemSets = itst_new( itemCount * itemCount, ml ); // guesstimate of number of item sets
-	startItemSet = curItemSet = pg_createItemSet( pg, pg_sideTableEntry( pg, gr_goal(pg->gr) )->leftmostItems );
+	startItemSet = curItemSet = pg_createItemSet( pg, pg_sideTableEntry( pg, gr_goal(pg->gr), traceFile )->leftmostItems );
 	Object startState = startItemSet->stateNode;
-	pg_closeItemVector( pg, curItemSet->items );
+	pg_closeItemVector( pg, curItemSet->items, traceFile );
 	st_count( st ); // just to use the variable and silence a warning
 	while( curItemSet )
 		{
@@ -322,7 +324,7 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 			Symbol expected = pn_token( it->pn, it->dot, pg->gr );
 			trace( traceFile, "    Item %d is expecting %s\n", i, sy_name( expected, st ) );
 
-			pg_computeItemsExpectingToken( pg, nextItems, itemsLeft, expected );
+			pg_computeItemsExpectingToken( pg, nextItems, itemsLeft, expected, traceFile );
 			traceBVX( nextItems, traceFile, "      similar items: %d", ", %d" );
 			trace( traceFile, "\n" );
 
@@ -340,7 +342,7 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 			traceBVX( nextItems, traceFile, "            shifted: %d", ", %d" );
 			trace( traceFile, "\n" );
 
-			pg_closeItemVector( pg, nextItems );
+			pg_closeItemVector( pg, nextItems, traceFile );
 			traceBVX( nextItems, traceFile, "             closed: %d", ", %d" );
 			trace( traceFile, "\n" );
 
@@ -487,7 +489,7 @@ static void pg_computeSLRLookaheads( ParserGenerator pg, File traceFile )
 		{
 		Item it = ita_element( pg->items, i );
 		items[i] = it;
-		SymbolSideTableEntry lhs = pg_sideTableEntry( pg, pn_lhs( it->pn, pg->gr ) );
+		SymbolSideTableEntry lhs = pg_sideTableEntry( pg, pn_lhs( it->pn, pg->gr ), traceFile );
 		it->lookahead = bv_new( sst_count( pg->sst ), pg->generateTime );
 		bv_copy( it->lookahead, lhs->follow );
 		}
@@ -578,7 +580,7 @@ static void pg_computeReduceActions( ParserGenerator pg, File traceFile )
 	SymbolVector competitorSymbols = bv_new( sst_count(pg->sst),   pg->generateTime );
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
 		{
-		fl_write( traceFile, "  ItemSet %d:\n", i );
+		fl_write( traceFile, "  ItemSet_%d:\n", i );
 		ItemSet its = itst_element( pg->itemSets, i );
 		Object stateNode = its->stateNode;
 		bv_copy ( reduceItems, pg->rightmostItems );
@@ -678,7 +680,7 @@ FUNC Parser ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File diagnost
 	MemoryLifetime generateTime = ml_begin( 10000, ml );
 	ParserGenerator pg = pg_new( gr, st, generateTime, ml, theObjectHeap() );
 	pg_populateItemTable( pg, diagnostics );
-	pg_populateSymbolSideTable( pg );
+	pg_populateSymbolSideTable( pg, diagnostics );
 	Object startState = pg_computeLR0StateNodes( pg, diagnostics );
 	pg_computeFirstSets( pg, diagnostics );
 	pg_computeFollowSets( pg, diagnostics );
@@ -705,12 +707,16 @@ static Object ps_nextState( Parser ps, Object ob )
 	Object curState = sk_top( ps->stateStack );
 	Symbol token = ob_tag( ob, oh );
 	// Not sure how I'm dealing with tokens as first-class objects yet...
-	if( ob_isToken( ob, oh ) && !ob_hasField( curState, token, oh ) )
-		token = ob_toSymbol( ob, oh );
-	if( !ob_hasField( curState, token, oh ) )
-		return NULL;
-	else
+	if( ob_isToken( ob, oh ) )
+		{
+		Symbol literalToken = ob_toSymbol( ob, oh );
+		if( ob_hasField( curState, literalToken, oh ) )
+			token = literalToken;
+		}
+	if( ob_hasField( curState, token, oh ) )
 		return ob_getField( curState, token, oh );
+	else
+		return NULL;
 	}
 
 FUNC bool ps_expects( Parser ps, Object ob )
@@ -1050,7 +1056,7 @@ int main( int argc, char *argv[] )
 	bv_sendTo( pg->rightmostItems, traceFile );
 	fl_write( traceFile, "\n" );
 
-	pg_populateSymbolSideTable( pg );
+	pg_populateSymbolSideTable( pg, traceFile );
 	fl_write( traceFile, "SymbolSideTable:\n" );
 	for( i=1; i < sst_count( pg->sst ); i++ )
 		{
