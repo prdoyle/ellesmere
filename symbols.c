@@ -19,6 +19,7 @@ static struct sy_struct predefinedSymbols[] =
 	{ ":STRING" },
 	{ ":TOKEN" },
 	{ ":FUNCTION" },
+	{ ":TOKEN_BLOCK" },
 	{ ":TOKEN_STREAM" },
 	{ ":END_OF_INPUT" },
 	{ ":STATE_NODE" },

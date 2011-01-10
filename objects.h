@@ -27,6 +27,10 @@ FUNC Object     ob_fromFunction( Function fn, ObjectHeap heap );
 FUNC bool       ob_isFunction( Object ob, ObjectHeap heap );
 FUNC Function   ob_toFunction( Object ob, ObjectHeap heap );
 
+FUNC Object       ob_fromTokenBlock( TokenBlock tb, ObjectHeap heap );
+FUNC bool         ob_isTokenBlock( Object ob, ObjectHeap heap );
+FUNC TokenBlock   ob_toTokenBlock( Object ob, ObjectHeap heap );
+
 FUNC Object      ob_fromTokenStream( TokenStream ts, ObjectHeap heap );
 FUNC bool        ob_isTokenStream( Object ob, ObjectHeap heap );
 FUNC TokenStream ob_toTokenStream( Object ob, ObjectHeap heap );

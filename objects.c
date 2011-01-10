@@ -72,6 +72,7 @@ struct ob_struct
 		const char *characters;
 		Symbol      symbol;
 		Function    function;
+		TokenBlock  tokenBlock;
 		TokenStream tokenStream;
 		} data;
 	int checkListIndex;
@@ -134,6 +135,26 @@ FUNC Symbol ob_toSymbol( Object ob, ObjectHeap heap )
 	{
 	assert( ob_isToken( ob, heap ) );
 	return ob->data.symbol;
+	}
+
+FUNC Object ob_fromTokenBlock( TokenBlock tb, ObjectHeap heap )
+	{
+	Object result = (Object)ml_alloc( heap->ml, (sizeof(*result)) );
+	result->tag = SYM_TOKEN_BLOCK;
+	result->data.tokenBlock = tb;
+	assert( ob_kind( result ) == OB_STRUCT );
+	return result;
+	}
+
+FUNC bool ob_isTokenBlock( Object ob, ObjectHeap heap )
+	{
+	return ob_kind( ob ) == OB_STRUCT && ob->tag == SYM_FUNCTION;
+	}
+
+FUNC TokenBlock ob_toTokenBlock( Object ob, ObjectHeap heap )
+	{
+	assert( ob_isTokenBlock( ob, heap ) );
+	return ob->data.tokenBlock;
 	}
 
 FUNC Object ob_fromFunction( Function fn, ObjectHeap heap )
@@ -336,6 +357,12 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 				{
 				Function fn = ob_toFunction( ob, heap );
 				fl_write( fl, ":FUNCTION_%p", fn );
+				break;
+				}
+			case SYM_TOKEN_BLOCK:
+				{
+				TokenBlock tb = ob_toTokenBlock( ob, heap );
+				fl_write( fl, ":TOKEN_BLOCK_%p", tb );
 				break;
 				}
 			case SYM_TOKEN_STREAM:
