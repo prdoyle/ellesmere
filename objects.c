@@ -148,7 +148,7 @@ FUNC Object ob_fromTokenBlock( TokenBlock tb, ObjectHeap heap )
 
 FUNC bool ob_isTokenBlock( Object ob, ObjectHeap heap )
 	{
-	return ob_kind( ob ) == OB_STRUCT && ob->tag == SYM_FUNCTION;
+	return ob_kind( ob ) == OB_STRUCT && ob->tag == SYM_TOKEN_BLOCK;
 	}
 
 FUNC TokenBlock ob_toTokenBlock( Object ob, ObjectHeap heap )

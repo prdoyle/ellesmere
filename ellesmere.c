@@ -19,7 +19,7 @@ FILE *parserGenTrace;
 
 struct fn_struct
 	{
-	Object     parameterList;
+	Production production;
 	TokenBlock body;
 	};
 
@@ -243,25 +243,30 @@ static void parseTreeAction( Production handle, GrammarLine gl )
 	push( result );
 	}
 
-static void defAction( Production handle, GrammarLine gl )
+static void addProductionAction( Production handle, GrammarLine gl )
 	{
-	TokenBlock block = ob_toTokenBlock( pop(), heap );
-	Object parameterList = pop();
-	Symbol token = popToken();
-	popToken(); // "def" keyword
+	parseTreeAction( handle, gl );
+	Object production = sk_top( stack );
+	Symbol sym_result = sy_byName( "result", st );
+	Symbol sym_parms  = sy_byName( "parms",  st );
+	Symbol sym_next   = sy_byName( "next",   st );
+	Symbol sym_tag    = sy_byName( "tag",    st );
+	Symbol sym_name   = sy_byName( "name",   st );
 
 	// Define the nested grammar with this extra production
 	Grammar gr = gr_nested( ps_grammar(ps), 1, ml_indefinite() );
-	Symbol intToken = sy_byIndex( SYM_INT, st );
-	Production pn = pn_new( gr, intToken, 3 );
-	pn_append( pn, token, gr );
-	Symbol tokenField = sy_byIndex( SYM_TOKEN, st );
-	Symbol parmListField = sy_byName( ":PARAMETER_LIST", st );
+	Production pn = pn_new( gr, ob_toSymbol( ob_getField( production, sym_result, heap ), heap ), 3 );
 	Object parm;
-	for( parm = parameterList; ob_hasField( parm, tokenField, heap ); parm = ob_getField( parm, parmListField, heap ) )
+	for(
+		parm = ob_getField( production, sym_parms, heap);
+		ob_hasField( parm, sym_tag, heap );
+		parm = ob_getField( parm, sym_next, heap ) )
 		{
-		Symbol name = ob_toSymbol( ob_getField( parm, tokenField, heap ), heap );
-		pn_appendWithName( pn, name, intToken, gr );
+		Symbol tag  = ob_toSymbol( ob_getField( parm, sym_tag,  heap ), heap );
+		if( ob_hasField( parm, sym_name, heap ) )
+			pn_appendWithName( pn, ob_toSymbol( ob_getField( parm, sym_name, heap ), heap ), tag, gr );
+		else
+			pn_append( pn, tag, gr );
 		}
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
@@ -274,11 +279,36 @@ static void defAction( Production handle, GrammarLine gl )
 		ps_push( ps, sk_item( stack, i ) );
 	dumpParserState();
 
+	// Build a context with a symbol for each named parameter
+	cx_save( curContext );
+	for( i = 0; i < pn_length( pn, gr ); i++ )
+		{
+		Symbol name  = pn_name( pn, i, gr );
+		Symbol tag   = pn_token( pn, i, gr );
+		if( name )
+			sy_setValue( name, oh_symbolToken( heap, tag ), curContext );
+		}
+
+	// Stuff the production index into the :PRODUCTION object so caller can get it
+	ob_setField( production,
+		sy_byName( "index", st ),
+		ob_fromInt( pn_index( pn, gr ), heap ), heap );
+	}
+
+static void defAction( Production handle, GrammarLine gl )
+	{
+	TokenBlock block = ob_toTokenBlock( pop(), heap );
+	Object production = pop();
+	popToken(); // "def" keyword
+
+	// Pop the context built for the def's production
+	cx_restore( curContext );
+
 	// Store the body from the definition
+	int pnIndex = ob_toInt( ob_getField( production, sy_byName( "index", st ), heap ), heap );
 	Function fn = (Function)ml_alloc( ml_indefinite(), sizeof(*fn) );
-	fn->parameterList = parameterList;
+	fn->production = gr_production( ps_grammar(ps), pnIndex );
 	fn->body = block;
-	int pnIndex = pn_index( pn, gr );
 	fna_setCount( productionBodies, pnIndex+1 );
 	fna_set( productionBodies, pnIndex, fn );
 	}
@@ -293,9 +323,9 @@ static struct gl_struct grammar1[] =
 	{ { ":VOID",            "print", ":INT"                           }, printAction },
 
 	{ { ":PARAMETER_LIST"                                             }, parseTreeAction },
-	{ { ":PARAMETER_LIST",  ":PARAMETER_LIST@prev", ":TOKEN@tag", "!" }, parseTreeAction },
-	{ { ":PARAMETER_LIST",  ":PARAMETER_LIST@prev", ":TOKEN@tag", "@", ":TOKEN@name" }, parseTreeAction },
-	{ { ":PRODUCTION",      ":TOKEN@result", ":PARAMETER_LIST"        }, parseTreeAction },
+	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "!", ":PARAMETER_LIST@next" }, parseTreeAction },
+	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "@", ":TOKEN@name", ":PARAMETER_LIST@next"  }, parseTreeAction },
+	{ { ":PRODUCTION",      ":TOKEN@result", ":PARAMETER_LIST@parms"  }, addProductionAction },
  	{ { ":TOKEN_BLOCK",     ":TB_START", ":VOIDS", "}"                }, stopRecordingTokenBlockAction },
  	{ { ":TB_START",        "{",                                      }, recordTokenBlockAction },
 	{ { ":VOID",            "def", ":PRODUCTION", ":TOKEN_BLOCK"      }, defAction },
@@ -373,20 +403,9 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	{
 	trace( diagnostics, "  Begin recording token block\n" );
 	TokenBlock tb = tb_new( ml_undecided() );
-	cx_save( curContext );
-	Symbol tokenField = sy_byIndex( SYM_TOKEN, st );
-	HEY! Make a grammar augmented with :PRODUCTION and use that to record the block
-	Symbol parmListField = sy_byName( ":PARAMETER_LIST", st );
-	Object intToken = oh_symbolToken( heap, sy_byIndex( SYM_INT, st ) );
-	Object parameterList = sk_item( stack, gl->parm1 ); Object parm;
-	for( parm = parameterList; ob_hasField( parm, tokenField, heap ); parm = ob_getField( parm, parmListField, heap ) )
-		{
-		Symbol name = ob_toSymbol( ob_getField( parm, tokenField, heap ), heap );
-		sy_setValue( name, intToken, curContext );
-		}
+	Grammar gr = ps_grammar( ps );
 	nopAction( handle, gl );
 	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
-	Grammar gr = ps_grammar( ps );
 	ts_advance( tokenStream );
 	while( ts_current( tokenStream ) )
 		{
@@ -424,7 +443,6 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	done:
 	tb_stopAppending( tb );
 	popN( pn_length( handle, gr ) );
-	cx_restore( curContext );
 	push( ob_fromTokenBlock( tb, heap ) );
 	trace( diagnostics, "    Stack after recording: " );
 	sk_sendTo( stack, diagnostics, heap );
