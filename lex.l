@@ -66,14 +66,15 @@ WS          [ \t\r]
 #.*$                  { ; /* comment */ }
 \n                    { ++_lineNumber; }
 
--?{DIGIT}+            { _lastInt = atoi(yytext); return INT; }
-
 {ALPHA}{ALNUM}*       { setLastWord(yytext); return WORD; }
 {OPER}+_{ALNUM}*      { setLastWord(yytext); return WORD; }
 {ALONE}               { setLastWord(yytext); return WORD; }
 {OPER}+               { setLastWord(yytext); return WORD; }
+-                     { setLastWord(yytext); return WORD; }
 
 \"[^"]*(\\\"[^"]*)*\" { setLastString(yytext); return STRING; }
+
+-?{DIGIT}+            { _lastInt = atoi(yytext); return INT; }
 
 .                     { setLastWord(yytext); return ERROR; }
 

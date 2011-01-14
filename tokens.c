@@ -53,7 +53,8 @@ struct tb_struct
 
 static Object getLexToken( TokenStream ts )
 	{
-	switch( yylex() )
+	int token = yylex();
+	switch( token )
 		{
 		case NUM_TOKENS:
 		case ERROR:

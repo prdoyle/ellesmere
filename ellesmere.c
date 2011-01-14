@@ -102,24 +102,15 @@ static Symbol popToken()
 	return ob_toSymbol( popped, heap );
 	}
 
-#if 0
-static Action eatUntilObject( Object target )
+static void returnAsNecessary()
 	{
-	trace( diagnostics, "  eatUntilObject( " );
-	ob_sendTo( target, diagnostics, heap );
-	trace( diagnostics, " )\n");
-
-	Object ob = ts_next( tokenStream );
-	while( ob )
+	while( !ts_current( tokenStream ) && ts_caller( tokenStream ) )
 		{
-		if( ob == target )
-			break;
-		else
-			ob = ts_next( tokenStream );
+		tokenStream = ts_close( tokenStream );
+		cx_restore( curContext );
+		trace( diagnostics, "  Returned to TokenStream %p\n", tokenStream );
 		}
-	return NULL;
 	}
-#endif
 
 typedef struct gl_struct *GrammarLine;
 	 
@@ -298,8 +289,10 @@ static void addProductionAction( Production handle, GrammarLine gl )
 static void defAction( Production handle, GrammarLine gl )
 	{
 	TokenBlock block = ob_toTokenBlock( pop(), heap );
+	popToken(); // "as" keyword
 	Object production = pop();
 	popToken(); // "def" keyword
+	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
 
 	// Pop the context built for the def's production
 	cx_restore( curContext );
@@ -311,6 +304,24 @@ static void defAction( Production handle, GrammarLine gl )
 	fn->body = block;
 	fna_setCount( productionBodies, pnIndex+1 );
 	fna_set( productionBodies, pnIndex, fn );
+	}
+
+static void ifnegAction( Production handle, GrammarLine gl )
+	{
+	popToken(); // end
+	TokenBlock block = ob_toTokenBlock( pop(), heap );
+	popToken(); // then
+	int value = popInt();
+	popToken(); // ifneg
+	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
+
+	returnAsNecessary();
+	if( value < 0 )
+		{
+		cx_save( curContext );
+		tokenStream = ts_fromBlock( block, heap, tokenStream );
+		trace( diagnostics, "    ifneg: %d < 0; token stream is now %p\n", value, tokenStream );
+		}
 	}
 
 static struct gl_struct grammar1[] =
@@ -328,7 +339,9 @@ static struct gl_struct grammar1[] =
 	{ { ":PRODUCTION",      ":TOKEN@result", ":PARAMETER_LIST@parms"  }, addProductionAction },
  	{ { ":TOKEN_BLOCK",     ":TB_START", ":VOIDS", "}"                }, stopRecordingTokenBlockAction },
  	{ { ":TB_START",        "{",                                      }, recordTokenBlockAction },
-	{ { ":VOID",            "def", ":PRODUCTION", ":TOKEN_BLOCK"      }, defAction },
+	{ { ":VOID",            "def", ":PRODUCTION", "as", ":TOKEN_BLOCK" }, defAction },
+
+	{ { ":VOID",            "ifneg", ":INT", "then", ":TOKEN_BLOCK", "end"    }, ifnegAction },
 
 	{{NULL}},
 	};
@@ -406,7 +419,6 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	Grammar gr = ps_grammar( ps );
 	nopAction( handle, gl );
 	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
-	ts_advance( tokenStream );
 	while( ts_current( tokenStream ) )
 		{
 		Object ob     = cx_filter( curContext, ts_current( tokenStream ), heap );
@@ -419,13 +431,15 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 		ob_sendTo( nextOb, diagnostics, heap );
 		trace( diagnostics, "\n");
 		push( ob );
+		ts_advance( tokenStream );
 		handle = ps_handle( ps, nextOb );
 		while( handle )
 			{
 			trace( diagnostics, "    Recording handle production %d: ", pn_index( handle, gr ) );
 			pn_sendTo( handle, diagnostics, gr, st );
 			trace( diagnostics, "\n" );
-			if( !fna_get( productionBodies, pn_index( handle, gr ) ) )
+			if(   pn_index( handle, gr ) < fna_count( productionBodies ) // recursive calls won't yet have a body defined
+				&& !fna_get( productionBodies, pn_index( handle, gr ) ) )
 				{
 				NativeAction action = lookupGrammarLine( handle, gr )->action;
 				if( action == stopRecordingTokenBlockAction )
@@ -438,7 +452,6 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 		trace( diagnostics, "# Recorded token " );
 		ob_sendTo( ob, diagnostics, heap );
 		trace( diagnostics, "\n");
-		ts_advance( tokenStream );
 		}
 	done:
 	tb_stopAppending( tb );
@@ -449,30 +462,21 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	trace( diagnostics, "\n" );
 	}
 
-static void returnAsNecessary()
-	{
-	while( !ts_current( tokenStream ) && ts_caller( tokenStream ) )
-		{
-		tokenStream = ts_close( tokenStream );
-		cx_restore( curContext );
-		trace( diagnostics, "  Returned to TokenStream %p\n", tokenStream );
-		}
-	}
-
 int main( int argc, char **argv )
 	{
 	diagnostics = fdopen( 3, "wt" );
-	parserGenTrace = fdopen( 4, "wt" );
+	File details = fdopen( 4, "wt" );
+	parserGenTrace = fdopen( 5, "wt" );
 	st = theSymbolTable();
 	heap = theObjectHeap();
 	curContext = cx_new( st );
-	Grammar gr = populateGrammar( st );
-	productionBodies = fna_new( 20 + gr_numProductions( gr ), ml_indefinite() );
-	fna_setCount( productionBodies, gr_numProductions( gr ) );
-	ps = ps_new( gr, st, ml_indefinite(), parserGenTrace );
-	trace( diagnostics, "Parser:\n" );
-	ps_sendTo( ps, diagnostics, heap, st );
-	trace( diagnostics, "\n" );
+	Grammar initialGrammar = populateGrammar( st );
+	productionBodies = fna_new( 20 + gr_numProductions( initialGrammar ), ml_indefinite() );
+	fna_setCount( productionBodies, gr_numProductions( initialGrammar ) );
+	ps = ps_new( initialGrammar, st, ml_indefinite(), parserGenTrace );
+	trace( details, "Parser:\n" );
+	ps_sendTo( ps, details, heap, st );
+	trace( details, "\n" );
 	stack = sk_new( ml_indefinite() );
 	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
 	tokenStream = theLexTokenStream( heap, st );
@@ -492,17 +496,25 @@ int main( int argc, char **argv )
 			}
 		push( ob );
 		Production handle = ps_handle( ps, nextOb );
-		Function functionToCall = NULL;
+		ts_advance( tokenStream );
 		while( handle )
 			{
-			gr = ps_grammar( ps ); // Grammar can change as the program proceeds
+			Grammar gr = ps_grammar( ps ); // Grammar can change as the program proceeds
 			trace( diagnostics, "  Found handle production %d in grammar %p: ", pn_index( handle, gr ), gr );
 			pn_sendTo( handle, diagnostics, gr, st );
 			trace( diagnostics, "\n" );
-			functionToCall = fna_get( productionBodies, pn_index( handle, gr ) );
+			Function functionToCall = fna_get( productionBodies, pn_index( handle, gr ) );
 			if( functionToCall )
 				{
-				break;
+				assert( handle );
+				returnAsNecessary(); // tail call optimization
+				cx_save( curContext );
+				int i;
+				for( i = pn_length( handle, gr ) - 1; i >= 0; i-- )
+					sy_setValue( pn_token( handle, i, gr ), pop(), curContext );
+				tokenStream = ts_fromBlock( functionToCall->body, heap, tokenStream );
+				trace( diagnostics, "    Calling body for production %d token stream %p\n", pn_index( handle, gr ), tokenStream );
+				handle = NULL;
 				}
 			else
 				{
@@ -510,18 +522,6 @@ int main( int argc, char **argv )
 				line->action( handle, line );
 				handle = ps_handle( ps, nextOb );
 				}
-			}
-		ts_advance( tokenStream );
-		if( functionToCall )
-			{
-			assert( handle );
-			returnAsNecessary(); // tail call optimization
-			cx_save( curContext );
-			int i;
-			for( i = pn_length( handle, gr ) - 1; i >= 0; i-- )
-				sy_setValue( pn_token( handle, i, gr ), pop(), curContext );
-			tokenStream = ts_fromBlock( functionToCall->body, heap, tokenStream );
-			trace( diagnostics, "    Calling body for production %d token stream %p\n", pn_index( handle, gr ), tokenStream );
 			}
 		returnAsNecessary();
 		}

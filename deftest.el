@@ -1,3 +1,7 @@
-def :INT fib! :INT @n { n+n }
+def :INT
+	fib! :INT @n
+as
+	{ n+n }
+
 fib 3
 fib 4

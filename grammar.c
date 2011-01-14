@@ -258,7 +258,7 @@ FUNC Production pn_new( Grammar gr, Symbol lhs, int lengthEstimate )
 FUNC int pn_sendItemTo( Production pn, int dotPosition, File fl, Grammar gr, SymbolTable st )
 	{
 	int i;
-	int charsSent = fl_write( fl, "%s ->", sy_name( pn_lhs(pn,gr), st ) );
+	int charsSent = fl_write( fl, "%s <-", sy_name( pn_lhs(pn,gr), st ) ); // usually the arrow points the other way but this makes more sense if the lhs is considered a return type
 	for( i=0; i < pn_length(pn,gr); i++ )
 		{
 		charsSent += fl_write( fl, (i == dotPosition)? "^%s" : " %s", sy_name( pn_token( pn, i, gr ), st ) );

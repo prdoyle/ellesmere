@@ -1,26 +1,18 @@
 
-def fib 1 blockto
-	|
-	pop n
-	pop _
-	branchge recurse n 2
-		1 return
-	recurse
-	add
-		fib sub n 1
-		fib sub n 2
-	return
-	|
+def :INT
+	fib ! :INT@n
+as
+	{
+	ifneg
+		n - 2
+	then
+		{ 1 }
+	end
+	ifneg
+		1 - n
+	then
+		{ fib n - 1 + fib n - 2 }
+	end
+	}
 
-blockto
-	|
-	pop n
-	n print
-	fib n print
-	add n 1 pop n
-	branchgt quit n 28
-		n goto mainloop
-	quit
-	| pop mainloop
-
-0 goto mainloop
+fib 3
