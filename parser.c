@@ -570,7 +570,21 @@ static void it_getFollow( Item it, SymbolVector result, ParserGenerator pg, File
 		}
 	}
 
-static void pg_computeReduceActions( ParserGenerator pg, File traceFile )
+static void pg_reportConflict( ParserGenerator pg, ItemSet its, Item winner, Item loser, File conflictLog, char *format, ... )
+	{
+	va_list args;
+	va_start( args, format );
+	fl_write(  conflictLog, "Conflict in ItemSet_%d: ", its_index( its, pg ) );
+	fl_vwrite( conflictLog, format, args );
+	fl_write(  conflictLog, "\n  Winner: " );
+	pn_sendItemTo( winner->pn, winner->dot, conflictLog, pg->gr, pg->st );
+	fl_write(  conflictLog, "\n   Loser: " );
+	pn_sendItemTo( loser->pn, loser->dot, conflictLog, pg->gr, pg->st );
+	fl_write(  conflictLog, "\n" );
+	va_end( args );
+	}
+
+static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File traceFile )
 	{
 	Grammar gr = pg->gr; ObjectHeap heap = pg->heap;
 	int i,j,k;
@@ -596,7 +610,7 @@ static void pg_computeReduceActions( ParserGenerator pg, File traceFile )
 			{
 			Item it = ita_element( pg->items, j );
 			Production pn = it->pn;
-			fl_write( traceFile, "    Item %d: ", j );
+			fl_write( traceFile, "    Item i%d: ", j );
 			pn_sendItemTo( pn, it->dot, traceFile, pg->gr, pg->st );
 			fl_write( traceFile, "\n" );
 			bv_copy( reduceSymbols, it->lookahead );
@@ -605,11 +619,12 @@ static void pg_computeReduceActions( ParserGenerator pg, File traceFile )
 			fl_write( traceFile, "\n" );
 			
 			// Filter out reduceSymbols covered by higher-priority items
+			// FIXME: By starting from bv_nextBit( its->items, j ), we miss shift items from the same production.
 			//
 			for( k = bv_nextBit( its->items, j ); k != bv_END; k = bv_nextBit( its->items, k ) )
 				{
 				Item competitor = ita_element( pg->items, k );
-				fl_write( traceFile, "      Checking item %d: ", k );
+				fl_write( traceFile, "      Checking item i%d: ", k );
 				pn_sendItemTo( competitor->pn, competitor->dot, traceFile, pg->gr, pg->st );
 				fl_write( traceFile, " follow: " );
 				bv_sendFormattedTo( competitorSymbols, traceFile, "s%d", ", s%d" );
@@ -628,23 +643,26 @@ static void pg_computeReduceActions( ParserGenerator pg, File traceFile )
 					}
 				else if( winningMargin == 0 )
 					{
-					if( !pg_itemIsRightmost( pg, k ) )
+					if( pg_itemIsRightmost( pg, k ) )
 						{
-						if( it->pn == competitor->pn && !pg_itemIsRightmost( pg, k ) )
+						fl_write( traceFile, "        CONFLICT\n" );
+						pg_reportConflict( pg, its, it, competitor, conflictLog, "Reduce-reduce" );
+						continue;
+						}
+					else
+						{
+						if( it->pn == competitor->pn )
 							{
 							fl_write( traceFile, "        Self-left-associativity favours reduce\n" );
+							pg_reportConflict( pg, its, it, competitor, conflictLog, "Self shift-reduce" );
 							continue;
 							}
 						else
 							{
 							fl_write( traceFile, "        Favouring reduce over shift until I figure out something better\n" );
+							pg_reportConflict( pg, its, it, competitor, conflictLog, "Shift-reduce" );
 							continue;
 							}
-						}
-					else
-						{
-						fl_write( traceFile, "        CONFLICT\n" );
-						check( 0 ); // Conflict
 						}
 					}
 
@@ -676,17 +694,17 @@ struct ps_struct
 	ObjectHeap stateHeap;
 	};
 
-FUNC Parser ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File diagnostics )
+FUNC Parser ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File conflictLog, File traceLog )
 	{
 	MemoryLifetime generateTime = ml_begin( 10000, ml );
 	ParserGenerator pg = pg_new( gr, st, generateTime, ml, theObjectHeap() );
-	pg_populateItemTable( pg, diagnostics );
-	pg_populateSymbolSideTable( pg, diagnostics );
-	Object startState = pg_computeLR0StateNodes( pg, diagnostics );
-	pg_computeFirstSets( pg, diagnostics );
-	pg_computeFollowSets( pg, diagnostics );
-	pg_computeSLRLookaheads( pg, diagnostics );
-	pg_computeReduceActions( pg, diagnostics );
+	pg_populateItemTable( pg, traceLog );
+	pg_populateSymbolSideTable( pg, traceLog );
+	Object startState = pg_computeLR0StateNodes( pg, traceLog );
+	pg_computeFirstSets( pg, traceLog );
+	pg_computeFollowSets( pg, traceLog );
+	pg_computeSLRLookaheads( pg, traceLog );
+	pg_computeReduceActions( pg, conflictLog, traceLog );
 	ml_end( generateTime );
 
 	Parser result = (Parser)ml_alloc( ml, sizeof(*result) );
@@ -1105,7 +1123,7 @@ int main( int argc, char *argv[] )
 
 	pg_computeSLRLookaheads( pg, traceFile );
 	dumpItemLookaheads( pg, traceFile );
-	pg_computeReduceActions( pg, traceFile );
+	pg_computeReduceActions( pg, traceFile, traceFile );
 	ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
 
 	fl_write( dotFile, "digraph \"G\" { overlap=false \n" );

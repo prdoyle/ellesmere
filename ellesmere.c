@@ -15,6 +15,7 @@ static Context     curContext;
 static ObjectHeap  heap;
 static Parser      ps;
 FILE *diagnostics;
+FILE *conflictLog;
 FILE *parserGenTrace;
 
 struct fn_struct
@@ -261,7 +262,7 @@ static void addProductionAction( Production handle, GrammarLine gl )
 		}
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
-	ps = ps_new( gr, st, ml_indefinite(), parserGenTrace );
+	ps = ps_new( gr, st, ml_indefinite(), conflictLog, parserGenTrace );
 	fl_write( diagnostics, "    NEW PARSER\n" );
 
 	// Prime the parser state with the current stack contents
@@ -464,6 +465,7 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 
 int main( int argc, char **argv )
 	{
+	conflictLog = stderr;
 	diagnostics = fdopen( 3, "wt" );
 	File details = fdopen( 4, "wt" );
 	parserGenTrace = fdopen( 5, "wt" );
@@ -473,7 +475,7 @@ int main( int argc, char **argv )
 	Grammar initialGrammar = populateGrammar( st );
 	productionBodies = fna_new( 20 + gr_numProductions( initialGrammar ), ml_indefinite() );
 	fna_setCount( productionBodies, gr_numProductions( initialGrammar ) );
-	ps = ps_new( initialGrammar, st, ml_indefinite(), parserGenTrace );
+	ps = ps_new( initialGrammar, st, ml_indefinite(), conflictLog, parserGenTrace );
 	trace( details, "Parser:\n" );
 	ps_sendTo( ps, details, heap, st );
 	trace( details, "\n" );

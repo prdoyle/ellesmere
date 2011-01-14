@@ -5,7 +5,7 @@
 #include "grammar.h"
 #include "file.h"
 
-FUNC Parser  ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File diagnostics );
+FUNC Parser  ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File conflictLog, File diagnostics );
 FUNC Grammar ps_grammar( Parser ps );
 
 FUNC bool       ps_expects ( Parser ps, Object ob ); // False if pushing ob would cause a parse error
