@@ -683,13 +683,13 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 						}
 					else
 						{
-						if( both( it, competitor, CR_SHIFT_BEATS_RESOLVE, pg ) )
+						if( both( it, competitor, CR_SHIFT_BEATS_REDUCE, pg ) )
 							{
-							fl_write( traceFile, "        CR_SHIFT_BEATS_RESOLVE\n" );
+							fl_write( traceFile, "        CR_SHIFT_BEATS_REDUCE\n" );
 							}
-						else if( both( it, competitor, CR_RESOLVE_BEATS_SHIFT, pg ) )
+						else if( both( it, competitor, CR_REDUCE_BEATS_SHIFT, pg ) )
 							{
-							fl_write( traceFile, "        CR_RESOLVE_BEATS_SHIFT\n" );
+							fl_write( traceFile, "        CR_REDUCE_BEATS_SHIFT\n" );
 							continue;
 							}
 						else if( it->pn == competitor->pn )

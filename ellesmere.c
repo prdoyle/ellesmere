@@ -329,6 +329,8 @@ static void ifnegAction( Production handle, GrammarLine gl )
 		}
 	}
 
+#define HACK_CONFUSE_KEYWORDS_FOR_NAMES CR_REDUCE_BEATS_SHIFT
+
 static struct gl_struct grammar1[] =
 	{
 	{ { ":PROGRAM",         ":VOIDS", ":END_OF_INPUT"                 }, { nopAction } },
@@ -338,10 +340,10 @@ static struct gl_struct grammar1[] =
 	{ { ":VOID",            ":INT"                                    }, { printAction } },
 	{ { ":VOID",            "print", ":INT"                           }, { printAction } },
 
-	{ { ":PARAMETER_LIST"                                             }, { parseTreeAction } },
-	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "!", ":PARAMETER_LIST@next" }, { parseTreeAction } },
-	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "@", ":TOKEN@name", ":PARAMETER_LIST@next"  }, { parseTreeAction } },
-	{ { ":PRODUCTION",      ":TOKEN@result", ":PARAMETER_LIST@parms"  }, { addProductionAction } },
+	{ { ":PARAMETER_LIST"                                             }, { parseTreeAction }, HACK_CONFUSE_KEYWORDS_FOR_NAMES },
+	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "!", ":PARAMETER_LIST@next" }, { parseTreeAction }, HACK_CONFUSE_KEYWORDS_FOR_NAMES },
+	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "@", ":TOKEN@name", ":PARAMETER_LIST@next"  }, { parseTreeAction }, HACK_CONFUSE_KEYWORDS_FOR_NAMES },
+	{ { ":PRODUCTION",      ":TOKEN@result", ":PARAMETER_LIST@parms"  }, { addProductionAction }, HACK_CONFUSE_KEYWORDS_FOR_NAMES },
  	{ { ":TOKEN_BLOCK",     ":TB_START", ":VOIDS", "}"                }, { stopRecordingTokenBlockAction } },
  	{ { ":TB_START",        "{",                                      }, { recordTokenBlockAction } },
 	{ { ":VOID",            "def", ":PRODUCTION", "as", ":TOKEN_BLOCK" }, { defAction } },
@@ -353,16 +355,16 @@ static struct gl_struct grammar1[] =
 
 static struct gl_struct arithmetic1[] =
 	{
-	{ { ":INT",         ":INT", "+", ":INT" }, { addAction }, CR_SHIFT_BEATS_RESOLVE },
-	{ { ":INT",         ":INT", "-", ":INT" }, { subAction }, CR_SHIFT_BEATS_RESOLVE },
+	{ { ":INT",         ":INT", "+", ":INT" }, { addAction }, CR_SHIFT_BEATS_REDUCE },
+	{ { ":INT",         ":INT", "-", ":INT" }, { subAction }, CR_SHIFT_BEATS_REDUCE },
 
 	{{NULL}},
 	};
 
 static struct gl_struct arithmetic2[] =
 	{
-	{ { ":INT",         ":INT", "*", ":INT" }, { mulAction }, CR_SHIFT_BEATS_RESOLVE },
-	{ { ":INT",         ":INT", "/", ":INT" }, { divAction }, CR_SHIFT_BEATS_RESOLVE },
+	{ { ":INT",         ":INT", "*", ":INT" }, { mulAction }, CR_SHIFT_BEATS_REDUCE },
+	{ { ":INT",         ":INT", "/", ":INT" }, { divAction }, CR_SHIFT_BEATS_REDUCE },
 	{ { ":INT",         "(", ":INT", ")" },    { passThrough, 2 } },
 	{{NULL}},
 	};
