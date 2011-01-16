@@ -570,8 +570,9 @@ static void it_getFollow( Item it, SymbolVector result, ParserGenerator pg, File
 		}
 	}
 
-static void pg_reportConflict( ParserGenerator pg, ItemSet its, Item winner, Item loser, File conflictLog, char *format, ... )
+static void pg_reportConflict( ParserGenerator pg, ItemSet its, Item winner, Item loser, SymbolVector conflictingSymbols, File conflictLog, char *format, ... )
 	{
+	// TODO: Report the symbol
 	va_list args;
 	va_start( args, format );
 	fl_write(  conflictLog, "Conflict in ItemSet_%d: ", its_index( its, pg ) );
@@ -580,8 +581,23 @@ static void pg_reportConflict( ParserGenerator pg, ItemSet its, Item winner, Ite
 	pn_sendItemTo( winner->pn, winner->dot, conflictLog, pg->gr, pg->st );
 	fl_write(  conflictLog, "\n   Loser: " );
 	pn_sendItemTo( loser->pn, loser->dot, conflictLog, pg->gr, pg->st );
+	fl_write(  conflictLog, "\n Symbols: " );
+	bv_sendFormattedTo( conflictingSymbols, conflictLog, "s%d", ", s%d" );
 	fl_write(  conflictLog, "\n" );
 	va_end( args );
+	}
+
+static bool resolveConflict( Item left, ConflictResolutions leftCR, Item right, ConflictResolutions rightCR, ParserGenerator pg )
+	{
+	Grammar gr = pg->gr;
+	return
+		   pn_conflictResolution( left->pn,  gr ) == leftCR
+		&& pn_conflictResolution( right->pn, gr ) == rightCR;
+	}
+
+static bool both( Item left, Item right, ConflictResolutions cr, ParserGenerator pg )
+	{
+	return resolveConflict( left, cr, right, cr, pg );
 	}
 
 static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File traceFile )
@@ -590,9 +606,10 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 	int i,j,k;
 
 	fl_write( traceFile, "Computing reduce actions\n" );
-	ItemVector   reduceItems       = bv_new( ita_count(pg->items), pg->generateTime );
-	SymbolVector reduceSymbols     = bv_new( sst_count(pg->sst),   pg->generateTime );
-	SymbolVector competitorSymbols = bv_new( sst_count(pg->sst),   pg->generateTime );
+	ItemVector   reduceItems        = bv_new( ita_count(pg->items), pg->generateTime );
+	SymbolVector reduceSymbols      = bv_new( sst_count(pg->sst),   pg->generateTime );
+	SymbolVector competitorSymbols  = bv_new( sst_count(pg->sst),   pg->generateTime );
+	SymbolVector conflictingSymbols = bv_new( sst_count(pg->sst),   pg->generateTime );
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
 		{
 		fl_write( traceFile, "  ItemSet_%d:\n", i );
@@ -617,13 +634,26 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 			fl_write( traceFile, "      Original ReduceSymbols: " );
 			bv_sendFormattedTo( reduceSymbols, traceFile, "s%d", ", s%d" );
 			fl_write( traceFile, "\n" );
-			
-			// Filter out reduceSymbols covered by higher-priority items
-			// FIXME: By starting from bv_nextBit( its->items, j ), we miss shift items from the same production.
+
+			// Scan down for the last item of lower priority
 			//
-			for( k = bv_nextBit( its->items, j ); k != bv_END; k = bv_nextBit( its->items, k ) )
+			int lastLowerItem;
+			for( lastLowerItem = bv_prevBit( its->items, j); lastLowerItem != bv_END; lastLowerItem = bv_prevBit( its->items, lastLowerItem ) )
+				{
+				Item x = ita_element( pg->items, lastLowerItem );
+				if( pn_nestDepth( x->pn, gr ) < pn_nestDepth( pn, gr ) )
+					break;
+				}
+
+			// Filter out reduceSymbols covered by higher-priority items,
+			// and equal-priority items that override this reduce.
+			//
+			int startItem = ( lastLowerItem == bv_END )? bv_firstBit( its->items ) : bv_nextBit( its->items, lastLowerItem );
+			for( k = startItem; k != bv_END; k = bv_nextBit( its->items, k ) )
 				{
 				Item competitor = ita_element( pg->items, k );
+				if( competitor == it )
+					continue;
 				fl_write( traceFile, "      Checking item i%d: ", k );
 				pn_sendItemTo( competitor->pn, competitor->dot, traceFile, pg->gr, pg->st );
 				fl_write( traceFile, " follow: " );
@@ -643,24 +673,35 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 					}
 				else if( winningMargin == 0 )
 					{
+					bv_copy( conflictingSymbols, reduceSymbols );
+					bv_and ( conflictingSymbols, competitorSymbols );
 					if( pg_itemIsRightmost( pg, k ) )
 						{
 						fl_write( traceFile, "        CONFLICT\n" );
-						pg_reportConflict( pg, its, it, competitor, conflictLog, "Reduce-reduce" );
+						pg_reportConflict( pg, its, it, competitor, conflictingSymbols, conflictLog, "Reduce-reduce" );
 						continue;
 						}
 					else
 						{
-						if( it->pn == competitor->pn )
+						if( both( it, competitor, CR_SHIFT_BEATS_RESOLVE, pg ) )
+							{
+							fl_write( traceFile, "        CR_SHIFT_BEATS_RESOLVE\n" );
+							}
+						else if( both( it, competitor, CR_RESOLVE_BEATS_SHIFT, pg ) )
+							{
+							fl_write( traceFile, "        CR_RESOLVE_BEATS_SHIFT\n" );
+							continue;
+							}
+						else if( it->pn == competitor->pn )
 							{
 							fl_write( traceFile, "        Self-left-associativity favours reduce\n" );
-							pg_reportConflict( pg, its, it, competitor, conflictLog, "Self shift-reduce" );
+							pg_reportConflict( pg, its, it, competitor, conflictingSymbols, conflictLog, "Self shift-reduce" );
 							continue;
 							}
 						else
 							{
 							fl_write( traceFile, "        Favouring reduce over shift until I figure out something better\n" );
-							pg_reportConflict( pg, its, it, competitor, conflictLog, "Shift-reduce" );
+							pg_reportConflict( pg, its, it, competitor, conflictingSymbols, conflictLog, "Shift-reduce" );
 							continue;
 							}
 						}

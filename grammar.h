@@ -17,15 +17,27 @@ FUNC Production gr_production     ( Grammar gr, int index );
 FUNC int        gr_nestDepth      ( Grammar gr );
 FUNC int        gr_sendTo         ( Grammar gr, File fl, SymbolTable st );
 
+typedef enum
+	{
+	CR_NONE,
+
+	CR_SHIFT_BEATS_RESOLVE,
+	CR_RESOLVE_BEATS_SHIFT,
+
+	CR_COUNT
+	} ConflictResolutions;
+
 FUNC Production pn_new( Grammar gr, Symbol lhs, int lengthEstimate );
-FUNC void       pn_appendWithName ( Production pr, Symbol name, Symbol token, Grammar gr );
-FUNC void       pn_stopAppending  ( Production pr, Grammar gr );
-FUNC int        pn_index          ( Production pr, Grammar gr );
-FUNC Symbol     pn_lhs            ( Production pr, Grammar gr );
-FUNC int        pn_length         ( Production pr, Grammar gr );
-FUNC int        pn_nestDepth      ( Production pr, Grammar gr );
-FUNC Symbol     pn_token          ( Production pr, int index, Grammar gr );
-FUNC Symbol     pn_name           ( Production pr, int index, Grammar gr ); // NULL if none
+FUNC void       pn_appendWithName ( Production pn, Symbol name, Symbol token, Grammar gr );
+FUNC void       pn_setConflictResolution ( Production pn, ConflictResolutions cr, Grammar gr );
+FUNC void       pn_stopAppending  ( Production pn, Grammar gr );
+FUNC int        pn_index          ( Production pn, Grammar gr );
+FUNC Symbol     pn_lhs            ( Production pn, Grammar gr );
+FUNC int        pn_length         ( Production pn, Grammar gr );
+FUNC int        pn_nestDepth      ( Production pn, Grammar gr );
+FUNC Symbol     pn_token          ( Production pn, int index, Grammar gr );
+FUNC Symbol     pn_name           ( Production pn, int index, Grammar gr ); // NULL if none
+FUNC ConflictResolutions pn_conflictResolution ( Production pn, Grammar gr );
 FUNC int        pn_sendTo         ( Production pn, File fl, Grammar gr, SymbolTable st );
 FUNC int        pn_sendItemTo     ( Production pn, int dotPosition, File fl, Grammar gr, SymbolTable st );
 

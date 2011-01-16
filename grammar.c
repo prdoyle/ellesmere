@@ -20,6 +20,7 @@ typedef struct pns_struct
 	{
 	Symbol lhs;
 	RightHandSide rhs;
+	ConflictResolutions cr;
 	} *ProductionStorage;
 
 typedef struct pra_struct *ProductionArray;
@@ -114,6 +115,16 @@ FUNC void pn_appendWithName( Production pn, Symbol name, Symbol token, Grammar g
 	pe->token = token;
 	pe->name  = name;
 	gr->numItems++;
+	}
+
+FUNC ConflictResolutions pn_conflictResolution( Production pn, Grammar gr )
+	{
+	return pn2pns(pn,gr)->cr;
+	}
+
+FUNC void pn_setConflictResolution( Production pn, ConflictResolutions cr, Grammar gr )
+	{
+	pn2pns(pn,gr)->cr = cr;
 	}
 
 FUNC void pn_stopAppending( Production pn, Grammar gr )
@@ -251,6 +262,7 @@ FUNC Production pn_new( Grammar gr, Symbol lhs, int lengthEstimate )
 	result = pra_nextElement( gr->pra );
 	result->lhs = lhs;
 	result->rhs = rhs_new( lengthEstimate, gr->ml );
+	result->cr  = CR_NONE;
 	gr->numItems++;
 	return pns2pn( result, gr );
 	}

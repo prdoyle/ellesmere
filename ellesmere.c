@@ -120,8 +120,12 @@ typedef void (*NativeAction)( Production handle, GrammarLine gl );
 struct gl_struct
 	{
 	char *tokens[10];
-	NativeAction action;
-	int parm1;
+	struct
+		{
+		NativeAction action;
+		int parm1;
+		} response;
+	ConflictResolutions cr;
 	};
 	 
 static void nopAction( Production handle, GrammarLine gl )
@@ -134,7 +138,7 @@ static void nopAction( Production handle, GrammarLine gl )
 static void passThrough( Production handle, GrammarLine gl )
 	{
 	Grammar gr = ps_grammar( ps );
-	int depth = gl->parm1;
+	int depth = gl->response.parm1;
 	Object result = sk_item( stack, depth );
 	popN( pn_length( handle, gr ) );
 	push( result );
@@ -204,7 +208,7 @@ static Object unwrap( Object wrapper )
 
 static void unwrapAction( Production handle, GrammarLine gl ) 
 	{
-	Object wrapped = sk_item( stack, gl->parm1 );
+	Object wrapped = sk_item( stack, gl->response.parm1 );
 	popN( pn_length( handle, ps_grammar(ps) ) );
 	push( unwrap( wrapped ) );
 	}
@@ -327,39 +331,39 @@ static void ifnegAction( Production handle, GrammarLine gl )
 
 static struct gl_struct grammar1[] =
 	{
-	{ { ":PROGRAM",         ":VOIDS", ":END_OF_INPUT"                 }, nopAction },
-	{ { ":VOIDS",           ":VOID"                                   }, nopAction },
-	{ { ":VOIDS",           ":VOIDS", ":VOID"                         }, nopAction },
+	{ { ":PROGRAM",         ":VOIDS", ":END_OF_INPUT"                 }, { nopAction } },
+	{ { ":VOIDS",           ":VOID"                                   }, { nopAction } },
+	{ { ":VOIDS",           ":VOIDS", ":VOID"                         }, { nopAction } },
 
-	{ { ":VOID",            ":INT"                                    }, printAction },
-	{ { ":VOID",            "print", ":INT"                           }, printAction },
+	{ { ":VOID",            ":INT"                                    }, { printAction } },
+	{ { ":VOID",            "print", ":INT"                           }, { printAction } },
 
-	{ { ":PARAMETER_LIST"                                             }, parseTreeAction },
-	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "!", ":PARAMETER_LIST@next" }, parseTreeAction },
-	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "@", ":TOKEN@name", ":PARAMETER_LIST@next"  }, parseTreeAction },
-	{ { ":PRODUCTION",      ":TOKEN@result", ":PARAMETER_LIST@parms"  }, addProductionAction },
- 	{ { ":TOKEN_BLOCK",     ":TB_START", ":VOIDS", "}"                }, stopRecordingTokenBlockAction },
- 	{ { ":TB_START",        "{",                                      }, recordTokenBlockAction },
-	{ { ":VOID",            "def", ":PRODUCTION", "as", ":TOKEN_BLOCK" }, defAction },
+	{ { ":PARAMETER_LIST"                                             }, { parseTreeAction } },
+	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "!", ":PARAMETER_LIST@next" }, { parseTreeAction } },
+	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "@", ":TOKEN@name", ":PARAMETER_LIST@next"  }, { parseTreeAction } },
+	{ { ":PRODUCTION",      ":TOKEN@result", ":PARAMETER_LIST@parms"  }, { addProductionAction } },
+ 	{ { ":TOKEN_BLOCK",     ":TB_START", ":VOIDS", "}"                }, { stopRecordingTokenBlockAction } },
+ 	{ { ":TB_START",        "{",                                      }, { recordTokenBlockAction } },
+	{ { ":VOID",            "def", ":PRODUCTION", "as", ":TOKEN_BLOCK" }, { defAction } },
 
-	{ { ":VOID",            "ifneg", ":INT", "then", ":TOKEN_BLOCK", "end"    }, ifnegAction },
+	{ { ":VOID",            "ifneg", ":INT", "then", ":TOKEN_BLOCK", "end"    }, { ifnegAction } },
 
 	{{NULL}},
 	};
 
 static struct gl_struct arithmetic1[] =
 	{
-	{ { ":INT",         ":INT", "+", ":INT" }, addAction },
-	{ { ":INT",         ":INT", "-", ":INT" }, subAction },
+	{ { ":INT",         ":INT", "+", ":INT" }, { addAction }, CR_SHIFT_BEATS_RESOLVE },
+	{ { ":INT",         ":INT", "-", ":INT" }, { subAction }, CR_SHIFT_BEATS_RESOLVE },
 
 	{{NULL}},
 	};
 
 static struct gl_struct arithmetic2[] =
 	{
-	{ { ":INT",         ":INT", "*", ":INT" }, mulAction },
-	{ { ":INT",         ":INT", "/", ":INT" }, divAction },
-	{ { ":INT",         "(", ":INT", ")" },    passThrough, 2 },
+	{ { ":INT",         ":INT", "*", ":INT" }, { mulAction }, CR_SHIFT_BEATS_RESOLVE },
+	{ { ":INT",         ":INT", "/", ":INT" }, { divAction }, CR_SHIFT_BEATS_RESOLVE },
+	{ { ":INT",         "(", ":INT", ")" },    { passThrough, 2 } },
 	{{NULL}},
 	};
 
@@ -376,9 +380,10 @@ static Grammar populateGrammar( SymbolTable st )
 			gr = gr_nested( gr, 5, ml_indefinite() );
 		else
 			gr = gr_new( sy_byName( (*curArray)[0].tokens[0], st ), 20, ml_indefinite() );
-		for( j=0; (*curArray)[j].action; j++ )
+		for( j=0; (*curArray)[j].response.action; j++ )
 			{
 			Production pn = pn_new( gr, sy_byName( (*curArray)[j].tokens[0], st ), asizeof( (*curArray)[j].tokens ) );
+			pn_setConflictResolution( pn, (*curArray)[j].cr, gr );
 			for( k=1; k < asizeof( (*curArray)[j].tokens ) && (*curArray)[j].tokens[k]; k++ )
 				{
 				char *token = (*curArray)[j].tokens[k];
@@ -442,7 +447,7 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 			if(   pn_index( handle, gr ) < fna_count( productionBodies ) // recursive calls won't yet have a body defined
 				&& !fna_get( productionBodies, pn_index( handle, gr ) ) )
 				{
-				NativeAction action = lookupGrammarLine( handle, gr )->action;
+				NativeAction action = lookupGrammarLine( handle, gr )->response.action;
 				if( action == stopRecordingTokenBlockAction )
 					goto done; // end marker
 				}
@@ -521,7 +526,7 @@ int main( int argc, char **argv )
 			else
 				{
 				GrammarLine line = lookupGrammarLine( handle, gr );
-				line->action( handle, line );
+				line->response.action( handle, line );
 				handle = ps_handle( ps, nextOb );
 				}
 			}
