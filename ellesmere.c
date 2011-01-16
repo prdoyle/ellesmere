@@ -311,6 +311,16 @@ static void defAction( Production handle, GrammarLine gl )
 	fna_set( productionBodies, pnIndex, fn );
 	}
 
+static void returnAction()
+	{
+	Object result = pop();
+	popToken();
+	tokenStream = ts_close( tokenStream );
+	cx_restore( curContext );
+	push( result );
+	trace( diagnostics, "  Returned to TokenStream %p\n", tokenStream );
+	}
+
 static void ifnegAction( Production handle, GrammarLine gl )
 	{
 	popToken(); // end
@@ -327,6 +337,10 @@ static void ifnegAction( Production handle, GrammarLine gl )
 		tokenStream = ts_fromBlock( block, heap, tokenStream );
 		trace( diagnostics, "    ifneg: %d < 0; token stream is now %p\n", value, tokenStream );
 		}
+	else
+		{
+		trace( diagnostics, "    ifneg: %d >= 0; take no action\n", value );
+		}
 	}
 
 static struct gl_struct grammar1[] =
@@ -335,8 +349,10 @@ static struct gl_struct grammar1[] =
 	{ { ":VOIDS",           ":VOID"                                   }, { nopAction } },
 	{ { ":VOIDS",           ":VOIDS", ":VOID"                         }, { nopAction } },
 
-	{ { ":VOID",            ":INT"                                    }, { printAction } },
 	{ { ":VOID",            "print", ":INT"                           }, { printAction } },
+
+	{ { ":VOID",            "return", ":INT"                          }, { nopAction } },    // In the callee
+	{ { ":INT",             "return", ":INT"                          }, { returnAction } }, // TODO: Remove when caller has his own stack
 
 	{ { ":PARAMETER_LIST"                                             }, { parseTreeAction } },
 	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "!", ":PARAMETER_LIST@next" }, { parseTreeAction } },
@@ -363,7 +379,7 @@ static struct gl_struct arithmetic2[] =
 	{
 	{ { ":INT",         ":INT", "*", ":INT" }, { mulAction }, CR_SHIFT_BEATS_REDUCE },
 	{ { ":INT",         ":INT", "/", ":INT" }, { divAction }, CR_SHIFT_BEATS_REDUCE },
-	{ { ":INT",         "(", ":INT", ")" },    { passThrough, 2 } },
+	{ { ":INT",         "(", ":INT", ")" },    { passThrough, 1 } },
 	{{NULL}},
 	};
 
@@ -421,6 +437,7 @@ static GrammarLine lookupGrammarLine( Production pn, Grammar gr )
 static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	{
 	trace( diagnostics, "  Begin recording token block\n" );
+	int stopDepth = ps_depth( ps );
 	TokenBlock tb = tb_new( ml_undecided() );
 	Grammar gr = ps_grammar( ps );
 	nopAction( handle, gl );
@@ -433,7 +450,7 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 			nextOb = endOfInput;
 		trace( diagnostics, "# token from %p is ", tokenStream );
 		ob_sendTo( ob, diagnostics, heap );
-		trace( diagnostics, "; next is ");
+		trace( diagnostics, "\n  next is ");
 		ob_sendTo( nextOb, diagnostics, heap );
 		trace( diagnostics, "\n");
 		push( ob );
@@ -448,14 +465,18 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 				&& !fna_get( productionBodies, pn_index( handle, gr ) ) )
 				{
 				NativeAction action = lookupGrammarLine( handle, gr )->response.action;
-				if( action == stopRecordingTokenBlockAction )
+				int depthWithoutHandle = ps_depth( ps ) - pn_length( handle, gr );
+				if( action == stopRecordingTokenBlockAction && depthWithoutHandle < stopDepth )
+					{
+					trace( diagnostics, "      Found the stopRecording handle\n" );
 					goto done; // end marker
+					}
 				}
 			nopAction( handle, NULL );
 			handle = ps_handle( ps, nextOb );
 			}
 		tb_append( tb, ob ); // If we get to here, we didn't hit stopRecordingTokenBlockAction
-		trace( diagnostics, "# Recorded token " );
+		trace( diagnostics, "    Recorded token " );
 		ob_sendTo( ob, diagnostics, heap );
 		trace( diagnostics, "\n");
 		}
@@ -490,17 +511,14 @@ int main( int argc, char **argv )
 	while( ts_current( tokenStream ) )
 		{
 		Object ob     = cx_filter( curContext, ts_current( tokenStream ), heap );
-		Object nextOb = cx_filter( curContext, ts_next( tokenStream ),    heap );
+		Object nextOb = cx_filter( curContext, ts_next( tokenStream )   , heap );
 		if( !nextOb )
 			nextOb = endOfInput;
-		if( diagnostics )
-			{
-			trace( diagnostics, "# Token from %p is ", tokenStream );
-			ob_sendTo( ob, diagnostics, heap );
-			trace( diagnostics, "; next is ");
-			ob_sendTo( nextOb, diagnostics, heap );
-			trace( diagnostics, "\n");
-			}
+		trace( diagnostics, "# token from %p is ", tokenStream );
+		ob_sendTo( ob, diagnostics, heap );
+		trace( diagnostics, "\n  next is ");
+		ob_sendTo( nextOb, diagnostics, heap );
+		trace( diagnostics, "\n");
 		push( ob );
 		Production handle = ps_handle( ps, nextOb );
 		ts_advance( tokenStream );

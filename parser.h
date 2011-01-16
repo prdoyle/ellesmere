@@ -10,6 +10,7 @@ FUNC Grammar ps_grammar( Parser ps );
 
 FUNC bool       ps_expects ( Parser ps, Object ob ); // False if pushing ob would cause a parse error
 FUNC void       ps_push    ( Parser ps, Object ob );
+FUNC int        ps_depth   ( Parser ps );
 FUNC Production ps_handle  ( Parser ps, Object lookahead ); // OK, the "handle" is actually the symbols, not the production.  So sue me.
 FUNC void       ps_popN    ( Parser ps, int count );
 

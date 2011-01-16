@@ -804,6 +804,11 @@ FUNC void ps_push( Parser ps, Object ob )
 	sk_push( ps->stateStack, nextState );
 	}
 
+FUNC int ps_depth( Parser ps )
+	{
+	return sk_depth( ps->stateStack );
+	}
+
 FUNC Production ps_handle( Parser ps, Object lookahead )
 	{
 	ObjectHeap oh = ps->stateHeap;
