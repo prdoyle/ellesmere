@@ -329,8 +329,6 @@ static void ifnegAction( Production handle, GrammarLine gl )
 		}
 	}
 
-#define HACK_CONFUSE_KEYWORDS_FOR_NAMES CR_REDUCE_BEATS_SHIFT
-
 static struct gl_struct grammar1[] =
 	{
 	{ { ":PROGRAM",         ":VOIDS", ":END_OF_INPUT"                 }, { nopAction } },
@@ -340,10 +338,10 @@ static struct gl_struct grammar1[] =
 	{ { ":VOID",            ":INT"                                    }, { printAction } },
 	{ { ":VOID",            "print", ":INT"                           }, { printAction } },
 
-	{ { ":PARAMETER_LIST"                                             }, { parseTreeAction }, HACK_CONFUSE_KEYWORDS_FOR_NAMES },
-	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "!", ":PARAMETER_LIST@next" }, { parseTreeAction }, HACK_CONFUSE_KEYWORDS_FOR_NAMES },
-	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "@", ":TOKEN@name", ":PARAMETER_LIST@next"  }, { parseTreeAction }, HACK_CONFUSE_KEYWORDS_FOR_NAMES },
-	{ { ":PRODUCTION",      ":TOKEN@result", ":PARAMETER_LIST@parms"  }, { addProductionAction }, HACK_CONFUSE_KEYWORDS_FOR_NAMES },
+	{ { ":PARAMETER_LIST"                                             }, { parseTreeAction } },
+	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "!", ":PARAMETER_LIST@next" }, { parseTreeAction } },
+	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "@", ":TOKEN@name", ":PARAMETER_LIST@next"  }, { parseTreeAction } },
+	{ { ":PRODUCTION",      ":TOKEN@result", ":PARAMETER_LIST@parms"  }, { addProductionAction } },
  	{ { ":TOKEN_BLOCK",     ":TB_START", ":VOIDS", "}"                }, { stopRecordingTokenBlockAction } },
  	{ { ":TB_START",        "{",                                      }, { recordTokenBlockAction } },
 	{ { ":VOID",            "def", ":PRODUCTION", "as", ":TOKEN_BLOCK" }, { defAction } },

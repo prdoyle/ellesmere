@@ -549,7 +549,6 @@ static void it_getFollow( Item it, SymbolVector result, ParserGenerator pg, File
 	fl_write( traceFile, "          Computing follow for: " );
 	pn_sendItemTo( it->pn, it->dot, traceFile, pg->gr, pg->st );
 	fl_write( traceFile, "\n" );
-	bv_clear( result );
 	for( i = it->dot; i < pn_length( it->pn, pg->gr ); i++ )
 		{
 		int curIndex = pg_symbolSideTableIndex( pg, pn_token( it->pn, i, pg->gr ) );
@@ -654,12 +653,26 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 				Item competitor = ita_element( pg->items, k );
 				if( competitor == it )
 					continue;
-				fl_write( traceFile, "      Checking item i%d: ", k );
-				pn_sendItemTo( competitor->pn, competitor->dot, traceFile, pg->gr, pg->st );
-				fl_write( traceFile, " follow: " );
-				bv_sendFormattedTo( competitorSymbols, traceFile, "s%d", ", s%d" );
-				fl_write( traceFile, "\n" );
-				it_getFollow( competitor, competitorSymbols, pg, traceFile );
+				bv_clear( competitorSymbols );
+				if( pg_itemIsRightmost( pg, k ) )
+					{
+					fl_write( traceFile, "      Checking reduce item i%d: ", k );
+					pn_sendItemTo( competitor->pn, competitor->dot, traceFile, pg->gr, pg->st );
+					fl_write( traceFile, "\n        follow: " );
+					it_getFollow( competitor, competitorSymbols, pg, traceFile );
+					bv_sendFormattedTo( competitorSymbols, traceFile, "s%d", ", s%d" );
+					fl_write( traceFile, "\n" );
+					}
+				else
+					{
+					fl_write( traceFile, "      Checking shift item i%d: ", k );
+					pn_sendItemTo( competitor->pn, competitor->dot, traceFile, pg->gr, pg->st );
+					fl_write( traceFile, "\n        first: " );
+					SymbolSideTableEntry expected = pg_sideTableEntry( pg, pn_token( competitor->pn, competitor->dot, pg->gr ), traceFile );
+					bv_or( competitorSymbols, expected->first );
+					bv_sendFormattedTo( competitorSymbols, traceFile, "s%d", ", s%d" );
+					fl_write( traceFile, "\n" );
+					}
 				if( !bv_intersects( reduceSymbols, competitorSymbols ) )
 					{
 					fl_write( traceFile, "        No conflict\n" );
@@ -668,7 +681,7 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 				int winningMargin = pn_nestDepth( competitor->pn, pg->gr ) - pn_nestDepth( it->pn, pg->gr );
 				if( winningMargin > 0 )
 					{
-					fl_write( traceFile, "        Competitor loses\n" );
+					fl_write( traceFile, "        Competitor has lower priority\n" );
 					continue;
 					}
 				else if( winningMargin == 0 )
@@ -708,7 +721,7 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 					}
 
 				bv_minus( reduceSymbols, competitorSymbols );
-				fl_write( traceFile, "        Competitor wins; removing lookaheads: " );
+				fl_write( traceFile, "        Competitor has higher priority; removing lookaheads: " );
 				bv_sendFormattedTo( competitorSymbols, traceFile, "s%d", ", s%d" );
 				fl_write( traceFile, "\n" );
 				}
