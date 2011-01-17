@@ -741,42 +741,63 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 
 	}
 
-struct ps_struct
+struct au_struct
 	{
 	Grammar gr;
-	Stack stateStack;
+	Object startState;
 	ObjectHeap stateHeap;
 	};
 
-FUNC Parser ps_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File conflictLog, File traceLog )
+struct ps_struct
+	{
+	Automaton au;
+	Stack stateStack;
+	File diagnostics;
+	};
+
+FUNC Automaton au_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File conflictLog, File diagnostics )
 	{
 	MemoryLifetime generateTime = ml_begin( 10000, ml );
 	ParserGenerator pg = pg_new( gr, st, generateTime, ml, theObjectHeap() );
-	pg_populateItemTable( pg, traceLog );
-	pg_populateSymbolSideTable( pg, traceLog );
-	Object startState = pg_computeLR0StateNodes( pg, traceLog );
-	pg_computeFirstSets( pg, traceLog );
-	pg_computeFollowSets( pg, traceLog );
-	pg_computeSLRLookaheads( pg, traceLog );
-	pg_computeReduceActions( pg, conflictLog, traceLog );
+	pg_populateItemTable( pg, diagnostics );
+	pg_populateSymbolSideTable( pg, diagnostics );
+	Object startState = pg_computeLR0StateNodes( pg, diagnostics );
+	pg_computeFirstSets( pg, diagnostics );
+	pg_computeFollowSets( pg, diagnostics );
+	pg_computeSLRLookaheads( pg, diagnostics );
+	pg_computeReduceActions( pg, conflictLog, diagnostics );
 	ml_end( generateTime );
 
-	Parser result = (Parser)ml_alloc( ml, sizeof(*result) );
+	Automaton result = (Automaton)ml_alloc( ml, sizeof(*result) );
 	result->gr = gr;
-	result->stateStack = sk_new( ml );
 	result->stateHeap  = theObjectHeap();
-	sk_push( result->stateStack, startState );
+	result->startState = startState;
 	return result;
 	}
 
-FUNC Grammar ps_grammar( Parser ps )
+FUNC Grammar au_grammar( Automaton au )
 	{
-	return ps->gr;
+	return au->gr;
+	}
+
+FUNC Parser ps_new( Automaton au, MemoryLifetime ml, File diagnostics )
+	{
+	Parser result = (Parser)ml_alloc( ml, sizeof(*result) );
+	result->au = au;
+	result->stateStack = sk_new( ml );
+	sk_push( result->stateStack, au->startState );
+	result->diagnostics = diagnostics;
+	return result;
+	}
+
+FUNC Automaton ps_automaton( Parser ps )
+	{
+	return ps->au;
 	}
 
 static Object ps_nextState( Parser ps, Object ob )
 	{
-	ObjectHeap oh = ps->stateHeap;
+	ObjectHeap oh = ps->au->stateHeap;
 	Object curState = sk_top( ps->stateStack );
 	Symbol token = ob_tag( ob, oh );
 	// Not sure how I'm dealing with tokens as first-class objects yet...
@@ -811,10 +832,10 @@ FUNC int ps_depth( Parser ps )
 
 FUNC Production ps_handle( Parser ps, Object lookahead )
 	{
-	ObjectHeap oh = ps->stateHeap;
+	ObjectHeap oh = ps->au->stateHeap;
 	Object nextState = ps_nextState( ps, lookahead );
 	if( ob_isInt( nextState, oh ) )
-		return gr_production( ps->gr, ob_toInt( nextState, oh ) );
+		return gr_production( ps->au->gr, ob_toInt( nextState, oh ) );
 	else
 		return NULL;
 	}
@@ -825,13 +846,12 @@ FUNC void ps_popN( Parser ps, int count )
 	sk_popN( ps->stateStack, count );
 	}
 
-FUNC int ps_sendTo( Parser ps, File fl, ObjectHeap heap, SymbolTable st )
+FUNC int au_sendTo( Automaton au, File fl, ObjectHeap heap, SymbolTable st )
 	{
-	Object startState = sk_item( ps->stateStack, sk_depth( ps->stateStack )-1 );
-	return ob_sendDeepTo( startState, fl, heap );
+	return ob_sendDeepTo( au->startState, fl, heap );
 	}
 
-FUNC int ps_sendStateTo( Parser ps, File fl, ObjectHeap heap, SymbolTable st )
+FUNC int ps_sendTo( Parser ps, File fl, ObjectHeap heap, SymbolTable st )
 	{
 	int charsSent = 0;
 #ifdef ITEM_SET_NUMS

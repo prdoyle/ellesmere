@@ -60,7 +60,7 @@ static void dumpStack()
 static void dumpParserState()
 	{
 	fl_write( diagnostics, "    -- Parser state: " );
-	ps_sendStateTo( ps, diagnostics, heap, st );
+	ps_sendTo( ps, diagnostics, heap, st );
 	fl_write( diagnostics, "\n" );
 	}
 
@@ -266,7 +266,7 @@ static void addProductionAction( Production handle, GrammarLine gl )
 		}
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
-	ps = ps_new( gr, st, ml_indefinite(), conflictLog, parserGenTrace );
+	ps = ps_new( au_new( gr, st, ml_indefinite(), conflictLog, parserGenTrace ), ml_indefinite(), diagnostics );
 	fl_write( diagnostics, "    NEW PARSER\n" );
 
 	// Prime the parser state with the current stack contents
@@ -501,7 +501,7 @@ int main( int argc, char **argv )
 	Grammar initialGrammar = populateGrammar( st );
 	productionBodies = fna_new( 20 + gr_numProductions( initialGrammar ), ml_indefinite() );
 	fna_setCount( productionBodies, gr_numProductions( initialGrammar ) );
-	ps = ps_new( initialGrammar, st, ml_indefinite(), conflictLog, parserGenTrace );
+	ps = ps_new( au_new( initialGrammar, st, ml_indefinite(), conflictLog, parserGenTrace ), ml_indefinite(), diagnostics );
 	trace( details, "Parser:\n" );
 	ps_sendTo( ps, details, heap, st );
 	trace( details, "\n" );

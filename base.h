@@ -19,6 +19,7 @@ typedef char bool;
 #endif
 
 typedef struct ar_struct *Array;
+typedef struct au_struct *Automaton;
 typedef struct bv_struct *BitVector;
 typedef struct cl_struct *CheckList;
 typedef struct cx_struct *Context;
