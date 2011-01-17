@@ -18,6 +18,33 @@ FILE *diagnostics;
 FILE *conflictLog;
 FILE *parserGenTrace;
 
+typedef struct cs_struct *CallStack;
+struct cs_struct
+	{
+	CallStack outer;
+	Parser ps;
+	Stack  stack;
+	};
+
+static CallStack callStack = NULL;
+
+static void cs_push()
+	{
+	callStack = (CallStack)ml_alloc( ml_undecided(), sizeof(*callStack) );
+	callStack->ps    = ps;
+	callStack->stack = stack;
+	ps = ps_new( ps_automaton(ps), ml_indefinite(), diagnostics );
+	stack = sk_new( ml_indefinite() );
+	}
+
+static void cs_pop()
+	{
+	assert( callStack );
+	ps    = callStack->ps;
+	stack = callStack->stack;
+	callStack = callStack->outer;
+	}
+
 struct fn_struct
 	{
 	Production production;
@@ -54,6 +81,12 @@ static void dumpStack()
 	{
 	fl_write( diagnostics, "    -- Stack: " );
 	sk_sendTo( stack, diagnostics, heap );
+	CallStack i;
+	for( i = callStack; i; i = i->outer )
+		{
+		fl_write( diagnostics, "\n%*s", 14, "" );
+		sk_sendTo( i->stack, diagnostics, heap );
+		}
 	fl_write( diagnostics, "\n" );
 	}
 
@@ -61,6 +94,12 @@ static void dumpParserState()
 	{
 	fl_write( diagnostics, "    -- Parser state: " );
 	ps_sendTo( ps, diagnostics, heap, st );
+	CallStack i;
+	for( i = callStack; i; i = i->outer )
+		{
+		fl_write( diagnostics, "\n%*s", 21, "" );
+		ps_sendTo( i->ps, diagnostics, heap, st );
+		}
 	fl_write( diagnostics, "\n" );
 	}
 
@@ -105,6 +144,7 @@ static void returnAsNecessary()
 		{
 		tokenStream = ts_close( tokenStream );
 		cx_restore( curContext );
+		cs_pop();
 		trace( diagnostics, "  Returned to TokenStream %p\n", tokenStream );
 		}
 	}
@@ -307,14 +347,16 @@ static void defAction( Production handle, GrammarLine gl )
 	fna_set( productionBodies, pnIndex, fn );
 	}
 
-static void returnAction()
+static void returnAction( Production handle, GrammarLine gl )
 	{
 	Object result = pop();
 	popToken();
 	tokenStream = ts_close( tokenStream );
+	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
 	cx_restore( curContext );
-	push( result );
+	cs_pop();
 	trace( diagnostics, "  Returned to TokenStream %p\n", tokenStream );
+	push( result );
 	}
 
 static void ifnegAction( Production handle, GrammarLine gl )
@@ -329,6 +371,7 @@ static void ifnegAction( Production handle, GrammarLine gl )
 	returnAsNecessary();
 	if( value < 0 )
 		{
+		cs_push();
 		cx_save( curContext );
 		tokenStream = ts_fromBlock( block, heap, tokenStream );
 		trace( diagnostics, "    ifneg: %d < 0; token stream is now %p\n", value, tokenStream );
@@ -347,8 +390,7 @@ static struct gl_struct grammar1[] =
 
 	{ { ":VOID",            "print", ":INT"                           }, { printAction } },
 
-	{ { ":VOID",            "return", ":INT"                          }, { nopAction } },    // In the callee
-	{ { ":INT",             "return", ":INT"                          }, { returnAction } }, // TODO: Remove when caller has his own stack
+	{ { ":VOID",            "return", ":INT"                          }, { returnAction } },
 
 	{ { ":PARAMETER_LIST"                                             }, { parseTreeAction } },
 	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "!", ":PARAMETER_LIST@next" }, { parseTreeAction } },
@@ -534,6 +576,7 @@ int main( int argc, char **argv )
 				for( i = pn_length( handle, gr ) - 1; i >= 0; i-- )
 					sy_setValue( pn_token( handle, i, gr ), pop(), curContext );
 				tokenStream = ts_fromBlock( functionToCall->body, heap, tokenStream );
+				cs_push();
 				trace( diagnostics, "    Calling body for production %d token stream %p\n", pn_index( handle, gr ), tokenStream );
 				handle = NULL;
 				}
