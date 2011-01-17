@@ -75,18 +75,14 @@ static void push( Object ob )
 static Object pop()
 	{
 	Object result = sk_pop( stack );
-	dumpStack();
 	ps_popN( ps, 1 );
-	dumpParserState();
 	return result;
 	}
 
 static void popN( int n )
 	{
 	sk_popN( stack, n );
-	dumpStack();
 	ps_popN( ps, n );
-	dumpParserState();
 	}
 
 static int popInt()
@@ -551,7 +547,7 @@ int main( int argc, char **argv )
 		returnAsNecessary();
 		}
 #ifndef NDEBUG
-	File memreport = fdopen( 5, "wt" );
+	File memreport = fdopen( 6, "wt" );
 	ml_sendReportTo( memreport );
 #endif
 	return 0;
