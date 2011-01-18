@@ -30,7 +30,9 @@ static CallStack callStack = NULL;
 
 static void cs_push()
 	{
-	callStack = (CallStack)ml_alloc( ml_undecided(), sizeof(*callStack) );
+	CallStack cs = (CallStack)ml_alloc( ml_undecided(), sizeof(*cs) );
+	cs->outer = callStack;
+	callStack = cs;
 	callStack->ps    = ps;
 	callStack->stack = stack;
 	ps = ps_new( ps_automaton(ps), ml_indefinite(), diagnostics );
@@ -138,13 +140,12 @@ static Symbol popToken()
 	return ob_toSymbol( popped, heap );
 	}
 
-static void returnAsNecessary()
+static void closeTokenStreamsAsNecessary()
 	{
 	while( !ts_current( tokenStream ) && ts_caller( tokenStream ) )
 		{
 		tokenStream = ts_close( tokenStream );
 		cx_restore( curContext );
-		cs_pop();
 		trace( diagnostics, "  Returned to TokenStream %p\n", tokenStream );
 		}
 	}
@@ -368,10 +369,9 @@ static void ifnegAction( Production handle, GrammarLine gl )
 	popToken(); // ifneg
 	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
 
-	returnAsNecessary();
+	closeTokenStreamsAsNecessary();
 	if( value < 0 )
 		{
-		cs_push();
 		cx_save( curContext );
 		tokenStream = ts_fromBlock( block, heap, tokenStream );
 		trace( diagnostics, "    ifneg: %d < 0; token stream is now %p\n", value, tokenStream );
@@ -511,6 +511,10 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 					}
 				}
 			nopAction( handle, NULL );
+			// tokenStream may have changed!
+			Object nextOb = cx_filter( curContext, ts_current( tokenStream ), heap );
+			if( !nextOb )
+				nextOb = endOfInput;
 			handle = ps_handle( ps, nextOb );
 			}
 		tb_append( tb, ob ); // If we get to here, we didn't hit stopRecordingTokenBlockAction
@@ -570,7 +574,7 @@ int main( int argc, char **argv )
 			if( functionToCall )
 				{
 				assert( handle );
-				returnAsNecessary(); // tail call optimization
+				closeTokenStreamsAsNecessary(); // tail call optimization?
 				cx_save( curContext );
 				int i;
 				for( i = pn_length( handle, gr ) - 1; i >= 0; i-- )
@@ -584,10 +588,17 @@ int main( int argc, char **argv )
 				{
 				GrammarLine line = lookupGrammarLine( handle, gr );
 				line->response.action( handle, line );
+				// tokenStream may have changed!
+				Object nextOb = cx_filter( curContext, ts_current( tokenStream ), heap );
+				if( !nextOb )
+					nextOb = endOfInput;
+				trace( diagnostics, "  next is now ");
+				ob_sendTo( nextOb, diagnostics, heap );
+				trace( diagnostics, "\n");
 				handle = ps_handle( ps, nextOb );
 				}
 			}
-		returnAsNecessary();
+		closeTokenStreamsAsNecessary();
 		}
 #ifndef NDEBUG
 	File memreport = fdopen( 6, "wt" );

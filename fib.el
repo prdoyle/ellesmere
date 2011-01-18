@@ -1,6 +1,6 @@
 
 def :INT
-	fib ! :INT@n
+	fib ! ( ! :INT@n ) !
 as
 	{
 	ifneg
@@ -11,10 +11,12 @@ as
 	ifneg
 		1 - n
 	then
-		{ return fib n - 1 + fib n - 2 }
+		{ return fib( n - 1 ) + fib( n - 2 ) }
 	end
 	}
 
-print fib 0
-print fib 1
-print fib 2
+print fib( 0 )
+print fib( 1 )
+print fib( 2 )
+print fib( 3 )
+print fib( 4 )
