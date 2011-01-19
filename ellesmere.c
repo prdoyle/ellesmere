@@ -486,7 +486,7 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 		Object nextOb = cx_filter( curContext, ts_next( tokenStream )   , heap );
 		if( !nextOb )
 			nextOb = endOfInput;
-		trace( diagnostics, "# token from %p is ", tokenStream );
+		trace( diagnostics, "token from %p is ", tokenStream );
 		ob_sendTo( ob, diagnostics, heap );
 		trace( diagnostics, "\n  next is ");
 		ob_sendTo( nextOb, diagnostics, heap );
@@ -506,7 +506,7 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 				int depthWithoutHandle = ps_depth( ps ) - pn_length( handle, gr );
 				if( action == stopRecordingTokenBlockAction && depthWithoutHandle < stopDepth )
 					{
-					trace( diagnostics, "      Found the stopRecording handle\n" );
+					trace( diagnostics, "    # Found the stopRecording handle\n" );
 					goto done; // end marker
 					}
 				}
@@ -534,9 +534,9 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 int main( int argc, char **argv )
 	{
 	conflictLog = stderr;
-	diagnostics = fdopen( 3, "wt" );
-	File details = fdopen( 4, "wt" );
-	parserGenTrace = fdopen( 5, "wt" );
+	diagnostics = fdopen( 3, "wt" );    fl_write( diagnostics, "# Ellesmere diagnostics" );
+	File details = fdopen( 4, "wt" );   fl_write( diagnostics, "# Ellesmere details" );
+	parserGenTrace = fdopen( 5, "wt" ); fl_write( diagnostics, "# Ellesmere parserGenTrace" );
 	st = theSymbolTable();
 	heap = theObjectHeap();
 	curContext = cx_new( st );
@@ -556,7 +556,7 @@ int main( int argc, char **argv )
 		Object nextOb = cx_filter( curContext, ts_next( tokenStream )   , heap );
 		if( !nextOb )
 			nextOb = endOfInput;
-		trace( diagnostics, "# token from %p is ", tokenStream );
+		trace( diagnostics, "token from %p is ", tokenStream );
 		ob_sendTo( ob, diagnostics, heap );
 		trace( diagnostics, "\n  next is ");
 		ob_sendTo( nextOb, diagnostics, heap );
@@ -567,7 +567,7 @@ int main( int argc, char **argv )
 		while( handle )
 			{
 			Grammar gr = ps_grammar( ps ); // Grammar can change as the program proceeds
-			trace( diagnostics, "  Found handle production %d in grammar %p: ", pn_index( handle, gr ), gr );
+			trace( diagnostics, "    # Found handle production %d in grammar %p: ", pn_index( handle, gr ), gr );
 			pn_sendTo( handle, diagnostics, gr, st );
 			trace( diagnostics, "\n" );
 			Function functionToCall = fna_get( productionBodies, pn_index( handle, gr ) );
