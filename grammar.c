@@ -35,12 +35,14 @@ struct gr_struct
 	enum { OUTERMOST, NESTED } kind;
 	ProductionArray pra;
 	MemoryLifetime ml;
-	int numItems;
 	union
 		{
 		Symbol  goal;
 		Grammar outer;
 		} data;
+	// cached values for performance
+	int numItems;
+	int numInheritedProductions;
 	};
 
 // Production "references" are actually indexes within the ProductionArray,
@@ -48,7 +50,7 @@ struct gr_struct
 // declare pn_struct to have an int element because that would require memory
 // allocation and an extra level of indirection.)
 
-static int pn2int( Production pn )
+static inline int pn2int( Production pn )
 	{
 	return ((int)(intptr_t)pn);
 	}
@@ -65,7 +67,7 @@ FUNC int pn_index( Production pn, Grammar gr )
 	return result;
 	}
 
-static int gr_numInheritedProductions( Grammar gr )
+static int gr_countNumInheritedProductions( Grammar gr )
 	{
 	switch( gr->kind )
 		{
@@ -78,33 +80,27 @@ static int gr_numInheritedProductions( Grammar gr )
 	return 0;
 	}
 
-static bool gr_productionIsInherited( Grammar gr, int index )
+static inline bool gr_productionIsInherited( Grammar gr, int index )
 	{
-	switch( gr->kind )
-		{
-		case OUTERMOST:
-			return false;
-		case NESTED:
-			return index < gr_numInheritedProductions( gr );
-		}
-	assert(0);
-	return false;
+	assert( gr->numInheritedProductions == gr_countNumInheritedProductions( gr ) );
+	return index < gr->numInheritedProductions;
 	}
 
-static Production pns2pn( ProductionStorage pns, Grammar gr )
+static inline Production pns2pn( ProductionStorage pns, Grammar gr )
 	{
+	assert( gr->numInheritedProductions == gr_countNumInheritedProductions( gr ) );
 	return (Production)(
 		  OUTERMOST_INDEX_OFFSET
-		+ gr_numInheritedProductions( gr )
+		+ gr->numInheritedProductions
 		+ ( pns - pra_element( gr->pra, 0 ) ) );
 	}
 
-static ProductionStorage pn2pns( Production pn, Grammar gr )
+static inline ProductionStorage pn2pns( Production pn, Grammar gr )
 	{
-	if( gr_productionIsInherited( gr, pn_index( pn, gr ) ) )
-		return pn2pns( pn, gr->data.outer );
-	else
-		return pra_element( gr->pra, pn_index( pn, gr ) - gr_numInheritedProductions( gr ) );
+	while( gr_productionIsInherited( gr, pn_index( pn, gr ) ) )
+		gr = gr->data.outer;
+	assert( gr->numInheritedProductions == gr_countNumInheritedProductions( gr ) );
+	return pra_element( gr->pra, pn_index( pn, gr ) - gr->numInheritedProductions );
 	}
 
 FUNC void pn_appendWithName( Production pn, Symbol name, Symbol token, Grammar gr )
@@ -177,6 +173,7 @@ FUNC Grammar gr_new( Symbol goal, int numProductionsEstimate, MemoryLifetime ml 
 	result->pra         = pra_new( numProductionsEstimate, ml );
 	result->ml          = ml;
 	result->numItems    = 0;
+	result->numInheritedProductions = 0;
 	return result;
 	}
 
@@ -188,12 +185,14 @@ FUNC Grammar gr_nested( Grammar outer, int numProductionsEstimate, MemoryLifetim
 	result->pra         = pra_new( numProductionsEstimate, ml );
 	result->ml          = ml;
 	result->numItems    = gr_numItems( outer );
+	result->numInheritedProductions = gr_numProductions( outer );
 	return result;
 	}
 
 FUNC int gr_numProductions( Grammar gr )
 	{
-	return pra_count( gr->pra ) + gr_numInheritedProductions( gr );
+	assert( gr->numInheritedProductions == gr_countNumInheritedProductions( gr ) );
+	return pra_count( gr->pra ) + gr->numInheritedProductions;
 	}
 
 static int gr_countItems( Grammar gr )
@@ -250,10 +249,9 @@ FUNC Grammar gr_outer( Grammar gr )
 
 FUNC Production gr_production( Grammar gr, int index )
 	{
-	if( gr_productionIsInherited( gr, index ) )
-		return gr_production( gr->data.outer, index );
-	else
-		return pns2pn( pra_element( gr->pra, index - gr_numInheritedProductions( gr ) ), gr );
+	while( gr_productionIsInherited( gr, index ) )
+		gr = gr->data.outer;
+	return pns2pn( pra_element( gr->pra, index - gr->numInheritedProductions ), gr );
 	}
 
 FUNC Production pn_new( Grammar gr, Symbol lhs, int lengthEstimate )
@@ -293,7 +291,7 @@ static int sendTo( Grammar gr, File fl, SymbolTable st, int indent )
 	int charsSent = fl_write( fl, "%*sGrammar( %s )\n  %*s{\n", indent, "", sy_name( gr_goal(gr), st ), indent, "" );
 	if( gr->kind == NESTED )
 		charsSent += sendTo( gr->data.outer, fl, st, indent+2 );
-	for( i=gr_numInheritedProductions(gr); i < gr_numProductions(gr); i++ )
+	for( i=gr->numInheritedProductions; i < gr_numProductions(gr); i++ )
 		{
 		charsSent += fl_write( fl, "  %*s", indent, "" );
 		charsSent += pn_sendTo( gr_production( gr, i ), fl, gr, st );

@@ -44,4 +44,4 @@ as
 	return :VOID
 	}
 
-fibs( 22 )
+fibs( 24 )

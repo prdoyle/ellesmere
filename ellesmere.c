@@ -79,6 +79,9 @@ static int trace( FILE *file, const char *format, ... )
 
 static void dumpStack()
 	{
+	if( !diagnostics )
+		return;
+
 	fl_write( diagnostics, "    -- Stack: " );
 	sk_sendTo( stack, diagnostics, heap );
 	CallStack i;
@@ -92,6 +95,9 @@ static void dumpStack()
 
 static void dumpParserState()
 	{
+	if( !diagnostics )
+		return;
+
 	fl_write( diagnostics, "    -- Parser state: " );
 	ps_sendTo( ps, diagnostics, heap, st );
 	CallStack i;
@@ -511,19 +517,25 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 		Object nextOb = cx_filter( curContext, ts_next( tokenStream )   , heap );
 		if( !nextOb )
 			nextOb = endOfInput;
-		trace( diagnostics, "token from %p is ", tokenStream );
-		ob_sendTo( ob, diagnostics, heap );
-		trace( diagnostics, "\n  next is ");
-		ob_sendTo( nextOb, diagnostics, heap );
-		trace( diagnostics, "\n");
+		if( diagnostics )
+			{
+			trace( diagnostics, "token from %p is ", tokenStream );
+			ob_sendTo( ob, diagnostics, heap );
+			trace( diagnostics, "\n  next is ");
+			ob_sendTo( nextOb, diagnostics, heap );
+			trace( diagnostics, "\n");
+			}
 		push( ob );
 		ts_advance( tokenStream );
 		handle = ps_handle( ps, nextOb );
 		while( handle )
 			{
-			trace( diagnostics, "    Recording handle production %d: ", pn_index( handle, gr ) );
-			pn_sendTo( handle, diagnostics, gr, st );
-			trace( diagnostics, "\n" );
+			if( diagnostics )
+				{
+				trace( diagnostics, "    Recording handle production %d: ", pn_index( handle, gr ) );
+				pn_sendTo( handle, diagnostics, gr, st );
+				trace( diagnostics, "\n" );
+				}
 			if(   pn_index( handle, gr ) < fna_count( productionBodies ) // recursive calls won't yet have a body defined
 				&& !fna_get( productionBodies, pn_index( handle, gr ) ) )
 				{
@@ -551,9 +563,12 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	tb_stopAppending( tb );
 	popN( pn_length( handle, gr ) );
 	push( ob_fromTokenBlock( tb, heap ) );
-	trace( diagnostics, "    Stack after recording: " );
-	sk_sendTo( stack, diagnostics, heap );
-	trace( diagnostics, "\n" );
+	if( diagnostics )
+		{
+		trace( diagnostics, "    Stack after recording: " );
+		sk_sendTo( stack, diagnostics, heap );
+		trace( diagnostics, "\n" );
+		}
 	}
 
 int main( int argc, char **argv )
@@ -577,20 +592,26 @@ int main( int argc, char **argv )
 		Object nextOb = cx_filter( curContext, ts_next( tokenStream )   , heap );
 		if( !nextOb )
 			nextOb = endOfInput;
-		trace( diagnostics, "token from %p is ", tokenStream );
-		ob_sendTo( ob, diagnostics, heap );
-		trace( diagnostics, "\n  next is ");
-		ob_sendTo( nextOb, diagnostics, heap );
-		trace( diagnostics, "\n");
+		if( diagnostics )
+			{
+			trace( diagnostics, "token from %p is ", tokenStream );
+			ob_sendTo( ob, diagnostics, heap );
+			trace( diagnostics, "\n  next is ");
+			ob_sendTo( nextOb, diagnostics, heap );
+			trace( diagnostics, "\n");
+			}
 		push( ob );
 		Production handle = ps_handle( ps, nextOb );
 		ts_advance( tokenStream );
 		while( handle )
 			{
 			Grammar gr = ps_grammar( ps ); // Grammar can change as the program proceeds
-			trace( diagnostics, "    # Found handle production %d in grammar %p: ", pn_index( handle, gr ), gr );
-			pn_sendTo( handle, diagnostics, gr, st );
-			trace( diagnostics, "\n" );
+			if( diagnostics )
+				{
+				trace( diagnostics, "    # Found handle production %d in grammar %p: ", pn_index( handle, gr ), gr );
+				pn_sendTo( handle, diagnostics, gr, st );
+				trace( diagnostics, "\n" );
+				}
 			Function functionToCall = fna_get( productionBodies, pn_index( handle, gr ) );
 			if( functionToCall )
 				{
@@ -613,9 +634,12 @@ int main( int argc, char **argv )
 				Object nextOb = cx_filter( curContext, ts_current( tokenStream ), heap );
 				if( !nextOb )
 					nextOb = endOfInput;
-				trace( diagnostics, "  next is now ");
-				ob_sendTo( nextOb, diagnostics, heap );
-				trace( diagnostics, "\n");
+				if( diagnostics )
+					{
+					trace( diagnostics, "  next is now ");
+					ob_sendTo( nextOb, diagnostics, heap );
+					trace( diagnostics, "\n");
+					}
 				handle = ps_handle( ps, nextOb );
 				}
 			}
