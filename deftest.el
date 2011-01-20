@@ -1,5 +1,5 @@
 def :INT
-	fib! :INT @n
+	fib ! :INT @n
 as
 	{ return n+n }
 

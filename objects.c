@@ -384,7 +384,7 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 static int sendDeepTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 	{
 	int charsSent = 0;
-	if( !cl_isChecked( cl, ob ) )
+	if( !cl_isChecked( cl, ob ) && fl )
 		{
 		FieldList field;
 		cl_check( cl, ob );

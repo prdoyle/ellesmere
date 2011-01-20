@@ -24,6 +24,9 @@ static struct sy_struct predefinedSymbols[] =
 	{ ":END_OF_INPUT" },
 	{ ":STATE_NODE" },
 	{ ":ITEM_SET_NUM" },
+	{ ":BOOLEAN" },
+	{ ":FALSE" },
+	{ ":TRUE" },
 	};
 
 FUNC SymbolTable theSymbolTable()

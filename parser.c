@@ -12,16 +12,6 @@
 typedef BitVector ItemVector;   // BitVectors of item indexes
 typedef BitVector SymbolVector; // BitVectors of symbol side-table indexes
 
-#if 1
-	#define trace   fl_write
-	#define traceBV bv_sendTo
-	#define traceBVX bv_sendFormattedTo
-#else
-	#define trace(...)
-	#define traceBV(...)
-	#define traceBVX(...)
-#endif
-
 typedef struct it_struct
 	{
 	Production pn;
@@ -569,7 +559,7 @@ static void it_getFollow( Item it, SymbolVector result, ParserGenerator pg, File
 		}
 	}
 
-static void pg_reportConflict( ParserGenerator pg, ItemSet its, Item winner, Item loser, SymbolVector conflictingSymbols, File conflictLog, char *format, ... )
+static void pg_reportConflict( ParserGenerator pg, ItemSet its, Item winner, Item loser, SymbolVector conflictingSymbols, File conflictLog, File traceFile, char *format, ... )
 	{
 	// TODO: Report the symbol
 	va_list args;
@@ -584,6 +574,7 @@ static void pg_reportConflict( ParserGenerator pg, ItemSet its, Item winner, Ite
 	bv_sendFormattedTo( conflictingSymbols, conflictLog, "s%d", ", s%d" );
 	fl_write(  conflictLog, "\n" );
 	va_end( args );
+	fl_write( traceFile, "        CONFLICT\n" );
 	}
 
 static bool resolveConflict( Item left, ConflictResolutions leftCR, Item right, ConflictResolutions rightCR, ParserGenerator pg )
@@ -659,7 +650,7 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 					fl_write( traceFile, "      Checking reduce item i%d: ", k );
 					pn_sendItemTo( competitor->pn, competitor->dot, traceFile, pg->gr, pg->st );
 					fl_write( traceFile, "\n        follow: " );
-					it_getFollow( competitor, competitorSymbols, pg, traceFile );
+					it_getFollow( competitor, competitorSymbols, pg, NULL );
 					bv_sendFormattedTo( competitorSymbols, traceFile, "s%d", ", s%d" );
 					fl_write( traceFile, "\n" );
 					}
@@ -690,8 +681,8 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 					bv_and ( conflictingSymbols, competitorSymbols );
 					if( pg_itemIsRightmost( pg, k ) )
 						{
-						fl_write( traceFile, "        CONFLICT\n" );
-						pg_reportConflict( pg, its, it, competitor, conflictingSymbols, conflictLog, "Reduce-reduce" );
+						pg_reportConflict( pg, its, it, competitor, conflictingSymbols, conflictLog, traceFile, "Reduce-reduce" );
+						fl_write( traceFile, "        BAD!\n" );
 						continue;
 						}
 					else
@@ -707,14 +698,14 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 							}
 						else if( it->pn == competitor->pn )
 							{
+							pg_reportConflict( pg, its, it, competitor, conflictingSymbols, conflictLog, traceFile, "Self shift-reduce" );
 							fl_write( traceFile, "        Self-left-associativity favours reduce\n" );
-							pg_reportConflict( pg, its, it, competitor, conflictingSymbols, conflictLog, "Self shift-reduce" );
 							continue;
 							}
 						else
 							{
+							pg_reportConflict( pg, its, it, competitor, conflictingSymbols, conflictLog, traceFile, "Shift-reduce" );
 							fl_write( traceFile, "        Favouring reduce over shift until I figure out something better\n" );
-							pg_reportConflict( pg, its, it, competitor, conflictingSymbols, conflictLog, "Shift-reduce" );
 							continue;
 							}
 						}
@@ -757,6 +748,7 @@ struct ps_struct
 
 FUNC Automaton au_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File conflictLog, File diagnostics )
 	{
+	fl_write( diagnostics, "Generating automaton\n" );
 	MemoryLifetime generateTime = ml_begin( 10000, ml );
 	ParserGenerator pg = pg_new( gr, st, generateTime, ml, theObjectHeap() );
 	pg_populateItemTable( pg, diagnostics );
@@ -772,6 +764,12 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File confl
 	result->gr = gr;
 	result->stateHeap  = theObjectHeap();
 	result->startState = startState;
+	if (diagnostics)
+		{
+		fl_write( diagnostics, "Finished generating automaton %p:\n", result );
+		au_sendTo( result, diagnostics, theObjectHeap(), st );
+		fl_write( diagnostics, "\n" );
+		}
 	return result;
 	}
 
@@ -853,7 +851,11 @@ FUNC int au_sendTo( Automaton au, File fl, ObjectHeap heap, SymbolTable st )
 
 FUNC int ps_sendTo( Parser ps, File fl, ObjectHeap heap, SymbolTable st )
 	{
-	int charsSent = 0;
+	if( !fl )
+		return 0;
+
+	int charsSent = fl_write( fl, "%p(%p): ", ps, ps_automaton(ps) );
+	sk_sendTo( ps->stateStack, fl, heap );
 #ifdef ITEM_SET_NUMS
 	int i;
 	char *sep = "";

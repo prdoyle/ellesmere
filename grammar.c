@@ -91,7 +91,7 @@ static bool gr_productionIsInherited( Grammar gr, int index )
 	return false;
 	}
 
-static inline Production pns2pn( ProductionStorage pns, Grammar gr )
+static Production pns2pn( ProductionStorage pns, Grammar gr )
 	{
 	return (Production)(
 		  OUTERMOST_INDEX_OFFSET
@@ -99,7 +99,7 @@ static inline Production pns2pn( ProductionStorage pns, Grammar gr )
 		+ ( pns - pra_element( gr->pra, 0 ) ) );
 	}
 
-static inline ProductionStorage pn2pns( Production pn, Grammar gr )
+static ProductionStorage pn2pns( Production pn, Grammar gr )
 	{
 	if( gr_productionIsInherited( gr, pn_index( pn, gr ) ) )
 		return pn2pns( pn, gr->data.outer );

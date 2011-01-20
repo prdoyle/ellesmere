@@ -1,21 +1,47 @@
 
+def :VOID
+	if !
+		:TRUE !
+	then !
+		:STATEMENT_BLOCK !
+	else !
+		:TOKEN_BLOCK !
+	end !
+as { return :VOID }
+
+def :VOID
+	if !
+		:FALSE !
+	then !
+		:TOKEN_BLOCK !
+	else !
+		:STATEMENT_BLOCK !
+	end !
+as { return :VOID }
+
 def :INT
 	fib ! ( ! :INT@n ) !
 as
 	{
-	ifneg
-		n - 2
-	then
+	if n <= 1 then
 		{ return 1 }
-	end
-	ifneg
-		1 - n
-	then
+	else
 		{ return fib( n - 1 ) + fib( n - 2 ) }
 	end
 	}
 
-print fib( 0 )
-print fib( 1 )
-print fib( 2 )
-print fib( 16 )
+def :VOID
+	fibs ! ( ! :INT@n ) !
+as
+	{
+	if 1 <= n then
+		{ fibs( n - 1 ) }
+	else
+		{ }
+	end
+	print n
+	print fib(n)
+	return :VOID
+	}
+
+fibs( 22 )

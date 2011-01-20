@@ -62,9 +62,7 @@ typedef struct fna_struct *FunctionArray;
 
 static FunctionArray productionBodies;
 
-#ifdef NDEBUG
-#define trace(...)
-#else
+#ifndef NDEBUG
 static int trace( FILE *file, const char *format, ... )
 	{
 	if( !file )
@@ -131,6 +129,11 @@ static int popInt()
 	Object popped = pop();
 	assert( ob_isInt( popped, heap ) );
 	return ob_toInt( popped, heap );
+	}
+
+static void pushToken( int symbolIndex )
+	{
+	push( oh_symbolToken( heap, sy_byIndex( symbolIndex, st ) ) );
 	}
 
 static Symbol popToken()
@@ -360,47 +363,59 @@ static void returnAction( Production handle, GrammarLine gl )
 	push( result );
 	}
 
-static void ifnegAction( Production handle, GrammarLine gl )
+static void nonzeroAction( Production handle, GrammarLine gl )
 	{
-	popToken(); // end
-	TokenBlock block = ob_toTokenBlock( pop(), heap );
-	popToken(); // then
 	int value = popInt();
-	popToken(); // ifneg
-	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
-
-	closeTokenStreamsAsNecessary();
-	if( value < 0 )
-		{
-		cx_save( curContext );
-		tokenStream = ts_fromBlock( block, heap, tokenStream );
-		trace( diagnostics, "    ifneg: %d < 0; token stream is now %p\n", value, tokenStream );
-		}
+	if( value )
+		pushToken( SYM_TRUE );
 	else
-		{
-		trace( diagnostics, "    ifneg: %d >= 0; take no action\n", value );
-		}
+		pushToken( SYM_FALSE );
+	}
+
+static void leAction( Production handle, GrammarLine gl )
+	{
+	int right = popInt();
+	popToken();
+	int left = popInt();
+	if( left <= right )
+		pushToken( SYM_TRUE );
+	else
+		pushToken( SYM_FALSE );
 	}
 
 static struct gl_struct grammar1[] =
 	{
 	{ { ":PROGRAM",         ":VOIDS", ":END_OF_INPUT"                 }, { nopAction } },
-	{ { ":VOIDS",           ":VOID"                                   }, { nopAction } },
+	{ { ":VOIDS",           ":VOID",                                  }, { nopAction } },
 	{ { ":VOIDS",           ":VOIDS", ":VOID"                         }, { nopAction } },
+
+	{ { ":STATEMENT_BLOCK", "{", ":VOIDS", "}"                        }, { nopAction } },
+	{ { ":STATEMENT_BLOCK", "{",           "}"                        }, { nopAction } },
 
 	{ { ":VOID",            "print", ":INT"                           }, { printAction } },
 
 	{ { ":VOID",            "return", ":INT"                          }, { returnAction } },
+	{ { ":VOID",            "return", ":VOID"                         }, { returnAction } },
 
 	{ { ":PARAMETER_LIST"                                             }, { parseTreeAction } },
 	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "!", ":PARAMETER_LIST@next" }, { parseTreeAction } },
 	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "@", ":TOKEN@name", ":PARAMETER_LIST@next"  }, { parseTreeAction } },
 	{ { ":PRODUCTION",      ":TOKEN@result", ":PARAMETER_LIST@parms"  }, { addProductionAction } },
  	{ { ":TOKEN_BLOCK",     ":TB_START", ":VOIDS", "}"                }, { stopRecordingTokenBlockAction } },
+ 	{ { ":TOKEN_BLOCK",     ":TB_START",           "}"                }, { stopRecordingTokenBlockAction } },
  	{ { ":TB_START",        "{",                                      }, { recordTokenBlockAction } },
 	{ { ":VOID",            "def", ":PRODUCTION", "as", ":TOKEN_BLOCK" }, { defAction } },
 
-	{ { ":VOID",            "ifneg", ":INT", "then", ":TOKEN_BLOCK", "end"    }, { ifnegAction } },
+	{ { ":FALSE",           ":INT"                                    }, { nonzeroAction } },
+	{ { ":FALSE",           ":INT", "<=", ":INT"                      }, { leAction } },
+
+	{{NULL}},
+	};
+
+static struct gl_struct booleans1[] =
+	{
+	{ { ":TRUE",           ":INT"                                    }, { nonzeroAction } },
+	{ { ":TRUE",           ":INT", "<=", ":INT"                      }, { leAction } },
 
 	{{NULL}},
 	};
@@ -421,7 +436,7 @@ static struct gl_struct arithmetic2[] =
 	{{NULL}},
 	};
 
-static GrammarLine initialGrammarNest[] = { grammar1, arithmetic1, arithmetic2 };
+static GrammarLine initialGrammarNest[] = { grammar1, booleans1, arithmetic1, arithmetic2 };
 
 static Grammar populateGrammar( SymbolTable st )
 	{
@@ -479,6 +494,16 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	TokenBlock tb = tb_new( ml_undecided() );
 	Grammar gr = ps_grammar( ps );
 	nopAction( handle, gl );
+	handle = ps_handle( ps, ts_current( tokenStream ) );
+	if( handle )
+		{
+		// Assume it's an empty token block
+		nopAction( handle, NULL );
+		push( ts_current( tokenStream ) );
+		ts_advance( tokenStream );
+		// FIXME: There could be multiple reduces required to hit the stopRecordingTokenBlockAction.
+		// Should really just reduce this like other handles and let it happen naturally
+		}
 	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
 	while( ts_current( tokenStream ) )
 		{
@@ -534,9 +559,8 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 int main( int argc, char **argv )
 	{
 	conflictLog = stderr;
-	diagnostics = fdopen( 3, "wt" );    fl_write( diagnostics, "# Ellesmere diagnostics" );
-	File details = fdopen( 4, "wt" );   fl_write( diagnostics, "# Ellesmere details" );
-	parserGenTrace = fdopen( 5, "wt" ); fl_write( diagnostics, "# Ellesmere parserGenTrace" );
+	diagnostics = fdopen( 3, "wt" );    fl_write( diagnostics,    "# Ellesmere diagnostics\n" );
+	parserGenTrace = fdopen( 4, "wt" ); fl_write( parserGenTrace, "# Ellesmere parserGenTrace\n" );
 	st = theSymbolTable();
 	heap = theObjectHeap();
 	curContext = cx_new( st );
@@ -544,9 +568,6 @@ int main( int argc, char **argv )
 	productionBodies = fna_new( 20 + gr_numProductions( initialGrammar ), ml_indefinite() );
 	fna_setCount( productionBodies, gr_numProductions( initialGrammar ) );
 	ps = ps_new( au_new( initialGrammar, st, ml_indefinite(), conflictLog, parserGenTrace ), ml_indefinite(), diagnostics );
-	trace( details, "Parser:\n" );
-	ps_sendTo( ps, details, heap, st );
-	trace( details, "\n" );
 	stack = sk_new( ml_indefinite() );
 	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
 	tokenStream = theLexTokenStream( heap, st );
