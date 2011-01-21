@@ -202,7 +202,11 @@ static void subAction( Production handle, GrammarLine gl )
 	{
 	int right = popInt();
 	popToken();
-	int left = popInt();
+	int left;
+	if( gl->response.parm1 == 2 )
+		left = popInt();
+	else
+		left = 0;
 	push( ob_fromInt( left - right, heap ) );
 	}
 
@@ -428,8 +432,9 @@ static struct gl_struct booleans1[] =
 
 static struct gl_struct arithmetic1[] =
 	{
-	{ { ":INT",         ":INT", "+", ":INT" }, { addAction }, CR_SHIFT_BEATS_REDUCE },
-	{ { ":INT",         ":INT", "-", ":INT" }, { subAction }, CR_SHIFT_BEATS_REDUCE },
+	{ { ":INT",         ":INT", "+", ":INT" }, { addAction    }, CR_SHIFT_BEATS_REDUCE },
+	{ { ":INT",         ":INT", "-", ":INT" }, { subAction, 2 }, CR_SHIFT_BEATS_REDUCE },
+	{ { ":INT",                 "-", ":INT" }, { subAction, 1 }, CR_SHIFT_BEATS_REDUCE },
 
 	{{NULL}},
 	};

@@ -74,7 +74,7 @@ WS          [ \t\r]
 
 \"[^"]*(\\\"[^"]*)*\" { setLastString(yytext); return STRING; }
 
--?{DIGIT}+            { _lastInt = atoi(yytext); return INT; }
+{DIGIT}+              { _lastInt = atoi(yytext); return INT; }
 
 .                     { setLastWord(yytext); return ERROR; }
 

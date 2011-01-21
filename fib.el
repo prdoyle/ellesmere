@@ -26,7 +26,7 @@ as
 	if n <= 1 then
 		{ return 1 }
 	else
-		{ return fib( n - 1 ) + fib( n - 2 ) }
+		{ return fib(n-1) + fib(n-2) }
 	end
 	}
 
@@ -35,7 +35,7 @@ def :VOID
 as
 	{
 	if 1 <= n then
-		{ fibs( n - 1 ) }
+		{ fibs( n-1 ) }
 	else
 		{ }
 	end
