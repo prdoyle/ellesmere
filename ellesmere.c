@@ -404,7 +404,7 @@ static struct gl_struct grammar1[] =
 	{ { ":VOID",            "return", ":VOID"                         }, { returnAction } },
 
 	{ { ":PARAMETER_LIST"                                             }, { parseTreeAction } },
-	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "!", ":PARAMETER_LIST@next" }, { parseTreeAction } },
+	{ { ":PARAMETER_LIST",  ":TOKEN@tag",      ":PARAMETER_LIST@next" }, { parseTreeAction } },
 	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "@", ":TOKEN@name", ":PARAMETER_LIST@next"  }, { parseTreeAction } },
 	{ { ":PRODUCTION",      ":TOKEN@result", ":PARAMETER_LIST@parms"  }, { addProductionAction } },
  	{ { ":TOKEN_BLOCK",     ":TB_START", ":VOIDS", "}"                }, { stopRecordingTokenBlockAction } },

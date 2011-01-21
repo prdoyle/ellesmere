@@ -1,26 +1,26 @@
 
 def :VOID
-	if !
-		:TRUE !
-	then !
-		:STATEMENT_BLOCK !
-	else !
-		:TOKEN_BLOCK !
-	end !
+	if
+		:TRUE
+	then
+		:STATEMENT_BLOCK
+	else
+		:TOKEN_BLOCK
+	end
 as { return :VOID }
 
 def :VOID
-	if !
-		:FALSE !
-	then !
-		:TOKEN_BLOCK !
-	else !
-		:STATEMENT_BLOCK !
-	end !
+	if
+		:FALSE
+	then
+		:TOKEN_BLOCK
+	else
+		:STATEMENT_BLOCK
+	end
 as { return :VOID }
 
 def :INT
-	fib ! ( ! :INT@n ) !
+	fib ( :INT@n )
 as
 	{
 	if n <= 1 then
@@ -31,7 +31,7 @@ as
 	}
 
 def :VOID
-	fibs ! ( ! :INT@n ) !
+	fibs ( :INT@n )
 as
 	{
 	if 1 <= n then
