@@ -855,7 +855,7 @@ FUNC int ps_sendTo( Parser ps, File fl, ObjectHeap heap, SymbolTable st )
 		return 0;
 
 	int charsSent = fl_write( fl, "%p(%p): ", ps, ps_automaton(ps) );
-	sk_sendTo( ps->stateStack, fl, heap );
+	//sk_sendTo( ps->stateStack, fl, heap );
 #ifdef ITEM_SET_NUMS
 	int i;
 	char *sep = "";

@@ -82,15 +82,15 @@ static void dumpStack()
 	if( !diagnostics )
 		return;
 
-	fl_write( diagnostics, "    -- Stack: " );
+	trace( diagnostics, "    -- Stack: " );
 	sk_sendTo( stack, diagnostics, heap );
 	CallStack i;
 	for( i = callStack; i; i = i->outer )
 		{
-		fl_write( diagnostics, "\n%*s", 14, "" );
+		trace( diagnostics, "\n%*s", 14, "" );
 		sk_sendTo( i->stack, diagnostics, heap );
 		}
-	fl_write( diagnostics, "\n" );
+	trace( diagnostics, "\n" );
 	}
 
 static void dumpParserState()
@@ -98,15 +98,15 @@ static void dumpParserState()
 	if( !diagnostics )
 		return;
 
-	fl_write( diagnostics, "    -- Parser state: " );
+	trace( diagnostics, "    -- Parser state: " );
 	ps_sendTo( ps, diagnostics, heap, st );
 	CallStack i;
 	for( i = callStack; i; i = i->outer )
 		{
-		fl_write( diagnostics, "\n%*s", 21, "" );
+		trace( diagnostics, "\n%*s", 21, "" );
 		ps_sendTo( i->ps, diagnostics, heap, st );
 		}
-	fl_write( diagnostics, "\n" );
+	trace( diagnostics, "\n" );
 	}
 
 static void push( Object ob )
@@ -317,7 +317,7 @@ static void addProductionAction( Production handle, GrammarLine gl )
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
 	ps = ps_new( au_new( gr, st, ml_indefinite(), conflictLog, parserGenTrace ), ml_indefinite(), diagnostics );
-	fl_write( diagnostics, "    NEW PARSER\n" );
+	trace( diagnostics, "    NEW PARSER\n" );
 
 	// Prime the parser state with the current stack contents
 	int i;
@@ -579,8 +579,8 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 int main( int argc, char **argv )
 	{
 	conflictLog = stderr;
-	diagnostics = fdopen( 3, "wt" );    fl_write( diagnostics,    "# Ellesmere diagnostics\n" );
-	parserGenTrace = fdopen( 4, "wt" ); fl_write( parserGenTrace, "# Ellesmere parserGenTrace\n" );
+	diagnostics = fdopen( 3, "wt" );    trace( diagnostics,    "# Ellesmere diagnostics\n" );
+	parserGenTrace = fdopen( 4, "wt" ); trace( parserGenTrace, "# Ellesmere parserGenTrace\n" );
 	st = theSymbolTable();
 	heap = theObjectHeap();
 	curContext = cx_new( st );
