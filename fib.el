@@ -1,22 +1,10 @@
 
 def :VOID
-	if
-		:TRUE
-	then
-		:STATEMENT_BLOCK
-	else
-		:TOKEN_BLOCK
-	end
+	if :TRUE then :STATEMENT_BLOCK else :TOKEN_BLOCK end
 as { return :VOID }
 
 def :VOID
-	if
-		:FALSE
-	then
-		:TOKEN_BLOCK
-	else
-		:STATEMENT_BLOCK
-	end
+	if :FALSE then :TOKEN_BLOCK else :STATEMENT_BLOCK end
 as { return :VOID }
 
 def :INT
