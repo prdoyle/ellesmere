@@ -64,6 +64,7 @@ static void cf_pop()
 	{
 	assert( callStackDepth >= 1 );
 	CallFrame cf = cs_element( callStack, --callStackDepth );
+	ps_close( ps );
 	ps    = cf->ps;
 	stack = cf->stack;
 	}
@@ -327,6 +328,7 @@ static void addProductionAction( Production handle, GrammarLine gl )
 		}
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
+	ps_close( ps );
 	ps = ps_new( au_new( gr, st, ml_indefinite(), conflictLog, parserGenTrace ), ml_indefinite(), diagnostics );
 	trace( diagnostics, "    NEW PARSER\n" );
 
@@ -591,7 +593,7 @@ int main( int argc, char **argv )
 	{
 	conflictLog = stderr;
 	diagnostics = fdopen( 3, "wt" );    trace( diagnostics,    "# Ellesmere diagnostics\n" );
-	parserGenTrace = fdopen( 4, "wt" ); trace( parserGenTrace, "# Ellesmere parserGenTrace\n" );
+	parserGenTrace = fdopen( 5, "wt" ); trace( parserGenTrace, "# Ellesmere parserGenTrace\n" );
 	st = theSymbolTable();
 	heap = theObjectHeap();
 	curContext = cx_new( st );

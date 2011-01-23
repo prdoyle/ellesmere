@@ -16,6 +16,7 @@ FUNC void       ps_push    ( Parser ps, Object ob );
 FUNC int        ps_depth   ( Parser ps );
 FUNC Production ps_handle  ( Parser ps, Object lookahead ); // OK, the "handle" is actually the symbols, not the production.  So sue me.
 FUNC void       ps_popN    ( Parser ps, int count );
+FUNC void       ps_close   ( Parser ps ); // Can't use ps anymore after this
 
 FUNC int        au_sendTo  ( Automaton au, File fl, ObjectHeap heap, SymbolTable st );
 FUNC int        ps_sendTo  ( Parser ps,    File fl, ObjectHeap heap, SymbolTable st );

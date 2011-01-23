@@ -37,6 +37,9 @@ typedef struct tss_struct *TokenStreamStack;
 #define AR_ELEMENT TokenStream
 #define AR_BYVALUE
 #include "array_template.h"
+#ifndef NDEBUG
+	#define tss_new( size, ml ) tss_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
 
 typedef struct oba_struct *ObjectArray;
 #define AR_PREFIX  oba
@@ -44,6 +47,9 @@ typedef struct oba_struct *ObjectArray;
 #define AR_ELEMENT Object
 #define AR_BYVALUE
 #include "array_template.h"
+#ifndef NDEBUG
+	#define oba_new( size, ml ) oba_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
 
 struct tb_struct
 	{

@@ -100,7 +100,7 @@ static SymbolSideTableEntry pg_sideTableEntry( ParserGenerator pg, Symbol sy, Fi
 	else
 		{
 		sstIndex = sst_count( pg->sst );
-		fl_write( traceFile, "  -- s%d = %s --\n", sstIndex, sy_name( sy, pg->st ) );
+		trace( traceFile, "  -- s%d = %s --\n", sstIndex, sy_name( sy, pg->st ) );
 		pg->sstIndexes[ sy_index( sy, pg->st ) ] = sstIndex;
 		result = sst_nextElement( pg->sst );
 		result->sy = sy;
@@ -215,18 +215,18 @@ static void pg_populateItemTable( ParserGenerator pg, File traceFile )
 	Grammar gr = pg->gr;
 	pg->items = ita_new( 1000, ml );
 	pg->rightmostItems = bv_new( gr_numProductions(gr), ml );
-	fl_write( traceFile, "Populating item table\n" );
+	trace( traceFile, "Populating item table\n" );
 	for( i=0; i < gr_numProductions(gr); i++ )
 		{
 		Production pn = gr_production( gr, i );
 		for( j=0; j <= pn_length( pn, gr ); j++ )
 			{
-			fl_write( traceFile, "  i%d: ", ita_count( pg->items ) );
+			trace( traceFile, "  i%d: ", ita_count( pg->items ) );
 			Item it = ita_nextElement( pg->items );
 			it->pn  = pn;
 			it->dot = j;
 			pn_sendItemTo( it->pn, it->dot, traceFile, gr, pg->st );
-			fl_write( traceFile, "\n" );
+			trace( traceFile, "\n" );
 			}
 		bv_set( pg->rightmostItems, ita_count(pg->items) - 1 );
 		}
@@ -412,17 +412,17 @@ static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 	{
 	int pnNum;
 	bool somethingChanged = true;
-	fl_write( traceFile, "Computing follow sets\n" );
+	trace( traceFile, "Computing follow sets\n" );
 	while( somethingChanged )
 		{
 		somethingChanged = false;
-		fl_write( traceFile, "  Looping through productions\n" );
+		trace( traceFile, "  Looping through productions\n" );
 		for( pnNum=0; pnNum < gr_numProductions( pg->gr ); pnNum++ )
 			{
 			Production pn = gr_production( pg->gr, pnNum );
-			fl_write( traceFile, "    #%d: ", pnNum );
+			trace( traceFile, "    #%d: ", pnNum );
 			pn_sendTo( pn, traceFile, pg->gr, pg->st );
-			fl_write( traceFile, "\n" );
+			trace( traceFile, "\n" );
 			int lhsIndex  = pg_symbolSideTableIndex( pg, pn_lhs( pn, pg->gr ) );
 			SymbolSideTableEntry lhs = sst_element( pg->sst, lhsIndex );
 			int i = pn_length( pn, pg->gr ) - 1;
@@ -434,13 +434,13 @@ static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 				somethingChanged |= bv_orChanged( last->follow, lhs->follow );
 				if( traceFile )
 					{
-					fl_write( traceFile, "      Copied follow from lhs " );
+					trace( traceFile, "      Copied follow from lhs " );
 					sy_sendTo( lhs->sy, traceFile, pg->st );
-					fl_write( traceFile, " to " );
+					trace( traceFile, " to " );
 					sy_sendTo( last->sy, traceFile, pg->st );
-					fl_write( traceFile, ": " );
+					trace( traceFile, ": " );
 					bv_sendFormattedTo( lhs->follow, traceFile, "s%d", ", s%d" );
-					fl_write( traceFile, "\n" );
+					trace( traceFile, "\n" );
 					}
 				}
 			// Loop through the other tokens right-to-left propagating follow info across nullable tokens
@@ -453,26 +453,26 @@ static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 				somethingChanged |= bv_orChanged( cur->follow, next->first );
 				if( traceFile )
 					{
-					fl_write( traceFile, "      Copied first from " );
+					trace( traceFile, "      Copied first from " );
 					sy_sendTo( next->sy, traceFile, pg->st );
-					fl_write( traceFile, " to follow of " );
+					trace( traceFile, " to follow of " );
 					sy_sendTo( cur->sy, traceFile, pg->st );
-					fl_write( traceFile, ": " );
+					trace( traceFile, ": " );
 					bv_sendFormattedTo( next->first, traceFile, "s%d", ", s%d" );
-					fl_write( traceFile, "\n" );
+					trace( traceFile, "\n" );
 					}
 				if( bv_isSet( pg->nullableSymbols, nextIndex ) )
 					{
 					somethingChanged |= bv_orChanged( cur->follow, next->follow );
 					if( traceFile )
 						{
-						fl_write( traceFile, "      Copied follow from " );
+						trace( traceFile, "      Copied follow from " );
 						sy_sendTo( next->sy, traceFile, pg->st );
-						fl_write( traceFile, " to " );
+						trace( traceFile, " to " );
 						sy_sendTo( cur->sy, traceFile, pg->st );
-						fl_write( traceFile, ": " );
+						trace( traceFile, ": " );
 						bv_sendFormattedTo( next->follow, traceFile, "s%d", ", s%d" );
-						fl_write( traceFile, "\n" );
+						trace( traceFile, "\n" );
 						}
 					}
 				}
@@ -545,26 +545,26 @@ static void it_getFollow( Item it, SymbolVector result, ParserGenerator pg, File
 	{
 	// TODO: There's probably an efficient way to pre-compute these
 	int i;
-	fl_write( traceFile, "          Computing follow for: " );
+	trace( traceFile, "          Computing follow for: " );
 	pn_sendItemTo( it->pn, it->dot, traceFile, pg->gr, pg->st );
-	fl_write( traceFile, "\n" );
+	trace( traceFile, "\n" );
 	for( i = it->dot; i < pn_length( it->pn, pg->gr ); i++ )
 		{
 		int curIndex = pg_symbolSideTableIndex( pg, pn_token( it->pn, i, pg->gr ) );
 		SymbolVector curFirst = sst_element( pg->sst, curIndex )->first;
 		bv_or( result, curFirst );
-		fl_write( traceFile, "            Symbol %s at %d adds ", sy_name( sst_element( pg->sst, curIndex )->sy, pg->st ), i );
+		trace( traceFile, "            Symbol %s at %d adds ", sy_name( sst_element( pg->sst, curIndex )->sy, pg->st ), i );
 		bv_sendFormattedTo( curFirst, traceFile, "s%d", ", s%d" );
-		fl_write( traceFile, "\n" );
+		trace( traceFile, "\n" );
 		if( !bv_isSet( pg->nullableSymbols, curIndex ) )
 			break;
 		}
 	if( i == pn_length( it->pn, pg->gr ) )
 		{
 		bv_or( result, it->lookahead );
-		fl_write( traceFile, "            Adding lookahead " );
+		trace( traceFile, "            Adding lookahead " );
 		bv_sendFormattedTo( it->lookahead, traceFile, "s%d", ", s%d" );
-		fl_write( traceFile, "\n" );
+		trace( traceFile, "\n" );
 		}
 	}
 
@@ -573,17 +573,17 @@ static void pg_reportConflict( ParserGenerator pg, ItemSet its, Item winner, Ite
 	// TODO: Report the symbol
 	va_list args;
 	va_start( args, format );
-	fl_write(  conflictLog, "Conflict in ItemSet_%d: ", its_index( its, pg ) );
+	trace(  conflictLog, "Conflict in ItemSet_%d: ", its_index( its, pg ) );
 	fl_vwrite( conflictLog, format, args );
-	fl_write(  conflictLog, "\n  Winner: " );
+	trace(  conflictLog, "\n  Winner: " );
 	pn_sendItemTo( winner->pn, winner->dot, conflictLog, pg->gr, pg->st );
-	fl_write(  conflictLog, "\n   Loser: " );
+	trace(  conflictLog, "\n   Loser: " );
 	pn_sendItemTo( loser->pn, loser->dot, conflictLog, pg->gr, pg->st );
-	fl_write(  conflictLog, "\n Symbols: " );
+	trace(  conflictLog, "\n Symbols: " );
 	bv_sendFormattedTo( conflictingSymbols, conflictLog, "s%d", ", s%d" );
-	fl_write(  conflictLog, "\n" );
+	trace(  conflictLog, "\n" );
 	va_end( args );
-	fl_write( traceFile, "        CONFLICT\n" );
+	trace( traceFile, "        CONFLICT\n" );
 	}
 
 static bool resolveConflict( Item left, ConflictResolutions leftCR, Item right, ConflictResolutions rightCR, ParserGenerator pg )
@@ -604,35 +604,35 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 	Grammar gr = pg->gr; ObjectHeap heap = pg->heap;
 	int i,j,k;
 
-	fl_write( traceFile, "Computing reduce actions\n" );
+	trace( traceFile, "Computing reduce actions\n" );
 	ItemVector   reduceItems        = bv_new( ita_count(pg->items), pg->generateTime );
 	SymbolVector reduceSymbols      = bv_new( sst_count(pg->sst),   pg->generateTime );
 	SymbolVector competitorSymbols  = bv_new( sst_count(pg->sst),   pg->generateTime );
 	SymbolVector conflictingSymbols = bv_new( sst_count(pg->sst),   pg->generateTime );
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
 		{
-		fl_write( traceFile, "  ItemSet_%d:\n", i );
+		trace( traceFile, "  ItemSet_%d:\n", i );
 		ItemSet its = itst_element( pg->itemSets, i );
 		Object stateNode = its->stateNode;
 		bv_copy ( reduceItems, pg->rightmostItems );
 		bv_and  ( reduceItems, its->items );
-		fl_write( traceFile, "    Items: " );
+		trace( traceFile, "    Items: " );
 		bv_sendFormattedTo( its->items, traceFile, "i%d", ", i%d" );
-		fl_write( traceFile, "\n" );
-		fl_write( traceFile, "    ReduceItems: " );
+		trace( traceFile, "\n" );
+		trace( traceFile, "    ReduceItems: " );
 		bv_sendFormattedTo( reduceItems, traceFile, "i%d", ", i%d" );
-		fl_write( traceFile, "\n" );
+		trace( traceFile, "\n" );
 		for( j = bv_firstBit( reduceItems ); j != bv_END; j = bv_nextBit( reduceItems, j ) )
 			{
 			Item it = ita_element( pg->items, j );
 			Production pn = it->pn;
-			fl_write( traceFile, "    Item i%d: ", j );
+			trace( traceFile, "    Item i%d: ", j );
 			pn_sendItemTo( pn, it->dot, traceFile, pg->gr, pg->st );
-			fl_write( traceFile, "\n" );
+			trace( traceFile, "\n" );
 			bv_copy( reduceSymbols, it->lookahead );
-			fl_write( traceFile, "      Original ReduceSymbols: " );
+			trace( traceFile, "      Original ReduceSymbols: " );
 			bv_sendFormattedTo( reduceSymbols, traceFile, "s%d", ", s%d" );
-			fl_write( traceFile, "\n" );
+			trace( traceFile, "\n" );
 
 			// Scan down for the last item of lower priority
 			//
@@ -656,32 +656,32 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 				bv_clear( competitorSymbols );
 				if( pg_itemIsRightmost( pg, k ) )
 					{
-					fl_write( traceFile, "      Checking reduce item i%d: ", k );
+					trace( traceFile, "      Checking reduce item i%d: ", k );
 					pn_sendItemTo( competitor->pn, competitor->dot, traceFile, pg->gr, pg->st );
-					fl_write( traceFile, "\n        follow: " );
+					trace( traceFile, "\n        follow: " );
 					it_getFollow( competitor, competitorSymbols, pg, NULL );
 					bv_sendFormattedTo( competitorSymbols, traceFile, "s%d", ", s%d" );
-					fl_write( traceFile, "\n" );
+					trace( traceFile, "\n" );
 					}
 				else
 					{
-					fl_write( traceFile, "      Checking shift item i%d: ", k );
+					trace( traceFile, "      Checking shift item i%d: ", k );
 					pn_sendItemTo( competitor->pn, competitor->dot, traceFile, pg->gr, pg->st );
-					fl_write( traceFile, "\n        first: " );
+					trace( traceFile, "\n        first: " );
 					SymbolSideTableEntry expected = pg_sideTableEntry( pg, pn_token( competitor->pn, competitor->dot, pg->gr ), traceFile );
 					bv_or( competitorSymbols, expected->first );
 					bv_sendFormattedTo( competitorSymbols, traceFile, "s%d", ", s%d" );
-					fl_write( traceFile, "\n" );
+					trace( traceFile, "\n" );
 					}
 				if( !bv_intersects( reduceSymbols, competitorSymbols ) )
 					{
-					fl_write( traceFile, "        No conflict\n" );
+					trace( traceFile, "        No conflict\n" );
 					continue;
 					}
 				int winningMargin = pn_nestDepth( competitor->pn, pg->gr ) - pn_nestDepth( it->pn, pg->gr );
 				if( winningMargin > 0 )
 					{
-					fl_write( traceFile, "        Competitor has lower priority\n" );
+					trace( traceFile, "        Competitor has lower priority\n" );
 					continue;
 					}
 				else if( winningMargin == 0 )
@@ -691,43 +691,43 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 					if( pg_itemIsRightmost( pg, k ) )
 						{
 						pg_reportConflict( pg, its, it, competitor, conflictingSymbols, conflictLog, traceFile, "Reduce-reduce" );
-						fl_write( traceFile, "        BAD!\n" );
+						trace( traceFile, "        BAD!\n" );
 						continue;
 						}
 					else
 						{
 						if( both( it, competitor, CR_SHIFT_BEATS_REDUCE, pg ) )
 							{
-							fl_write( traceFile, "        CR_SHIFT_BEATS_REDUCE\n" );
+							trace( traceFile, "        CR_SHIFT_BEATS_REDUCE\n" );
 							}
 						else if( both( it, competitor, CR_REDUCE_BEATS_SHIFT, pg ) )
 							{
-							fl_write( traceFile, "        CR_REDUCE_BEATS_SHIFT\n" );
+							trace( traceFile, "        CR_REDUCE_BEATS_SHIFT\n" );
 							continue;
 							}
 						else if( it->pn == competitor->pn )
 							{
 							pg_reportConflict( pg, its, it, competitor, conflictingSymbols, conflictLog, traceFile, "Self shift-reduce" );
-							fl_write( traceFile, "        Self-left-associativity favours reduce\n" );
+							trace( traceFile, "        Self-left-associativity favours reduce\n" );
 							continue;
 							}
 						else
 							{
 							pg_reportConflict( pg, its, it, competitor, conflictingSymbols, conflictLog, traceFile, "Shift-reduce" );
-							fl_write( traceFile, "        Favouring reduce over shift until I figure out something better\n" );
+							trace( traceFile, "        Favouring reduce over shift until I figure out something better\n" );
 							continue;
 							}
 						}
 					}
 
 				bv_minus( reduceSymbols, competitorSymbols );
-				fl_write( traceFile, "        Competitor has higher priority; removing lookaheads: " );
+				trace( traceFile, "        Competitor has higher priority; removing lookaheads: " );
 				bv_sendFormattedTo( competitorSymbols, traceFile, "s%d", ", s%d" );
-				fl_write( traceFile, "\n" );
+				trace( traceFile, "\n" );
 				}
-			fl_write( traceFile, "      Filtered ReduceSymbols: " );
+			trace( traceFile, "      Filtered ReduceSymbols: " );
 			bv_sendFormattedTo( reduceSymbols, traceFile, "s%d", ", s%d" );
-			fl_write( traceFile, "\n" );
+			trace( traceFile, "\n" );
 
 			// Add reduce edges
 			//
@@ -741,13 +741,6 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 
 	}
 
-struct au_struct
-	{
-	Grammar gr;
-	Object startState;
-	ObjectHeap stateHeap;
-	};
-
 struct ps_struct
 	{
 	Automaton au;
@@ -755,9 +748,28 @@ struct ps_struct
 	File diagnostics;
 	};
 
+typedef struct psa_struct *ParserArray;
+#define AR_PREFIX  psa
+#define AR_TYPE    ParserArray
+#define AR_ELEMENT Parser
+#define AR_BYVALUE
+#include "array_template.h"
+#ifndef NDEBUG
+	#define psa_new( size, ml ) psa_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
+
+struct au_struct
+	{
+	Grammar gr;
+	Object startState;
+	ObjectHeap stateHeap;
+	// Perf tweaks
+	ParserArray parsers;
+	};
+
 FUNC Automaton au_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File conflictLog, File diagnostics )
 	{
-	fl_write( diagnostics, "Generating automaton\n" );
+	trace( diagnostics, "Generating automaton\n" );
 	MemoryLifetime generateTime = ml_begin( 10000, ml );
 	ParserGenerator pg = pg_new( gr, st, generateTime, ml, theObjectHeap() );
 	pg_populateItemTable( pg, diagnostics );
@@ -773,11 +785,12 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File confl
 	result->gr = gr;
 	result->stateHeap  = theObjectHeap();
 	result->startState = startState;
+	result->parsers    = psa_new( 2, ml );
 	if (diagnostics)
 		{
-		fl_write( diagnostics, "Finished generating automaton %p:\n", result );
+		trace( diagnostics, "Finished generating automaton %p:\n", result );
 		au_sendTo( result, diagnostics, theObjectHeap(), st );
-		fl_write( diagnostics, "\n" );
+		trace( diagnostics, "\n" );
 		}
 	return result;
 	}
@@ -789,12 +802,39 @@ FUNC Grammar au_grammar( Automaton au )
 
 FUNC Parser ps_new( Automaton au, MemoryLifetime ml, File diagnostics )
 	{
-	Parser result = (Parser)ml_alloc( ml, sizeof(*result) );
-	result->au = au;
-	result->stateStack = sk_new( ml );
+	Parser result = NULL;
+	int i;
+	trace( diagnostics, "PARSER Scanning %d existing parsers on %p\n", psa_count( au->parsers ), au );
+	for( i = 0; i < psa_count( au->parsers ) && !result; i++ )
+		{
+		Parser ps = psa_get( au->parsers, i );
+		if( sk_depth( ps->stateStack ) == 0 )
+			{
+			result = ps;
+			trace( diagnostics, "PARSER Found existing parser %p on %p @ %d\n", result, au, i );
+			}
+		else
+			{
+			trace( diagnostics, "PARSER Existing parser %p on %p @ %d has depth %d\n", ps, au, i, sk_depth( ps->stateStack ) );
+			}
+		}
+	if( !result )
+		{
+		result = (Parser)ml_alloc( ml, sizeof(*result) );
+		result->au = au;
+		result->stateStack = sk_new( ml );
+		trace( diagnostics, "PARSER Allocated new parser %p on %p @ %d\n", result, au, psa_count( au->parsers ) );
+		psa_append( au->parsers, result );
+		}
 	sk_push( result->stateStack, au->startState );
 	result->diagnostics = diagnostics;
 	return result;
+	}
+
+FUNC void ps_close( Parser ps )
+	{
+	trace( ps->diagnostics, "PARSER Freed parser %p\n", ps );
+	sk_popAll( ps->stateStack );
 	}
 
 FUNC Automaton ps_automaton( Parser ps )
