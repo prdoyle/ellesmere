@@ -11,6 +11,9 @@
 #define AR_ELEMENT struct sy_struct
 #undef AR_BYVALUE
 #include "array_template.h"
+#ifndef NDEBUG
+	#define sta_new( size, ml ) sta_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
 
 static struct sy_struct predefinedSymbols[] =
 	{
@@ -94,6 +97,9 @@ typedef struct cp_struct *Checkpoint;
 #define AR_ELEMENT struct ss_struct
 #undef AR_BYVALUE
 #include "array_template.h"
+#ifndef NDEBUG
+	#define cp_new( size, ml ) cp_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
 
 static SymbolSnapshot ss_bySymbol( Symbol sy, Checkpoint cp )
 	{
@@ -125,6 +131,9 @@ typedef struct us_struct *UndoStack;
 #define AR_ELEMENT Checkpoint
 #define AR_BYVALUE
 #include "array_template.h"
+#ifndef NDEBUG
+	#define usnew( size, ml ) usnewAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
 
 struct cx_struct
 	{

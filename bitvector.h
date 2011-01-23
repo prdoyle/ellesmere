@@ -42,11 +42,9 @@ static inline int bv_sendTo( BitVector bv, File fl )
 	{ return bv_sendFormattedTo( bv, fl, "%d", ", %d" ); }
 
 #if 1
-	#define trace   fl_write
 	#define traceBV bv_sendTo
 	#define traceBVX bv_sendFormattedTo
 #else
-	#define trace(...)
 	#define traceBV(...)
 	#define traceBVX(...)
 #endif

@@ -16,6 +16,11 @@
 static inline AR_TYPE AR_PREFIXED( _new )( int capacity, MemoryLifetime ml )
 	{ return (AR_TYPE)ar_new( capacity, sizeof(AR_ELEMENT), ml ); }
 
+#ifndef NDEBUG
+static inline AR_TYPE AR_PREFIXED( _newAnnotated )( int capacity, MemoryLifetime ml, const char *file, int line )
+	{ return (AR_TYPE)ar_newAnnotated( capacity, sizeof(AR_ELEMENT), ml, file, line ); }
+#endif
+
 static inline int AR_PREFIXED( _count )( AR_TYPE ar )
 	{ return ar_count( (Array)ar ); }
 

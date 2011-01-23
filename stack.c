@@ -7,6 +7,9 @@
 #define AR_ELEMENT Object
 #define AR_BYVALUE
 #include "array_template.h"
+#ifndef NDEBUG
+	#define ska_new( size, ml ) ska_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
 
 #define INITIAL_CAPACITY 19
 

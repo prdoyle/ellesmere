@@ -59,23 +59,11 @@ typedef struct fna_struct *FunctionArray;
 #define AR_ELEMENT Function
 #define AR_BYVALUE
 #include "array_template.h"
+#ifndef NDEBUG
+	#define fna_new( size, ml ) fna_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
 
 static FunctionArray productionBodies;
-
-#ifndef NDEBUG
-static int trace( FILE *file, const char *format, ... )
-	{
-	if( !file )
-		return 0;
-
-	int result;
-	va_list args;
-	va_start( args, format );
-	result = fl_vwrite( file, format, args );
-	va_end( args );
-	return result;
-	}
-#endif
 
 static void dumpStack()
 	{

@@ -21,3 +21,11 @@
   - System calls in general?  Native methods?
 - Expose associativity in the language
 - Can we get rid of the curly braces?
+
+
+Ideas
+- Maybe "def" can stay the way it is, and can modify grammars incrementally.
+  Modules can have a syntax senction that declares new productions and an
+  implementation that provides bodies.  This is still very single-pass-ish but
+  I don't see what else I can do if I can't even know to parse a section of
+  text looking for the productions used to parse it!

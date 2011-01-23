@@ -15,6 +15,9 @@ typedef struct rhs_struct *RightHandSide;
 #define AR_ELEMENT struct pe_struct
 #undef AR_BYVALUE
 #include "array_template.h"
+#ifndef NDEBUG
+	#define rhs_new( size, ml ) rhs_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
 
 typedef struct pns_struct
 	{
@@ -29,6 +32,9 @@ typedef struct pra_struct *ProductionArray;
 #define AR_ELEMENT struct pns_struct
 #undef AR_BYVALUE
 #include "array_template.h"
+#ifndef NDEBUG
+	#define pra_new( size, ml ) pra_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
 
 struct gr_struct
 	{

@@ -25,6 +25,9 @@ typedef struct ita_struct *ItemArray;
 #define AR_ELEMENT struct it_struct
 #undef AR_BYVALUE
 #include "array_template.h"
+#ifndef NDEBUG
+	#define ita_new( size, ml ) ita_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
 
 typedef struct sste_struct
 	{
@@ -41,6 +44,9 @@ typedef struct sst_struct *SymbolSideTable;
 #define AR_ELEMENT struct sste_struct
 #undef AR_BYVALUE
 #include "array_template.h"
+#ifndef NDEBUG
+	#define sst_new( size, ml ) sst_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
 
 typedef struct its_struct *ItemSet;
 struct its_struct
@@ -61,6 +67,9 @@ typedef struct itst_struct *ItemSetTable;
 #define AR_ELEMENT struct its_struct
 #undef AR_BYVALUE
 #include "array_template.h"
+#ifndef NDEBUG
+	#define itst_new( size, ml ) itst_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
 
 typedef struct pg_struct
 	{

@@ -4,7 +4,11 @@
 
 #include "base.h"
 
-FUNC Array ar_new      ( int capacity, int elementSize, MemoryLifetime ml );
+FUNC Array ar_new          ( int capacity, int elementSize, MemoryLifetime ml );
+#ifndef NDEBUG
+FUNC Array ar_newAnnotated ( int capacity, int elementSize, MemoryLifetime ml, const char *file, int line );
+#endif
+
 FUNC int   ar_count    ( Array ar );
 FUNC int   ar_capacity ( Array ar );
 FUNC void *ar_element  ( Array ar, int index, int elementSize );

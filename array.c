@@ -13,15 +13,35 @@ struct ar_struct
 	MemoryLifetime ml;
 	};
 
-FUNC Array ar_new( int capacity, int elementSize, MemoryLifetime ml )
+static Array ar_init( int capacity, int elementSize, MemoryLifetime ml, void *arrayStruct, void *storage )
 	{
-	Array result = (Array)ml_alloc( ml, sizeof(*result) );
+	Array result = arrayStruct;
 	result->count = 0;
 	result->capacity = capacity;
 	result->ml = ml;
-	result->storage = ml_alloc( ml, result->capacity * elementSize );
+	result->storage = storage;
 	return result;
 	}
+
+FUNC Array ar_new( int capacity, int elementSize, MemoryLifetime ml )
+	{
+	return ar_init(
+		capacity, elementSize, ml,
+		ml_alloc( ml, sizeof(struct ar_struct) ),
+		ml_alloc( ml, capacity * elementSize )
+		);
+	}
+
+#ifndef NDEBUG
+FUNC Array ar_newAnnotated( int capacity, int elementSize, MemoryLifetime ml, const char *file, int line )
+	{
+	return ar_init(
+		capacity, elementSize, ml,
+		ml_allocAnnotated( ml, sizeof(struct ar_struct), file, line ),
+		ml_allocAnnotated( ml, capacity * elementSize, file, line )
+		);
+	}
+#endif
 
 FUNC int ar_count( Array ar )
 	{
@@ -98,21 +118,6 @@ FUNC void ar_clear( Array ar, int newCount, int elementSize )
 	ar_setCount( ar, newCount, elementSize );
 	memset( ar->storage, 0, newCount * elementSize );
 	}
-
-/*
-typedef Array IntArray;
-#define AR_PREFIX  ia
-#define AR_TYPE    IntArray
-#define AR_ELEMENT int
-#define AR_BYVALUE
-#include "array_template.h"
-
-static void test()
-	{
-	IntArray ia = ia_new( 123 );
-	ia_append( ia, 456 );
-	}
-*/
 
 //MERGE:15
 
