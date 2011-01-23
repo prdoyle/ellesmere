@@ -18,33 +18,54 @@ FILE *diagnostics;
 FILE *conflictLog;
 FILE *parserGenTrace;
 
-typedef struct cs_struct *CallStack;
-struct cs_struct
+typedef struct cf_struct *CallFrame;
+struct cf_struct
 	{
-	CallStack outer;
 	Parser ps;
 	Stack  stack;
 	};
 
-static CallStack callStack = NULL;
+typedef struct cs_struct *CallStack;
+#define AR_PREFIX  cs
+#define AR_TYPE    CallStack
+#define AR_ELEMENT struct cf_struct
+#undef AR_BYVALUE
+#include "array_template.h"
+#ifndef NDEBUG
+	#define cs_new( size, ml ) cs_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
 
-static void cs_push()
+static CallStack callStack;
+static int callStackDepth = 0;
+
+static void cf_push()
 	{
-	CallStack cs = (CallStack)ml_alloc( ml_undecided(), sizeof(*cs) );
-	cs->outer = callStack;
-	callStack = cs;
-	callStack->ps    = ps;
-	callStack->stack = stack;
-	ps = ps_new( ps_automaton(ps), ml_indefinite(), diagnostics );
-	stack = sk_new( ml_indefinite() );
+	assert( cs_count( callStack ) >= 1 );
+	CallFrame cf = cs_element( callStack, callStackDepth );
+	cf->ps = ps;
+	cf->stack = stack;
+	callStackDepth += 1;
+	if( callStackDepth >= cs_count(callStack) )
+		{
+		trace( diagnostics, "Growing call stack to depth=%d\n", callStackDepth );
+		cf = cs_nextElement( callStack );
+		cf->stack = sk_new( ml_indefinite() );
+		}
+	else
+		{
+		cf = cs_element( callStack, callStackDepth );
+		sk_popN( cf->stack, sk_depth( cf->stack ) );
+		}
+	ps = cf->ps = ps_new( ps_automaton(ps), ml_indefinite(), diagnostics );
+	stack = cf->stack;
 	}
 
-static void cs_pop()
+static void cf_pop()
 	{
-	assert( callStack );
-	ps    = callStack->ps;
-	stack = callStack->stack;
-	callStack = callStack->outer;
+	assert( callStackDepth >= 1 );
+	CallFrame cf = cs_element( callStack, --callStackDepth );
+	ps    = cf->ps;
+	stack = cf->stack;
 	}
 
 struct fn_struct
@@ -72,11 +93,12 @@ static void dumpStack()
 
 	trace( diagnostics, "    -- Stack: " );
 	sk_sendTo( stack, diagnostics, heap );
-	CallStack i;
-	for( i = callStack; i; i = i->outer )
+	int i;
+	for( i = callStackDepth-1; i >= 0; i-- )
 		{
+		CallFrame cf = cs_element( callStack, i );
 		trace( diagnostics, "\n%*s", 14, "" );
-		sk_sendTo( i->stack, diagnostics, heap );
+		sk_sendTo( cf->stack, diagnostics, heap );
 		}
 	trace( diagnostics, "\n" );
 	}
@@ -88,11 +110,12 @@ static void dumpParserState()
 
 	trace( diagnostics, "    -- Parser state: " );
 	ps_sendTo( ps, diagnostics, heap, st );
-	CallStack i;
-	for( i = callStack; i; i = i->outer )
+	int i;
+	for( i = callStackDepth-1; i >= 0; i-- )
 		{
+		CallFrame cf = cs_element( callStack, i );
 		trace( diagnostics, "\n%*s", 21, "" );
-		ps_sendTo( i->ps, diagnostics, heap, st );
+		ps_sendTo( cf->ps, diagnostics, heap, st );
 		}
 	trace( diagnostics, "\n" );
 	}
@@ -356,7 +379,7 @@ static void returnAction( Production handle, GrammarLine gl )
 	tokenStream = ts_close( tokenStream );
 	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
 	cx_restore( curContext );
-	cs_pop();
+	cf_pop();
 	trace( diagnostics, "  Returned to TokenStream %p\n", tokenStream );
 	push( result );
 	}
@@ -572,6 +595,8 @@ int main( int argc, char **argv )
 	st = theSymbolTable();
 	heap = theObjectHeap();
 	curContext = cx_new( st );
+	callStack = cs_new( 30, ml_indefinite() );
+	cs_setCount( callStack, 1 );
 	Grammar initialGrammar = populateGrammar( st );
 	productionBodies = fna_new( 20 + gr_numProductions( initialGrammar ), ml_indefinite() );
 	fna_setCount( productionBodies, gr_numProductions( initialGrammar ) );
@@ -615,7 +640,7 @@ int main( int argc, char **argv )
 				for( i = pn_length( handle, gr ) - 1; i >= 0; i-- )
 					sy_setValue( pn_token( handle, i, gr ), pop(), curContext );
 				tokenStream = ts_fromBlock( functionToCall->body, heap, tokenStream );
-				cs_push();
+				cf_push();
 				trace( diagnostics, "    Calling body for production %d token stream %p\n", pn_index( handle, gr ), tokenStream );
 				handle = NULL;
 				}

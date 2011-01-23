@@ -1,7 +1,7 @@
 def :INT
-	fib :INT@n
+	double :INT@n
 as
 	{ return n+n }
 
-print fib 3
-print fib 4
+print double 3
+print double 4

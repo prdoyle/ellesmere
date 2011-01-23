@@ -17,7 +17,7 @@ small: CFLAGS    += -Os -DNDEBUG -g0
 small: LEXFLAGS  += -Cem
 fast:  CFLAGS    += -O3 -DNDEBUG -Winline
 fast:  LEXFLAGS  += --Fast
-prof:  CFLAGS    += -pg -O3 -DNDEBUG -fprofile-arcs
+prof:  CFLAGS    += -pg -O0 -DNDEBUG -fprofile-arcs
 prof:  LDFLAGS   += -pg -fprofile-arcs
 prof:  LEXFLAGS  += --Fast
 
@@ -81,6 +81,12 @@ lex.l.c: lex.l
 
 memreport.txt: ellesmere
 	./ellesmere < fib.el 6>&1 1>&2 | sort -k2 -nk3 | uniq -c | sort -rn > $@
+
+gprof.txt: gmon.out
+	gprof ellesmere > gprof.txt
+
+gmon.out: prof
+	./ellesmere < fib.el
 
 bitvector.t: CFLAGS += -DBITVECTOR_T
 bitvector.t: bitvector.o memory.o file.o
