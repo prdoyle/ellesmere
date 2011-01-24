@@ -1,5 +1,5 @@
 def INT
-	double INT@n
+	double n:INT
 as
 	{ return n+n }
 

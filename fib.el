@@ -8,7 +8,7 @@ def VOID
 as { return VOID }
 
 def INT
-	fib ( INT@n )
+	fib ( n:INT )
 as
 	{
 	if n <= 1 then
@@ -19,7 +19,7 @@ as
 	}
 
 def VOID
-	fibs ( INT@n )
+	fibs ( n:INT )
 as
 	{
 	if 1 <= n then
