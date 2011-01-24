@@ -213,7 +213,7 @@ static void pg_populateItemTable( ParserGenerator pg, File traceFile )
 	int i,j;
 	MemoryLifetime ml = pg->generateTime;
 	Grammar gr = pg->gr;
-	pg->items = ita_new( 1000, ml );
+	pg->items = ita_new( 150, ml );
 	pg->rightmostItems = bv_new( gr_numProductions(gr), ml );
 	trace( traceFile, "Populating item table\n" );
 	for( i=0; i < gr_numProductions(gr); i++ )
@@ -293,7 +293,7 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 	ItemSet curItemSet, startItemSet;
 	int itemCount = gr_numItems( pg->gr );
 	ItemVector nextItems = bv_new( itemCount, ml );
-	pg->itemSets = itst_new( itemCount * itemCount, ml ); // guesstimate of number of item sets
+	pg->itemSets = itst_new( itemCount, ml ); // guesstimate of number of item sets.  In practice it seems to be very roughly equal to the number of items
 	startItemSet = curItemSet = pg_createItemSet( pg, pg_sideTableEntry( pg, gr_goal(pg->gr), traceFile )->leftmostItems );
 	Object startState = startItemSet->stateNode;
 	pg_closeItemVector( pg, curItemSet->items, traceFile );
@@ -770,7 +770,7 @@ struct au_struct
 FUNC Automaton au_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File conflictLog, File diagnostics )
 	{
 	trace( diagnostics, "Generating automaton\n" );
-	MemoryLifetime generateTime = ml_begin( 10000, ml );
+	MemoryLifetime generateTime = ml_begin( 100000, ml );
 	ParserGenerator pg = pg_new( gr, st, generateTime, ml, theObjectHeap() );
 	pg_populateItemTable( pg, diagnostics );
 	pg_populateSymbolSideTable( pg, diagnostics );

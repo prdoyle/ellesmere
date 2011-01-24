@@ -23,14 +23,17 @@ static MemoryHunk mh_new( int size, MemoryHunk prev, MemoryLifetime parent )
 	return result;
 	}
 
-typedef struct header_struct
+typedef struct header_struct *Header;
+
+struct header_struct
 	{
-	struct header_struct *prev;
-	struct header_struct *next;
+	Header prev;
+	Header next;
+	Header reallocatedFrom;
 	const char *file;
 	int line;
 	int size;
-	} *Header;
+	};
 
 struct ml_struct
 	{
@@ -58,6 +61,7 @@ FUNC void *ml_allocAnnotated(MemoryLifetime ml, int size, const char *file, int 
 	if( lastHeader )
 		lastHeader->next = result;
 	result->next = NULL;
+	result->reallocatedFrom = NULL;
 	lastHeader = result;
 	return result+1;
 	}
@@ -71,6 +75,9 @@ FUNC void *ml_allocZerosAnnotated(MemoryLifetime ml, int size, const char *file,
 
 FUNC void *ml_reallocAnnotated(MemoryLifetime ml, void *oldStorage, int oldSize, int newSize, const char *file, int line)
 	{
+	if( oldSize == newSize )
+		return oldStorage; // Pretend this never happened
+
 	Header oldHeader, newHeader, result;
 	oldHeader = ((Header)oldStorage) - 1;
 	// Make a "naked header" to record the original alloc info
@@ -90,6 +97,7 @@ FUNC void *ml_reallocAnnotated(MemoryLifetime ml, void *oldStorage, int oldSize,
 		lastHeader = result;
 	if( result->next )
 		result->next->prev = result;
+	result->reallocatedFrom = newHeader;
 	return result+1;
 	}
 
@@ -97,7 +105,16 @@ FUNC int ml_sendReportTo( File fl )
 	{
 	Header h; int charsSent = 0;
 	for( h = lastHeader; h; h = h->prev )
-		charsSent += fl_write( fl, "%d %s %d\n", h->size, h->file, h->line );
+		{
+		char *sep = "";
+		Header cur;
+		for( cur = h; cur; cur = cur->reallocatedFrom )
+			{
+			charsSent += fl_write( fl, "%s%d %s %d", sep, cur->size, cur->file, cur->line );
+			sep = " from ";
+			}
+		charsSent += fl_write( fl, "\n" );
+		}
 	return charsSent;
 	}
 
