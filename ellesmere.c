@@ -406,6 +406,15 @@ static void leAction( Production handle, GrammarLine gl )
 		pushToken( SYM_FALSE );
 	}
 
+static void setAction( Production handle, GrammarLine gl )
+	{
+	Object rhs = pop();
+	popToken();
+	Symbol name = popToken();
+	sy_setValue( name, rhs, curContext );
+	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
+	}
+
 static struct gl_struct grammar1[] =
 	{
 	{ { ":PROGRAM",         ":VOIDS", ":END_OF_INPUT"                 }, { nopAction } },
@@ -419,6 +428,8 @@ static struct gl_struct grammar1[] =
 
 	{ { ":VOID",            "return", ":INT"                          }, { returnAction } },
 	{ { ":VOID",            "return", ":VOID"                         }, { returnAction } },
+
+	{ { ":VOID",            ":TOKEN@name", ":=", ":INT@value"         }, { setAction } },
 
 	{ { ":PARAMETER_LIST"                                             }, { parseTreeAction } },
 	{ { ":PARAMETER_LIST",  ":TOKEN@tag",      ":PARAMETER_LIST@next" }, { parseTreeAction } },

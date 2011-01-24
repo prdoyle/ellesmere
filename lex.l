@@ -56,7 +56,7 @@ const char *lastWord()          { return _lastString; }
 DIGIT       [0-9]
 ALPHA       [A-Za-z_:]
 ALNUM       [0-9A-Za-z_]
-OPER        [~!@$%^&*-+=<>|,.?/]
+OPER        [~!@$%^&*-+=<>|,.?/:]
 ALONE       [(){}]|\[|\]|[;]
 WS          [ \t\r]
 

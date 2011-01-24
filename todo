@@ -2,7 +2,6 @@
   - Also possibly combine recording, executing, and discarding into a single loop
 - Things returning void should not require "return :VOID"
 - Get rid of colons and go to lowercase?
-- Implement variable setting
 - Implement tail call elimination
 - Variables + tail calls can implement for-loops
 - Implement objects
