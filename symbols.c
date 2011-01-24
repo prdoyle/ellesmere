@@ -17,19 +17,19 @@
 
 static struct sy_struct predefinedSymbols[] =
 	{
-	{ ":NULL_SYMBOL" },
-	{ ":INT" },
-	{ ":STRING" },
-	{ ":TOKEN" },
-	{ ":FUNCTION" },
-	{ ":TOKEN_BLOCK" },
-	{ ":TOKEN_STREAM" },
-	{ ":END_OF_INPUT" },
-	{ ":STATE_NODE" },
-	{ ":ITEM_SET_NUM" },
-	{ ":BOOLEAN" },
-	{ ":FALSE" },
-	{ ":TRUE" },
+	{ "NULL_SYMBOL" },
+	{ "INT" },
+	{ "STRING" },
+	{ "TOKEN" },
+	{ "FUNCTION" },
+	{ "TOKEN_BLOCK" },
+	{ "TOKEN_STREAM" },
+	{ "END_OF_INPUT" },
+	{ "STATE_NODE" },
+	{ "ITEM_SET_NUM" },
+	{ "BOOLEAN" },
+	{ "FALSE" },
+	{ "TRUE" },
 	};
 
 FUNC SymbolTable theSymbolTable()

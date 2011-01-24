@@ -348,7 +348,7 @@ static void addProductionAction( Production handle, GrammarLine gl )
 			sy_setValue( name, oh_symbolToken( heap, tag ), curContext );
 		}
 
-	// Stuff the production index into the :PRODUCTION object so caller can get it
+	// Stuff the production index into the PRODUCTION object so caller can get it
 	ob_setField( production,
 		sy_byName( "index", st ),
 		ob_fromInt( pn_index( pn, gr ), heap ), heap );
@@ -417,57 +417,57 @@ static void setAction( Production handle, GrammarLine gl )
 
 static struct gl_struct grammar1[] =
 	{
-	{ { ":PROGRAM",         ":VOIDS", ":END_OF_INPUT"                 }, { nopAction } },
-	{ { ":VOIDS",           ":VOID",                                  }, { nopAction } },
-	{ { ":VOIDS",           ":VOIDS", ":VOID"                         }, { nopAction } },
+	{ { "PROGRAM",         "VOIDS", "END_OF_INPUT"                 }, { nopAction } },
+	{ { "VOIDS",           "VOID",                                  }, { nopAction } },
+	{ { "VOIDS",           "VOIDS", "VOID"                         }, { nopAction } },
 
-	{ { ":STATEMENT_BLOCK", "{", ":VOIDS", "}"                        }, { nopAction } },
-	{ { ":STATEMENT_BLOCK", "{",           "}"                        }, { nopAction } },
+	{ { "STATEMENT_BLOCK", "{", "VOIDS", "}"                        }, { nopAction } },
+	{ { "STATEMENT_BLOCK", "{",           "}"                        }, { nopAction } },
 
-	{ { ":VOID",            "print", ":INT"                           }, { printAction } },
+	{ { "VOID",            "print", "INT"                           }, { printAction } },
 
-	{ { ":VOID",            "return", ":INT"                          }, { returnAction } },
-	{ { ":VOID",            "return", ":VOID"                         }, { returnAction } },
+	{ { "VOID",            "return", "INT"                          }, { returnAction } },
+	{ { "VOID",            "return", "VOID"                         }, { returnAction } },
 
-	{ { ":VOID",            ":TOKEN@name", ":=", ":INT@value"         }, { setAction } },
+	{ { "VOID",            "TOKEN@name", ":=", "INT@value"         }, { setAction } },
 
-	{ { ":PARAMETER_LIST"                                             }, { parseTreeAction } },
-	{ { ":PARAMETER_LIST",  ":TOKEN@tag",      ":PARAMETER_LIST@next" }, { parseTreeAction } },
-	{ { ":PARAMETER_LIST",  ":TOKEN@tag", "@", ":TOKEN@name", ":PARAMETER_LIST@next"  }, { parseTreeAction } },
-	{ { ":PRODUCTION",      ":TOKEN@result", ":PARAMETER_LIST@parms"  }, { addProductionAction } },
- 	{ { ":TOKEN_BLOCK",     ":TB_START", ":VOIDS", "}"                }, { stopRecordingTokenBlockAction } },
- 	{ { ":TOKEN_BLOCK",     ":TB_START",           "}"                }, { stopRecordingTokenBlockAction } },
- 	{ { ":TB_START",        "{",                                      }, { recordTokenBlockAction } },
-	{ { ":VOID",            "def", ":PRODUCTION", "as", ":TOKEN_BLOCK" }, { defAction } },
+	{ { "PARAMETER_LIST"                                             }, { parseTreeAction } },
+	{ { "PARAMETER_LIST",  "TOKEN@tag",      "PARAMETER_LIST@next" }, { parseTreeAction } },
+	{ { "PARAMETER_LIST",  "TOKEN@tag", "@", "TOKEN@name", "PARAMETER_LIST@next"  }, { parseTreeAction } },
+	{ { "PRODUCTION",      "TOKEN@result", "PARAMETER_LIST@parms"  }, { addProductionAction } },
+ 	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "}"                }, { stopRecordingTokenBlockAction } },
+ 	{ { "TOKEN_BLOCK",     "TB_START",           "}"                }, { stopRecordingTokenBlockAction } },
+ 	{ { "TB_START",        "{",                                      }, { recordTokenBlockAction } },
+	{ { "VOID",            "def", "PRODUCTION", "as", "TOKEN_BLOCK" }, { defAction } },
 
-	{ { ":FALSE",           ":INT"                                    }, { nonzeroAction } },
-	{ { ":FALSE",           ":INT", "<=", ":INT"                      }, { leAction } },
+	{ { "FALSE",           "INT"                                    }, { nonzeroAction } },
+	{ { "FALSE",           "INT", "<=", "INT"                      }, { leAction } },
 
 	{{NULL}},
 	};
 
 static struct gl_struct booleans1[] =
 	{
-	{ { ":TRUE",           ":INT"                                    }, { nonzeroAction } },
-	{ { ":TRUE",           ":INT", "<=", ":INT"                      }, { leAction } },
+	{ { "TRUE",           "INT"                                    }, { nonzeroAction } },
+	{ { "TRUE",           "INT", "<=", "INT"                      }, { leAction } },
 
 	{{NULL}},
 	};
 
 static struct gl_struct arithmetic1[] =
 	{
-	{ { ":INT",         ":INT", "+", ":INT" }, { addAction    }, CR_SHIFT_BEATS_REDUCE },
-	{ { ":INT",         ":INT", "-", ":INT" }, { subAction, 2 }, CR_SHIFT_BEATS_REDUCE },
-	{ { ":INT",                 "-", ":INT" }, { subAction, 1 }, CR_SHIFT_BEATS_REDUCE },
+	{ { "INT",         "INT", "+", "INT" }, { addAction    }, CR_SHIFT_BEATS_REDUCE },
+	{ { "INT",         "INT", "-", "INT" }, { subAction, 2 }, CR_SHIFT_BEATS_REDUCE },
+	{ { "INT",                 "-", "INT" }, { subAction, 1 }, CR_SHIFT_BEATS_REDUCE },
 
 	{{NULL}},
 	};
 
 static struct gl_struct arithmetic2[] =
 	{
-	{ { ":INT",         ":INT", "*", ":INT" }, { mulAction }, CR_SHIFT_BEATS_REDUCE },
-	{ { ":INT",         ":INT", "/", ":INT" }, { divAction }, CR_SHIFT_BEATS_REDUCE },
-	{ { ":INT",         "(", ":INT", ")" },    { passThrough, 1 } },
+	{ { "INT",         "INT", "*", "INT" }, { mulAction }, CR_SHIFT_BEATS_REDUCE },
+	{ { "INT",         "INT", "/", "INT" }, { divAction }, CR_SHIFT_BEATS_REDUCE },
+	{ { "INT",         "(", "INT", ")" },    { passThrough, 1 } },
 	{{NULL}},
 	};
 

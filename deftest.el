@@ -1,5 +1,5 @@
-def :INT
-	double :INT@n
+def INT
+	double INT@n
 as
 	{ return n+n }
 
