@@ -163,11 +163,11 @@ static Symbol popToken()
 
 static void closeTokenStreamsAsNecessary()
 	{
-	while( !ts_current( tokenStream ) && ts_caller( tokenStream ) )
+	while( !ts_current( tokenStream ) && ts_curBlock( tokenStream ) )
 		{
-		tokenStream = ts_close( tokenStream );
+		TokenBlock tb = ts_pop( tokenStream );
 		cx_restore( curContext );
-		trace( diagnostics, "  Returned to TokenStream %p\n", tokenStream );
+		trace( diagnostics, "  Returned to TokenBlock %p\n", tb );
 		}
 	}
 
@@ -378,11 +378,11 @@ static void returnAction( Production handle, GrammarLine gl )
 	{
 	Object result = pop();
 	popToken();
-	tokenStream = ts_close( tokenStream );
+	TokenBlock tb = ts_pop( tokenStream );
 	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
 	cx_restore( curContext );
 	cf_pop();
-	trace( diagnostics, "  Returned to TokenStream %p\n", tokenStream );
+	trace( diagnostics, "  Returned to TokenBlock %p\n", tb );
 	push( result );
 	}
 
@@ -653,9 +653,9 @@ int main( int argc, char **argv )
 				int i;
 				for( i = pn_length( handle, gr ) - 1; i >= 0; i-- )
 					sy_setValue( pn_token( handle, i, gr ), pop(), curContext );
-				tokenStream = ts_fromBlock( functionToCall->body, heap, tokenStream );
+				ts_push( tokenStream, functionToCall->body );
 				cf_push();
-				trace( diagnostics, "    Calling body for production %d token stream %p\n", pn_index( handle, gr ), tokenStream );
+				trace( diagnostics, "    Calling body %p for production %d\n", tokenStream, pn_index( handle, gr ) );
 				handle = NULL;
 				}
 			else

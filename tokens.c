@@ -10,35 +10,21 @@ typedef enum
 	BLOCK,
 	} StreamKind;
 
-struct ts_struct
+typedef struct di_struct *Digression;
+struct di_struct
 	{
-	StreamKind  kind;
-	ObjectHeap  heap;
-	TokenStream caller;
-	union
-		{
-		struct
-			{
-			SymbolTable st;
-			Object current;
-			Object next;
-			} lex;
-		struct
-			{
-			TokenBlock tb;
-			int index;
-			} block;
-		} data;
+	TokenBlock tb;
+	int index;
 	};
 
-typedef struct tss_struct *TokenStreamStack;
-#define AR_PREFIX  tss
-#define AR_TYPE    TokenStreamStack
-#define AR_ELEMENT TokenStream
-#define AR_BYVALUE
+typedef struct dis_struct *DigressionStack;
+#define AR_PREFIX  dis
+#define AR_TYPE    DigressionStack
+#define AR_ELEMENT struct di_struct
+#undef AR_BYVALUE
 #include "array_template.h"
 #ifndef NDEBUG
-	#define tss_new( size, ml ) tss_newAnnotated( size, ml, __FILE__, __LINE__ )
+	#define dis_new( size, ml ) dis_newAnnotated( size, ml, __FILE__, __LINE__ )
 #endif
 
 typedef struct oba_struct *ObjectArray;
@@ -49,6 +35,28 @@ typedef struct oba_struct *ObjectArray;
 #include "array_template.h"
 #ifndef NDEBUG
 	#define oba_new( size, ml ) oba_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
+
+struct ts_struct
+	{
+	ObjectHeap      heap;
+	SymbolTable     st;
+	DigressionStack digressions;
+	struct
+		{
+		Object current;
+		Object next;
+		} lex;
+	};
+
+typedef struct tss_struct *TokenStreamStack;
+#define AR_PREFIX  tss
+#define AR_TYPE    TokenStreamStack
+#define AR_ELEMENT TokenStream
+#define AR_BYVALUE
+#include "array_template.h"
+#ifndef NDEBUG
+	#define tss_new( size, ml ) tss_newAnnotated( size, ml, __FILE__, __LINE__ )
 #endif
 
 struct tb_struct
@@ -73,9 +81,19 @@ static Object getLexToken( TokenStream ts )
 		case STRING:
 			return ob_fromString( lastString(), ts->heap );
 		case WORD:
-			return oh_symbolToken( ts->heap, sy_byName( lastWord(), ts->data.lex.st ) );
+			return oh_symbolToken( ts->heap, sy_byName( lastWord(), ts->st ) );
 		}
 	return NULL;
+	}
+
+static Object di_token( Digression di, int offset )
+	{
+	int index = di->index + offset;
+	int stopIndex = oba_count( di->tb->tokens );
+	if( index < stopIndex )
+		return oba_get( di->tb->tokens, index );
+	else
+		return NULL;
 	}
 
 FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st )
@@ -84,87 +102,61 @@ FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st )
 	if( !result )
 		{
 		result = (TokenStream)ml_alloc( ml_singleton(), sizeof(*result) );
-		result->kind   = LEX;
-		result->heap   = heap;
-		result->caller = NULL;
-		result->data.lex.st      = st;
-		result->data.lex.current = getLexToken( result );
-		result->data.lex.next    = getLexToken( result );
+		result->heap = heap;
+		result->st   = st;
+		result->digressions = dis_new( 20, ml_singleton() );
+		result->lex.current = getLexToken( result );
+		result->lex.next    = getLexToken( result );
 		}
 	return result;
 	}
 
-FUNC TokenStream ts_fromBlock( TokenBlock block, ObjectHeap heap, TokenStream caller )
+static Digression ts_digression( TokenStream ts )
 	{
-	TokenStream result;
-	if( tss_count( block->streams ) >= 1 )
-		{
-		result = tss_getLast( block->streams, 0 );
-		tss_incCountBy( block->streams, -1 );
-		}
-	else
-		result = (TokenStream)ml_alloc( ml_undecided(), sizeof(*result) );
-	result->kind   = BLOCK;
-	result->heap   = heap;
-	result->caller = caller;
-	result->data.block.tb    = block;
-	result->data.block.index = 0;
-	return result;
-	}
-
-static Object blockToken( TokenStream ts, int index )
-	{
-	int stopIndex = oba_count( ts->data.block.tb->tokens );
-	if( index < stopIndex )
-		return oba_get( ts->data.block.tb->tokens, index );
+	if( dis_count( ts->digressions ) >= 1 )
+		return dis_last( ts->digressions, 0 );
 	else
 		return NULL;
 	}
 
 FUNC Object ts_current( TokenStream ts )
 	{
-	switch( ts->kind )
-		{
-		case LEX:
-			return ts->data.lex.current;
-		case BLOCK:
-			return blockToken( ts, ts->data.block.index );
-		}
-	assert(0);
-	return NULL;
+	Digression di = ts_digression( ts );
+	if( di )
+		return di_token( di, 0 );
+	else
+		return ts->lex.current;
 	}
 
 FUNC Object ts_next( TokenStream ts )
 	{
-	switch( ts->kind )
-		{
-		case LEX:
-			return ts->data.lex.next;
-		case BLOCK:
-			return blockToken( ts, ts->data.block.index + 1);
-		}
-	assert(0);
-	return NULL;
+	Digression di = ts_digression( ts );
+	if( di )
+		return di_token( di, 1 );
+	else
+		return ts->lex.next;
 	}
 
 FUNC void ts_advance( TokenStream ts )
 	{
-	switch( ts->kind )
+	Digression di = ts_digression( ts );
+	if( di )
 		{
-		case LEX:
-			ts->data.lex.current = ts->data.lex.next;
-			ts->data.lex.next    = getLexToken( ts );
-			break;
-		case BLOCK:
-			if( ts->data.block.index < oba_count( ts->data.block.tb->tokens ) )
-				ts->data.block.index += 1;
-			break;
+		if( di->index < oba_count( di->tb->tokens ) )
+			di->index += 1;
+		}
+	else
+		{
+		ts->lex.current = ts->lex.next;
+		ts->lex.next    = getLexToken( ts );
 		}
 	}
 
-FUNC TokenStream ts_caller( TokenStream ts )
+FUNC void ts_push( TokenStream ts, TokenBlock tb )
 	{
-	return ts->caller;
+	Digression di = dis_nextElement( ts->digressions );
+	di->tb = tb;
+	di->index = 0;
 	}
 
 FUNC ObjectHeap ts_heap( TokenStream ts )
@@ -172,11 +164,23 @@ FUNC ObjectHeap ts_heap( TokenStream ts )
 	return ts->heap;
 	}
 
-FUNC TokenStream ts_close( TokenStream ts )
+FUNC TokenBlock ts_curBlock( TokenStream ts )
 	{
-	if( ts->kind == BLOCK )
-		tss_append( ts->data.block.tb->streams, ts );
-	return ts->caller;
+	Digression di = ts_digression( ts );
+	if( di )
+		return di->tb;
+	else
+		return NULL;
+	}
+
+FUNC TokenBlock ts_pop( TokenStream ts )
+	{
+	Digression di = ts_digression( ts );
+	assert( di );
+	TokenBlock result = di->tb;
+	tss_append( di->tb->streams, ts );
+	dis_incCountBy( ts->digressions, -1 );
+	return result;
 	}
 
 enum { DEFAULT_TOKEN_BLOCK_LENGTH=29 };
@@ -202,19 +206,19 @@ FUNC void tb_stopAppending( TokenBlock tb )
 FUNC int ts_sendTo( TokenStream ts, File fl )
 	{
 	int charsSent = fl_write( fl, "TokenStream_%p: ", ts );
-	charsSent += ob_sendTo( ts_current( ts ), fl, ts->heap );
-	charsSent += fl_write( fl, " (" );
-	charsSent += ob_sendTo( ts_next( ts ), fl, ts->heap );
-	charsSent += fl_write( fl, ") " );
-	switch( ts->kind )
+	int i;
+	for( i = dis_count( ts->digressions )-1; i >= 0; i-- )
 		{
-		case LEX:
-			charsSent += fl_write( fl, "LEX" );
-			break;
-		case BLOCK:
-			charsSent += tb_sendTo( ts->data.block.tb, fl, ts->heap );
-			break;
+		Digression di = dis_element( ts->digressions, i );
+		charsSent += ob_sendTo( di_token( di, 0 ), fl, ts->heap );
+		charsSent += fl_write( fl, " (" );
+		charsSent += ob_sendTo( di_token( di, 1 ), fl, ts->heap );
+		charsSent += fl_write( fl, ") " );
 		}
+	charsSent += ob_sendTo( ts->lex.current, fl, ts->heap );
+	charsSent += fl_write( fl, " (" );
+	charsSent += ob_sendTo( ts->lex.next,    fl, ts->heap );
+	charsSent += fl_write( fl, ") " );
 	return charsSent;
 	}
 
