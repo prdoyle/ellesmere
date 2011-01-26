@@ -7,8 +7,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define ITEM_SET_NUMS
-
 typedef BitVector ItemVector;   // BitVectors of item indexes
 typedef BitVector SymbolVector; // BitVectors of symbol side-table indexes
 
@@ -170,6 +168,19 @@ static ItemSet pg_findItemSet( ParserGenerator pg, ItemVector items )
 	return NULL;
 	}
 
+static int its_maxDot( ItemSet its, ParserGenerator pg )
+	{
+	int result = 0;
+	int i;
+	for( i = bv_firstBit( its->items ); i != bv_END; i = bv_nextBit( its->items, i ) )
+		{
+		Item it = ita_element( pg->items, i );
+		if( it->dot > result )
+			result = it->dot;
+		}
+	return result;
+	}
+
 static ItemSet pg_createItemSet( ParserGenerator pg, ItemVector items )
 	{
 	ItemSet result = itst_nextElement( pg->itemSets );
@@ -180,6 +191,13 @@ static ItemSet pg_createItemSet( ParserGenerator pg, ItemVector items )
 		result->stateNode,
 		sy_byIndex( SYM_ITEM_SET_NUM, pg->st ),
 		ob_fromInt( its_index( result, pg ), pg->heap ),
+		pg->heap );
+#endif
+#ifdef REDUCE_CONTEXT_LENGTH
+	ob_setField(
+		result->stateNode,
+		sy_byIndex( SYM_REDUCE_CONTEXT_LENGTH, pg->st ),
+		ob_fromInt( its_maxDot( result, pg ), pg->heap ),
 		pg->heap );
 #endif
 	result->edgePriorities = NULL;
@@ -767,10 +785,90 @@ struct au_struct
 	ParserArray parsers;
 	};
 
+enum
+	{
+	Shift,
+	Reduce,
+	Accept,
+
+	FirstConflict,
+	ShiftReduceConflict = FirstConflict,
+	ReduceReduceConflict,
+	} LR0StateKinds;
+
+static char *LR0StateKindNames[] =
+	{
+	"Shift",
+	"Reduce",
+	"Accept",
+	"Shift/Reduce conflict",
+	"Reduce/Reduce conflict",
+	};
+
+static int its_LR0StateKind( ItemSet its, ParserGenerator pg )
+	{
+	int numShifts, numReduces; ItemVector items;
+
+	items = bv_new( ita_count( pg->items ), pg->generateTime );
+	bv_copy  ( items, its->items );
+	bv_minus ( items, pg->rightmostItems );
+	numShifts = bv_population( items );
+
+	items = bv_new( ita_count( pg->items ), pg->generateTime );
+	bv_copy  ( items, its->items );
+	bv_and   ( items, pg->rightmostItems );
+	numReduces = bv_population( items );
+
+	switch( numReduces )
+		{
+		case 0:
+			return Shift;
+		case 1:
+			if( numShifts == 0 )
+				{
+				Item it = ita_element( pg->items, bv_firstBit( items ) );
+				if( pn_lhs( it->pn, pg->gr ) == gr_goal( pg->gr ) )
+					return Accept;
+				else
+					return Reduce;
+				}
+			else
+				return ShiftReduceConflict;
+		default:
+			return ReduceReduceConflict;
+		}
+	}
+
+static int pg_sendDotTo( ParserGenerator pg, File dotFile )
+	{
+	int charsSent = fl_write( dotFile, "digraph \"G\" { overlap=false \n" );
+	int i,j;
+	for( i=0; i < itst_count( pg->itemSets ); i++ )
+		{
+		ItemSet its = itst_element( pg->itemSets, i );
+		charsSent += fl_write( dotFile, "n%p [label=\"%d %s\\n", its->stateNode, i, LR0StateKindNames[ its_LR0StateKind( its, pg ) ] );
+#ifdef REDUCE_CONTEXT_LENGTH
+		charsSent += fl_write( dotFile, "(reduce context: %d)\\n", ob_toInt( ob_getField( its->stateNode, sy_byIndex( SYM_REDUCE_CONTEXT_LENGTH, pg->st ), pg->heap ), pg->heap ) );
+#endif
+		for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
+			{
+			Item it = ita_element( pg->items, j );
+			charsSent += pn_sendItemTo( it->pn, it->dot, dotFile, pg->gr, pg->st );
+			charsSent += fl_write( dotFile, "\\n" );
+			}
+		charsSent += fl_write( dotFile, "\"]\n" );
+		}
+	Object startNode = itst_element( pg->itemSets, 0 )->stateNode;
+	charsSent += ob_sendDotEdgesTo( startNode, dotFile, pg->heap );
+	charsSent += fl_write( dotFile, "}\n" );
+	return charsSent;
+	}
+
 FUNC Automaton au_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File conflictLog, File diagnostics )
 	{
 	trace( diagnostics, "Generating automaton\n" );
 	MemoryLifetime generateTime = ml_begin( 100000, ml );
+
 	ParserGenerator pg = pg_new( gr, st, generateTime, ml, theObjectHeap() );
 	pg_populateItemTable( pg, diagnostics );
 	pg_populateSymbolSideTable( pg, diagnostics );
@@ -779,7 +877,6 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File confl
 	pg_computeFollowSets( pg, diagnostics );
 	pg_computeSLRLookaheads( pg, diagnostics );
 	pg_computeReduceActions( pg, conflictLog, diagnostics );
-	ml_end( generateTime );
 
 	Automaton result = (Automaton)ml_alloc( ml, sizeof(*result) );
 	result->gr = gr;
@@ -789,9 +886,13 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File confl
 	if (diagnostics)
 		{
 		trace( diagnostics, "Finished generating automaton %p:\n", result );
-		au_sendTo( result, diagnostics, theObjectHeap(), st );
+		//au_sendTo( result, diagnostics, theObjectHeap(), st );
+		pg_sendDotTo( pg, diagnostics );
 		trace( diagnostics, "\n" );
 		}
+
+	ml_end( generateTime );
+
 	return result;
 	}
 
@@ -918,61 +1019,14 @@ FUNC int ps_sendTo( Parser ps, File fl, ObjectHeap heap, SymbolTable st )
 	return charsSent;
 	}
 
-#ifdef PARSER_T
-
-enum
+#ifdef REDUCE_CONTEXT_LENGTH
+FUNC int ps_reduceContextLength( Parser ps, ObjectHeap heap, SymbolTable st )
 	{
-	Shift,
-	Reduce,
-	Accept,
-
-	FirstConflict,
-	ShiftReduceConflict = FirstConflict,
-	ReduceReduceConflict,
-	} LR0StateKinds;
-
-static char *LR0StateKindNames[] =
-	{
-	"Shift",
-	"Reduce",
-	"Accept",
-	"Shift/Reduce conflict",
-	"Reduce/Reduce conflict",
-	};
-
-static int its_LR0StateKind( ItemSet its, ParserGenerator pg )
-	{
-	int numShifts, numReduces; ItemVector items;
-
-	items = bv_new( ita_count( pg->items ), pg->generateTime );
-	bv_copy  ( items, its->items );
-	bv_minus ( items, pg->rightmostItems );
-	numShifts = bv_population( items );
-
-	items = bv_new( ita_count( pg->items ), pg->generateTime );
-	bv_copy  ( items, its->items );
-	bv_and   ( items, pg->rightmostItems );
-	numReduces = bv_population( items );
-
-	switch( numReduces )
-		{
-		case 0:
-			return Shift;
-		case 1:
-			if( numShifts == 0 )
-				{
-				Item it = ita_element( pg->items, bv_firstBit( items ) );
-				if( pn_lhs( it->pn, pg->gr ) == gr_goal( pg->gr ) )
-					return Accept;
-				else
-					return Reduce;
-				}
-			else
-				return ShiftReduceConflict;
-		default:
-			return ReduceReduceConflict;
-		}
+	return ob_toInt( ob_getField( sk_top( ps->stateStack ), sy_byIndex( SYM_REDUCE_CONTEXT_LENGTH, st ), heap ), heap );
 	}
+#endif
+
+#ifdef PARSER_T
 
 typedef char *GrammarLine[10];
 
@@ -1256,21 +1310,7 @@ int main( int argc, char *argv[] )
 	pg_computeReduceActions( pg, traceFile, traceFile );
 	ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
 
-	fl_write( dotFile, "digraph \"G\" { overlap=false \n" );
-	for( i=0; i < itst_count( pg->itemSets ); i++ )
-		{
-		ItemSet its = itst_element( pg->itemSets, i );
-		fl_write( dotFile, "n%p [label=\"%d %s\\n", its->stateNode, i, LR0StateKindNames[ its_LR0StateKind( its, pg ) ] );
-		for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
-			{
-			Item it = ita_element( pg->items, j );
-			pn_sendItemTo( it->pn, it->dot, dotFile, pg->gr, pg->st );
-			fl_write( dotFile, "\\n" );
-			}
-		fl_write( dotFile, "\"]\n" );
-		}
-	ob_sendDotEdgesTo( itst_element( pg->itemSets, 0 )->stateNode, dotFile, pg->heap );
-	fl_write( dotFile, "}\n" );
+	pg_sendDotTo( pg, dotFile );
 
 #if 0
 	fl_write( traceFile, "Parsing...\n" );

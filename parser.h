@@ -5,6 +5,9 @@
 #include "grammar.h"
 #include "file.h"
 
+#define ITEM_SET_NUMS
+#define REDUCE_CONTEXT_LENGTH // max tokens that could be involved in a reduce from the given state
+
 FUNC Automaton  au_new ( Grammar gr, SymbolTable st, MemoryLifetime ml, File conflictLog, File diagnostics );
 FUNC Grammar    au_grammar ( Automaton au );
 
@@ -20,6 +23,12 @@ FUNC void       ps_close   ( Parser ps ); // Can't use ps anymore after this
 
 FUNC int        au_sendTo  ( Automaton au, File fl, ObjectHeap heap, SymbolTable st );
 FUNC int        ps_sendTo  ( Parser ps,    File fl, ObjectHeap heap, SymbolTable st );
+
+#ifdef REDUCE_CONTEXT_LENGTH
+FUNC          int ps_reduceContextLength( Parser ps, ObjectHeap heap, SymbolTable st );
+#else
+static inline int ps_reduceContextLength( Parser ps, SymbolTable st ) { return 0; }
+#endif
 
 static inline Grammar ps_grammar( Parser ps )
 	{ return au_grammar( ps_automaton( ps ) ); }

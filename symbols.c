@@ -27,6 +27,7 @@ static struct sy_struct predefinedSymbols[] =
 	{ "END_OF_INPUT" },
 	{ "STATE_NODE" },
 	{ "ITEM_SET_NUM" },
+	{ "REDUCE_CONTEXT_LENGTH" },
 	{ "BOOLEAN" },
 	{ "FALSE" },
 	{ "TRUE" },

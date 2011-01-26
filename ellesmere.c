@@ -15,6 +15,7 @@ static Context     curContext;
 static ObjectHeap  heap;
 static Parser      ps;
 FILE *diagnostics;
+FILE *details;
 FILE *conflictLog;
 FILE *parserGenTrace;
 
@@ -47,7 +48,7 @@ static void cf_push()
 	callStackDepth += 1;
 	if( callStackDepth >= cs_count(callStack) )
 		{
-		trace( diagnostics, "Growing call stack to depth=%d\n", callStackDepth );
+		trace( details, "Growing call stack to depth=%d\n", callStackDepth );
 		cf = cs_nextElement( callStack );
 		cf->stack = sk_new( ml_indefinite() );
 		}
@@ -56,7 +57,7 @@ static void cf_push()
 		cf = cs_element( callStack, callStackDepth );
 		sk_popN( cf->stack, sk_depth( cf->stack ) );
 		}
-	ps = cf->ps = ps_new( ps_automaton(ps), ml_indefinite(), diagnostics );
+	ps = cf->ps = ps_new( ps_automaton(ps), ml_indefinite(), parserGenTrace );
 	stack = cf->stack;
 	}
 
@@ -87,46 +88,44 @@ typedef struct fna_struct *FunctionArray;
 
 static FunctionArray productionBodies;
 
-static void dumpStack()
+static void dumpStack( File fl )
 	{
-	if( !diagnostics )
+	if( !fl )
 		return;
 
-	trace( diagnostics, "    -- Stack: " );
-	sk_sendTo( stack, diagnostics, heap );
+	trace( fl, "    -- Stack: " );
+	sk_sendTo( stack, fl, heap );
 	int i;
 	for( i = callStackDepth-1; i >= 0; i-- )
 		{
 		CallFrame cf = cs_element( callStack, i );
-		trace( diagnostics, "\n%*s", 14, "" );
-		sk_sendTo( cf->stack, diagnostics, heap );
+		trace( fl, "\n%*s", 14, "" );
+		sk_sendNTo( cf->stack, ps_reduceContextLength( cf->ps, heap, st ), fl, heap );
 		}
-	trace( diagnostics, "\n" );
+	trace( fl, "\n" );
 	}
 
-static void dumpParserState()
+static void dumpParserState( File fl )
 	{
-	if( !diagnostics )
+	if( !fl )
 		return;
 
-	trace( diagnostics, "    -- Parser state: " );
-	ps_sendTo( ps, diagnostics, heap, st );
+	trace( fl, "    -- Parser state: " );
+	ps_sendTo( ps, fl, heap, st );
 	int i;
 	for( i = callStackDepth-1; i >= 0; i-- )
 		{
 		CallFrame cf = cs_element( callStack, i );
-		trace( diagnostics, "\n%*s", 21, "" );
-		ps_sendTo( cf->ps, diagnostics, heap, st );
+		trace( fl, "\n%*s", 21, "" );
+		ps_sendTo( cf->ps, fl, heap, st );
 		}
-	trace( diagnostics, "\n" );
+	trace( fl, "\n" );
 	}
 
 static void push( Object ob )
 	{
 	sk_push( stack, ob );
-	dumpStack();
 	ps_push( ps, ob );
-	dumpParserState();
 	}
 
 static Object pop()
@@ -329,14 +328,14 @@ static void addProductionAction( Production handle, GrammarLine gl )
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
 	ps_close( ps );
-	ps = ps_new( au_new( gr, st, ml_indefinite(), conflictLog, parserGenTrace ), ml_indefinite(), diagnostics );
+	ps = ps_new( au_new( gr, st, ml_indefinite(), conflictLog, parserGenTrace ), ml_indefinite(), parserGenTrace );
 	trace( diagnostics, "    NEW PARSER\n" );
 
 	// Prime the parser state with the current stack contents
 	int i;
 	for( i = sk_depth(stack) - 1; i >= 0; i-- )
 		ps_push( ps, sk_item( stack, i ) );
-	dumpParserState();
+	dumpParserState( diagnostics );
 
 	// Build a context with a symbol for each named parameter
 	cx_save( curContext );
@@ -457,22 +456,28 @@ static struct gl_struct booleans1[] =
 
 static struct gl_struct arithmetic1[] =
 	{
-	{ { "INT",         "INT", "+", "INT" }, { addAction    }, CR_SHIFT_BEATS_REDUCE },
-	{ { "INT",         "INT", "-", "INT" }, { subAction, 2 }, CR_SHIFT_BEATS_REDUCE },
-	{ { "INT",                 "-", "INT" }, { subAction, 1 }, CR_SHIFT_BEATS_REDUCE },
+	{ { "INT",            "-", "INT" }, { subAction, 1 } },
 
 	{{NULL}},
 	};
 
 static struct gl_struct arithmetic2[] =
 	{
-	{ { "INT",         "INT", "*", "INT" }, { mulAction }, CR_SHIFT_BEATS_REDUCE },
-	{ { "INT",         "INT", "/", "INT" }, { divAction }, CR_SHIFT_BEATS_REDUCE },
-	{ { "INT",         "(", "INT", ")" },    { passThrough, 1 } },
+	{ { "INT",         "INT", "+", "INT" }, { addAction    }, CR_REDUCE_BEATS_SHIFT },
+	{ { "INT",         "INT", "-", "INT" }, { subAction, 2 }, CR_REDUCE_BEATS_SHIFT },
+
 	{{NULL}},
 	};
 
-static GrammarLine initialGrammarNest[] = { grammar1, booleans1, arithmetic1, arithmetic2 };
+static struct gl_struct arithmetic3[] =
+	{
+	{ { "INT",         "INT", "*", "INT" }, { mulAction }, CR_REDUCE_BEATS_SHIFT },
+	{ { "INT",         "INT", "/", "INT" }, { divAction }, CR_REDUCE_BEATS_SHIFT },
+	{ { "INT",         "(", "INT", ")"   }, { passThrough, 1 } },
+	{{NULL}},
+	};
+
+static GrammarLine initialGrammarNest[] = { grammar1, booleans1, arithmetic1, arithmetic2, arithmetic3 };
 
 static Grammar populateGrammar( SymbolTable st )
 	{
@@ -547,13 +552,13 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 		Object nextOb = cx_filter( curContext, ts_next( tokenStream )   , heap );
 		if( !nextOb )
 			nextOb = endOfInput;
-		if( diagnostics )
+		if( details )
 			{
-			trace( diagnostics, "token from %p is ", tokenStream );
-			ob_sendTo( ob, diagnostics, heap );
-			trace( diagnostics, "\n  next is ");
-			ob_sendTo( nextOb, diagnostics, heap );
-			trace( diagnostics, "\n");
+			trace( details, "token from %p is ", tokenStream );
+			ob_sendTo( ob, details, heap );
+			trace( details, "\n  next is ");
+			ob_sendTo( nextOb, details, heap );
+			trace( details, "\n");
 			}
 		push( ob );
 		ts_advance( tokenStream );
@@ -562,6 +567,8 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 			{
 			if( diagnostics )
 				{
+				dumpStack( diagnostics );
+				dumpParserState( diagnostics );
 				trace( diagnostics, "    Recording handle production %d: ", pn_index( handle, gr ) );
 				pn_sendTo( handle, diagnostics, gr, st );
 				trace( diagnostics, "\n" );
@@ -585,26 +592,27 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 			handle = ps_handle( ps, nextOb );
 			}
 		tb_append( tb, ob ); // If we get to here, we didn't hit stopRecordingTokenBlockAction
-		trace( diagnostics, "    Recorded token " );
-		ob_sendTo( ob, diagnostics, heap );
-		trace( diagnostics, "\n");
+		trace( details, "    Recorded token " );
+		ob_sendTo( ob, details, heap );
+		trace( details, "\n");
 		}
 	done:
 	tb_stopAppending( tb );
 	popN( pn_length( handle, gr ) );
 	push( ob_fromTokenBlock( tb, heap ) );
-	if( diagnostics )
+	if( details )
 		{
-		trace( diagnostics, "    Stack after recording: " );
-		sk_sendTo( stack, diagnostics, heap );
-		trace( diagnostics, "\n" );
+		trace( details, "    Stack after recording: " );
+		sk_sendTo( stack, details, heap );
+		trace( details, "\n" );
 		}
 	}
 
 int main( int argc, char **argv )
 	{
 	conflictLog = stderr;
-	diagnostics = fdopen( 3, "wt" );    trace( diagnostics,    "# Ellesmere diagnostics\n" );
+	diagnostics    = fdopen( 3, "wt" ); trace( diagnostics,    "# Ellesmere diagnostics\n" );
+	details        = fdopen( 4, "wt" ); trace( details,        "# Ellesmere details\n" );
 	parserGenTrace = fdopen( 5, "wt" ); trace( parserGenTrace, "# Ellesmere parserGenTrace\n" );
 	st = theSymbolTable();
 	heap = theObjectHeap();
@@ -614,7 +622,7 @@ int main( int argc, char **argv )
 	Grammar initialGrammar = populateGrammar( st );
 	productionBodies = fna_new( 20 + gr_numProductions( initialGrammar ), ml_indefinite() );
 	fna_setCount( productionBodies, gr_numProductions( initialGrammar ) );
-	ps = ps_new( au_new( initialGrammar, st, ml_indefinite(), conflictLog, parserGenTrace ), ml_indefinite(), diagnostics );
+	ps = ps_new( au_new( initialGrammar, st, ml_indefinite(), conflictLog, parserGenTrace ), ml_indefinite(), parserGenTrace );
 	stack = sk_new( ml_indefinite() );
 	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
 	tokenStream = theLexTokenStream( heap, st );
@@ -624,13 +632,13 @@ int main( int argc, char **argv )
 		Object nextOb = cx_filter( curContext, ts_next( tokenStream )   , heap );
 		if( !nextOb )
 			nextOb = endOfInput;
-		if( diagnostics )
+		if( details )
 			{
-			trace( diagnostics, "token from %p is ", tokenStream );
-			ob_sendTo( ob, diagnostics, heap );
-			trace( diagnostics, "\n  next is ");
-			ob_sendTo( nextOb, diagnostics, heap );
-			trace( diagnostics, "\n");
+			trace( details, "token from %p is ", tokenStream );
+			ob_sendTo( ob, details, heap );
+			trace( details, "\n  next is ");
+			ob_sendTo( nextOb, details, heap );
+			trace( details, "\n");
 			}
 		push( ob );
 		Production handle = ps_handle( ps, nextOb );
@@ -640,6 +648,8 @@ int main( int argc, char **argv )
 			Grammar gr = ps_grammar( ps ); // Grammar can change as the program proceeds
 			if( diagnostics )
 				{
+				dumpStack( diagnostics );
+				dumpParserState( diagnostics );
 				trace( diagnostics, "    # Found handle production %d in grammar %p: ", pn_index( handle, gr ), gr );
 				pn_sendTo( handle, diagnostics, gr, st );
 				trace( diagnostics, "\n" );
@@ -666,11 +676,11 @@ int main( int argc, char **argv )
 				Object nextOb = cx_filter( curContext, ts_current( tokenStream ), heap );
 				if( !nextOb )
 					nextOb = endOfInput;
-				if( diagnostics )
+				if( details )
 					{
-					trace( diagnostics, "  next is now ");
-					ob_sendTo( nextOb, diagnostics, heap );
-					trace( diagnostics, "\n");
+					trace( details, "  next is now ");
+					ob_sendTo( nextOb, details, heap );
+					trace( details, "\n");
 					}
 				handle = ps_handle( ps, nextOb );
 				}

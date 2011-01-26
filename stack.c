@@ -40,7 +40,7 @@ FUNC void sk_popN( Stack sk, int count )
 	ska_incCountBy( sk, -count );
 	}
 
-FUNC int sk_sendTo( Stack sk, File fl, ObjectHeap heap )
+FUNC int sk_sendNTo( Stack sk, int numElements, File fl, ObjectHeap heap )
 	{
 	if( !fl )
 		return 0;
@@ -48,8 +48,8 @@ FUNC int sk_sendTo( Stack sk, File fl, ObjectHeap heap )
 		{
 		int i;
 		int charsSent = fl_write( fl, "_Stack_%p{ ", sk );
-		char *sep = "";
-		for( i = sk_depth(sk) - 1; i >= 0; i-- )
+		char *sep = numElements < sk_depth(sk)? "... " : "";
+		for( i = numElements - 1; i >= 0; i-- )
 			{
 			charsSent += fl_write( fl, "%s", sep );
 			sep = ", ";
