@@ -48,7 +48,12 @@ FUNC int sk_sendNTo( Stack sk, int numElements, File fl, ObjectHeap heap )
 		{
 		int i;
 		int charsSent = fl_write( fl, "_Stack_%p{ ", sk );
-		char *sep = numElements < sk_depth(sk)? "... " : "";
+		char *sep = "..., ";
+		if( numElements >= sk_depth(sk) )
+			{
+			sep = "";
+			numElements = sk_depth(sk);
+			}
 		for( i = numElements - 1; i >= 0; i-- )
 			{
 			charsSent += fl_write( fl, "%s", sep );

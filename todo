@@ -20,6 +20,9 @@
   - System calls in general?  Native methods?
 - Expose associativity in the language
 - Can we get rid of the curly braces?
+- Two reduces with the same action (and possibly same RHS?) should not conflict.
+    Not sure how to do that because Grammar doesn't know the actions.
+- Figure out what I'm doing with if statements in the brave new world where "return" is unnecessary
 
 
 Ideas

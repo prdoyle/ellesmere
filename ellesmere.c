@@ -39,8 +39,11 @@ typedef struct cs_struct *CallStack;
 static CallStack callStack;
 static int callStackDepth = 0;
 
+#undef CALL_STACK
+
 static void cf_push()
 	{
+#ifdef CALL_STACK
 	assert( cs_count( callStack ) >= 1 );
 	CallFrame cf = cs_element( callStack, callStackDepth );
 	cf->ps = ps;
@@ -59,15 +62,18 @@ static void cf_push()
 		}
 	ps = cf->ps = ps_new( ps_automaton(ps), ml_indefinite(), parserGenTrace );
 	stack = cf->stack;
+#endif
 	}
 
 static void cf_pop()
 	{
+#ifdef CALL_STACK
 	assert( callStackDepth >= 1 );
 	CallFrame cf = cs_element( callStack, --callStackDepth );
 	ps_close( ps );
 	ps    = cf->ps;
 	stack = cf->stack;
+#endif
 	}
 
 struct fn_struct
@@ -94,13 +100,13 @@ static void dumpStack( File fl )
 		return;
 
 	trace( fl, "    -- Stack: " );
-	sk_sendTo( stack, fl, heap );
+	sk_sendNTo( stack, 5+ps_reduceContextLength( ps, heap, st ), fl, heap );
 	int i;
 	for( i = callStackDepth-1; i >= 0; i-- )
 		{
 		CallFrame cf = cs_element( callStack, i );
 		trace( fl, "\n%*s", 14, "" );
-		sk_sendNTo( cf->stack, ps_reduceContextLength( cf->ps, heap, st ), fl, heap );
+		sk_sendNTo( cf->stack, 5+ps_reduceContextLength( cf->ps, heap, st ), fl, heap );
 		}
 	trace( fl, "\n" );
 	}
@@ -126,12 +132,16 @@ static void push( Object ob )
 	{
 	sk_push( stack, ob );
 	ps_push( ps, ob );
+	dumpParserState( details );
+	dumpStack( details );
 	}
 
 static Object pop()
 	{
 	Object result = sk_pop( stack );
 	ps_popN( ps, 1 );
+	dumpParserState( details );
+	dumpStack( details );
 	return result;
 	}
 
@@ -139,6 +149,8 @@ static void popN( int n )
 	{
 	sk_popN( stack, n );
 	ps_popN( ps, n );
+	dumpParserState( details );
+	dumpStack( details );
 	}
 
 static int popInt()
@@ -335,7 +347,7 @@ static void addProductionAction( Production handle, GrammarLine gl )
 	int i;
 	for( i = sk_depth(stack) - 1; i >= 0; i-- )
 		ps_push( ps, sk_item( stack, i ) );
-	dumpParserState( diagnostics );
+	dumpParserState( details );
 
 	// Build a context with a symbol for each named parameter
 	cx_save( curContext );
@@ -344,7 +356,10 @@ static void addProductionAction( Production handle, GrammarLine gl )
 		Symbol name  = pn_name( pn, i, gr );
 		Symbol tag   = pn_token( pn, i, gr );
 		if( name )
+			{
+			trace( details, "    -- bound %s to token %s\n", sy_name( name, st ), sy_name( tag, st ) );
 			sy_setValue( name, oh_symbolToken( heap, tag ), curContext );
+			}
 		}
 
 	// Stuff the production index into the PRODUCTION object so caller can get it
@@ -416,40 +431,48 @@ static void setAction( Production handle, GrammarLine gl )
 
 static struct gl_struct grammar1[] =
 	{
-	{ { "PROGRAM",         "VOIDS", "END_OF_INPUT"                 }, { nopAction } },
+	{ { "PROGRAM",         "VOIDS", "END_OF_INPUT"                  }, { nopAction } },
 	{ { "VOIDS",           "VOID",                                  }, { nopAction } },
-	{ { "VOIDS",           "VOIDS", "VOID"                         }, { nopAction } },
+	{ { "VOIDS",           "VOIDS", "VOID"                          }, { nopAction } },
 
 	{ { "STATEMENT_BLOCK", "{", "VOIDS", "}"                        }, { nopAction } },
-	{ { "STATEMENT_BLOCK", "{",           "}"                        }, { nopAction } },
+	{ { "STATEMENT_BLOCK", "{",          "}"                        }, { nopAction } },
+
+	{ { "INT",      "{", "VOIDS", "INT", "}"                        }, { passThrough, 1 } },
+	{ { "INT",      "{",          "INT", "}"                        }, { passThrough, 1 } },
+
+	{ { "VOID",     "{", "VOIDS", "}"                               }, { nopAction } },
+	{ { "VOID",     "{",          "}"                               }, { nopAction } },
 
 	{ { "VOID",            "print", "INT"                           }, { printAction } },
 
 	{ { "VOID",            "return", "INT"                          }, { returnAction } },
 	{ { "VOID",            "return", "VOID"                         }, { returnAction } },
 
-	{ { "VOID",            "TOKEN@name", ":=", "INT@value"         }, { setAction } },
+	{ { "VOID",            "TOKEN@name", ":=", "INT@value"          }, { setAction } },
 
-	{ { "PARAMETER_LIST"                                             }, { parseTreeAction } },
-	{ { "PARAMETER_LIST",  "TOKEN@tag",      "PARAMETER_LIST@next" }, { parseTreeAction } },
-	{ { "PARAMETER_LIST",  "TOKEN@tag", "@", "TOKEN@name", "PARAMETER_LIST@next"  }, { parseTreeAction } },
-	{ { "PARAMETER_LIST",  "TOKEN@name", ":", "TOKEN@tag", "PARAMETER_LIST@next"  }, { parseTreeAction } },
-	{ { "PRODUCTION",      "TOKEN@result", "PARAMETER_LIST@parms"  }, { addProductionAction } },
- 	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "}"                }, { stopRecordingTokenBlockAction } },
- 	{ { "TOKEN_BLOCK",     "TB_START",           "}"                }, { stopRecordingTokenBlockAction } },
- 	{ { "TB_START",        "{",                                      }, { recordTokenBlockAction } },
+	{ { "PARAMETER_LIST"                                            }, { parseTreeAction } },
+	{ { "PARAMETER_LIST",  "TOKEN@tag",      "PARAMETER_LIST@next"  }, { parseTreeAction } },
+	{ { "PARAMETER_LIST",  "TOKEN@tag",  "@", "TOKEN@name", "PARAMETER_LIST@next"  }, { parseTreeAction } },
+	{ { "PARAMETER_LIST",  "TOKEN@name", ":", "TOKEN@tag",  "PARAMETER_LIST@next"  }, { parseTreeAction } },
+	{ { "PRODUCTION",      "TOKEN@result", "PARAMETER_LIST@parms"   }, { addProductionAction } },
+ 	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "}"                 }, { stopRecordingTokenBlockAction } },
+ 	{ { "TOKEN_BLOCK",     "TB_START",          "}"                 }, { stopRecordingTokenBlockAction } },
+ 	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "INT", "}"          }, { stopRecordingTokenBlockAction } },
+ 	{ { "TOKEN_BLOCK",     "TB_START", "INT", "}"                   }, { stopRecordingTokenBlockAction } },
+ 	{ { "TB_START",        "{",                                     }, { recordTokenBlockAction } },
 	{ { "VOID",            "def", "PRODUCTION", "as", "TOKEN_BLOCK" }, { defAction } },
 
 	{ { "FALSE",           "INT"                                    }, { nonzeroAction } },
-	{ { "FALSE",           "INT", "<=", "INT"                      }, { leAction } },
+	{ { "FALSE",           "INT", "<=", "INT"                       }, { leAction } },
 
 	{{NULL}},
 	};
 
 static struct gl_struct booleans1[] =
 	{
-	{ { "TRUE",           "INT"                                    }, { nonzeroAction } },
-	{ { "TRUE",           "INT", "<=", "INT"                      }, { leAction } },
+	{ { "TRUE",            "INT"                                    }, { nonzeroAction } },
+	{ { "TRUE",            "INT", "<=", "INT"                       }, { leAction } },
 
 	{{NULL}},
 	};
@@ -533,9 +556,10 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	trace( diagnostics, "  Begin recording token block\n" );
 	int stopDepth = ps_depth( ps );
 	TokenBlock tb = tb_new( ml_undecided() );
+	tb_append( tb, oh_symbolToken( heap, sy_byName( "{", st ) ) );
 	Grammar gr = ps_grammar( ps );
 	nopAction( handle, gl );
-	handle = ps_handle( ps, ts_current( tokenStream ) );
+	handle = ps_handle( ps, cx_filter( curContext, ts_current( tokenStream ), heap ) );
 	if( handle )
 		{
 		// Assume it's an empty token block
@@ -548,6 +572,7 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
 	while( ts_current( tokenStream ) )
 		{
+		Object raw    = ts_current( tokenStream );
 		Object ob     = cx_filter( curContext, ts_current( tokenStream ), heap );
 		Object nextOb = cx_filter( curContext, ts_next( tokenStream )   , heap );
 		if( !nextOb )
@@ -555,8 +580,10 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 		if( details )
 			{
 			trace( details, "token from %p is ", tokenStream );
+			ob_sendTo( raw, details, heap );
+			trace( details, " (parsed as " );
 			ob_sendTo( ob, details, heap );
-			trace( details, "\n  next is ");
+			trace( details, ")\n  next is ");
 			ob_sendTo( nextOb, details, heap );
 			trace( details, "\n");
 			}
@@ -567,9 +594,9 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 			{
 			if( diagnostics )
 				{
+				dumpParserState( details );
 				dumpStack( diagnostics );
-				dumpParserState( diagnostics );
-				trace( diagnostics, "    Recording handle production %d: ", pn_index( handle, gr ) );
+				trace( diagnostics, "    # Recording handle: " );
 				pn_sendTo( handle, diagnostics, gr, st );
 				trace( diagnostics, "\n" );
 				}
@@ -591,12 +618,13 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 				nextOb = endOfInput;
 			handle = ps_handle( ps, nextOb );
 			}
-		tb_append( tb, ob ); // If we get to here, we didn't hit stopRecordingTokenBlockAction
+		tb_append( tb, raw ); // If we get to here, we didn't hit stopRecordingTokenBlockAction
 		trace( details, "    Recorded token " );
 		ob_sendTo( ob, details, heap );
 		trace( details, "\n");
 		}
 	done:
+	tb_append( tb, oh_symbolToken( heap, sy_byName( "}", st ) ) );
 	tb_stopAppending( tb );
 	popN( pn_length( handle, gr ) );
 	push( ob_fromTokenBlock( tb, heap ) );
@@ -608,12 +636,23 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 		}
 	}
 
+static File openTrace( int fd, char *name )
+	{
+	File result = fdopen( fd, "wt" );
+	if( result )
+		{
+		setbuf( result, 0 );
+		trace( result, "# %s\n", name );
+		}
+	return result;
+	}
+
 int main( int argc, char **argv )
 	{
 	conflictLog = stderr;
-	diagnostics    = fdopen( 3, "wt" ); trace( diagnostics,    "# Ellesmere diagnostics\n" );
-	details        = fdopen( 4, "wt" ); trace( details,        "# Ellesmere details\n" );
-	parserGenTrace = fdopen( 5, "wt" ); trace( parserGenTrace, "# Ellesmere parserGenTrace\n" );
+	diagnostics    = openTrace( 3, "Ellesmere diagnostics" );
+	details        = openTrace( 4, "Ellesmere details" );
+	parserGenTrace = openTrace( 5, "Ellesmere parserGenTrace" );
 	st = theSymbolTable();
 	heap = theObjectHeap();
 	curContext = cx_new( st );
@@ -648,9 +687,9 @@ int main( int argc, char **argv )
 			Grammar gr = ps_grammar( ps ); // Grammar can change as the program proceeds
 			if( diagnostics )
 				{
+				dumpParserState( details );
 				dumpStack( diagnostics );
-				dumpParserState( diagnostics );
-				trace( diagnostics, "    # Found handle production %d in grammar %p: ", pn_index( handle, gr ), gr );
+				trace( diagnostics, "    # Handle: " );
 				pn_sendTo( handle, diagnostics, gr, st );
 				trace( diagnostics, "\n" );
 				}
@@ -662,7 +701,17 @@ int main( int argc, char **argv )
 				cx_save( curContext );
 				int i;
 				for( i = pn_length( handle, gr ) - 1; i >= 0; i-- )
-					sy_setValue( pn_token( handle, i, gr ), pop(), curContext );
+					{
+					Symbol nameSymbol = pn_name( handle, i, gr );
+					Object value = pop();
+					if( nameSymbol )
+						{
+						trace( details, "    -- bound %s to value ", sy_name( nameSymbol, st ) );
+						ob_sendTo( value, details, heap );
+						trace( details, "\n" );
+						sy_setValue( nameSymbol, value, curContext );
+						}
+					}
 				ts_push( tokenStream, functionToCall->body );
 				cf_push();
 				trace( diagnostics, "    Calling body %p for production %d\n", tokenStream, pn_index( handle, gr ) );

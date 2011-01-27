@@ -1,20 +1,28 @@
 
-def VOID
-	if TRUE then STATEMENT_BLOCK else TOKEN_BLOCK end
-as { return VOID }
+def INT
+	if TRUE then result:INT else TOKEN_BLOCK end
+as { result }
+
+def INT
+	if FALSE then TOKEN_BLOCK else result:INT end
+as { result }
 
 def VOID
-	if FALSE then TOKEN_BLOCK else STATEMENT_BLOCK end
-as { return VOID }
+	if TRUE then result:VOID else TOKEN_BLOCK end
+as { result }
+
+def VOID
+	if FALSE then TOKEN_BLOCK else result:VOID end
+as { result }
 
 def INT
 	fib ( n:INT )
 as
 	{
 	if n <= 1 then
-		{ return 1 }
+		{ 1 }
 	else
-		{ return fib(n-1) + fib(n-2) }
+		{ fib(n-1) + fib(n-2) }
 	end
 	}
 
@@ -29,7 +37,6 @@ as
 	end
 	print n
 	print fib(n)
-	return VOID
 	}
 
 fibs( 24 )

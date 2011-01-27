@@ -350,7 +350,8 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 			case SYM_TOKEN:
 				{
 				Symbol sy = ob_toSymbol( ob, heap );
-				fl_write( fl, "{%s#%d}", sy_name( sy, heap->st ), sy_index( sy, heap->st ) );
+				//fl_write( fl, "{%s#%d}", sy_name( sy, heap->st ), sy_index( sy, heap->st ) );
+				fl_write( fl, "%s", sy_name( sy, heap->st ), sy_index( sy, heap->st ) );
 				break;
 				}
 			case SYM_FUNCTION:
@@ -441,12 +442,14 @@ static int sendDotEdgesTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 						ob, field->value, sy_name( sy, heap->st ) );
 					charsSent += sendDotEdgesTo( field->value, fl, heap, cl );
 					}
+#if 0
 				else if( ob_isInt( field->value, heap ) )
 					{
 					charsSent += fl_write( fl,
 						"n%p -> %d [label=\"%s\"]\n",
 						ob, ob_toInt( field->value, heap ), sy_name( sy, heap->st ) );
 					}
+#endif
 				}
 			}
 		}

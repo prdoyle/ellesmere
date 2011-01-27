@@ -943,11 +943,25 @@ FUNC Automaton ps_automaton( Parser ps )
 	return ps->au;
 	}
 
+#ifdef ITEM_SET_NUMS
+static int ps_itemSetNum( Parser ps, int depth, Symbol isn )
+	{
+	ObjectHeap heap = theObjectHeap(); // Cheating a bit
+	return ob_toInt( ob_getField( sk_item( ps->stateStack, depth ), isn, heap ), heap );
+	}
+#endif
+
 static Object ps_nextState( Parser ps, Object ob )
 	{
 	ObjectHeap oh = ps->au->stateHeap;
 	Object curState = sk_top( ps->stateStack );
 	Symbol token = ob_tag( ob, oh );
+	if( ps->diagnostics )
+		{
+		trace( ps->diagnostics, "NEXT STATE from %d ob: ", ps_itemSetNum( ps, 0, sy_byIndex( SYM_ITEM_SET_NUM, theSymbolTable() ) ) );
+		ob_sendTo( ob, ps->diagnostics, theObjectHeap() );
+		trace( ps->diagnostics, "\n" );
+		}
 	// Not sure how I'm dealing with tokens as first-class objects yet...
 	if( ob_isToken( ob, oh ) )
 		{
@@ -955,10 +969,16 @@ static Object ps_nextState( Parser ps, Object ob )
 		if( ob_hasField( curState, literalToken, oh ) )
 			token = literalToken;
 		}
+	Object result = NULL;
 	if( ob_hasField( curState, token, oh ) )
-		return ob_getField( curState, token, oh );
-	else
-		return NULL;
+		result = ob_getField( curState, token, oh );
+	if( ps->diagnostics )
+		{
+		trace( ps->diagnostics, "  result: " );
+		ob_sendTo( result, ps->diagnostics, theObjectHeap() );
+		trace( ps->diagnostics, "\n" );
+		}
+	return result;
 	}
 
 FUNC bool ps_expects( Parser ps, Object ob )
@@ -1012,7 +1032,7 @@ FUNC int ps_sendTo( Parser ps, File fl, ObjectHeap heap, SymbolTable st )
 	Symbol isn = sy_byIndex( SYM_ITEM_SET_NUM, st );
 	for( i=0; i < sk_depth( ps->stateStack ); i++ )
 		{
-		charsSent += fl_write( fl, "%s%d", sep, ob_toInt( ob_getField( sk_item( ps->stateStack, i ), isn, heap ), heap ) );
+		charsSent += fl_write( fl, "%s%d", sep, ps_itemSetNum(ps, i, isn) );
 		sep = " ";
 		}
 #endif
