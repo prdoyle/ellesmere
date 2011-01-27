@@ -764,6 +764,7 @@ struct ps_struct
 	Automaton au;
 	Stack stateStack;
 	File diagnostics;
+	File detailedDiagnostics;
 	};
 
 typedef struct psa_struct *ParserArray;
@@ -929,6 +930,7 @@ FUNC Parser ps_new( Automaton au, MemoryLifetime ml, File diagnostics )
 		}
 	sk_push( result->stateStack, au->startState );
 	result->diagnostics = diagnostics;
+	result->detailedDiagnostics = NULL;
 	return result;
 	}
 
@@ -956,11 +958,11 @@ static Object ps_nextState( Parser ps, Object ob )
 	ObjectHeap oh = ps->au->stateHeap;
 	Object curState = sk_top( ps->stateStack );
 	Symbol token = ob_tag( ob, oh );
-	if( ps->diagnostics )
+	if( ps->detailedDiagnostics )
 		{
-		trace( ps->diagnostics, "NEXT STATE from %d ob: ", ps_itemSetNum( ps, 0, sy_byIndex( SYM_ITEM_SET_NUM, theSymbolTable() ) ) );
-		ob_sendTo( ob, ps->diagnostics, theObjectHeap() );
-		trace( ps->diagnostics, "\n" );
+		trace( ps->detailedDiagnostics, "NEXT STATE from %d ob: ", ps_itemSetNum( ps, 0, sy_byIndex( SYM_ITEM_SET_NUM, theSymbolTable() ) ) );
+		ob_sendTo( ob, ps->detailedDiagnostics, theObjectHeap() );
+		trace( ps->detailedDiagnostics, "\n" );
 		}
 	// Not sure how I'm dealing with tokens as first-class objects yet...
 	if( ob_isToken( ob, oh ) )
@@ -972,11 +974,11 @@ static Object ps_nextState( Parser ps, Object ob )
 	Object result = NULL;
 	if( ob_hasField( curState, token, oh ) )
 		result = ob_getField( curState, token, oh );
-	if( ps->diagnostics )
+	if( ps->detailedDiagnostics )
 		{
-		trace( ps->diagnostics, "  result: " );
-		ob_sendTo( result, ps->diagnostics, theObjectHeap() );
-		trace( ps->diagnostics, "\n" );
+		trace( ps->detailedDiagnostics, "  result: " );
+		ob_sendTo( result, ps->detailedDiagnostics, theObjectHeap() );
+		trace( ps->detailedDiagnostics, "\n" );
 		}
 	return result;
 	}
