@@ -59,10 +59,22 @@ typedef struct tss_struct *TokenStreamStack;
 	#define tss_new( size, ml ) tss_newAnnotated( size, ml, __FILE__, __LINE__ )
 #endif
 
+typedef struct tba_struct *TokenBlockArray;
+#define AR_PREFIX  tba
+#define AR_TYPE    TokenBlockArray
+#define AR_ELEMENT TokenBlock
+#define AR_BYVALUE
+#include "array_template.h"
+#ifndef NDEBUG
+	#define tba_new( size, ml ) tba_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
+
 struct tb_struct
 	{
+	SymbolIndex      tag;        // By having this here, we can tell a TokenBlock from an Object and therefore don't need to wrap the former
 	ObjectArray      tokens;
-	TokenStreamStack streams;
+	int              startIndex; // index of this TB within its containing TB
+	TokenBlockArray  subBlocks;
 	};
 
 static Object getLexToken( TokenStream ts )
@@ -178,20 +190,51 @@ FUNC TokenBlock ts_pop( TokenStream ts )
 	Digression di = ts_digression( ts );
 	assert( di );
 	TokenBlock result = di->tb;
-	tss_append( di->tb->streams, ts );
 	dis_incCountBy( ts->digressions, -1 );
 	return result;
 	}
 
 enum { DEFAULT_TOKEN_BLOCK_LENGTH=29 };
 
+FUNC TokenBlock ts_skipBlock( TokenStream ts )
+	{
+	TokenBlock result = NULL;
+	Digression di = ts_digression( ts );
+	if( di )
+		{
+		int i;
+		for( i = 0; !result && i < tba_count( di->tb->subBlocks ); i++ )
+			{
+			TokenBlock candidate = tba_get( di->tb->subBlocks, i );
+			if( candidate->startIndex == di->index )
+				result = candidate;
+			}
+		if( result && optional( "Use existing TokenBlock %p of length %d", result, tb_length( result ) ) )
+			di->index += tb_length( result ) - 1; // why -1?  Not sure.  Seems gross but it works out better
+		else
+			result = NULL;
+		}
+	return result;
+	}
+
 FUNC TokenBlock ts_beginBlock( TokenStream ts )
 	{
+	TokenBlock result = NULL;
+	Digression di = ts_digression( ts );
 	MemoryLifetime ml = ml_singleton(); // theLexTokenStream is a singleton
-	TokenBlock result = (TokenBlock)ml_alloc( ml, sizeof(*result) );
+	result = (TokenBlock)ml_alloc( ml, sizeof(*result) );
+	result->tag = SYM_TOKEN_BLOCK;
 	result->tokens  = oba_new( DEFAULT_TOKEN_BLOCK_LENGTH, ml );
-	result->streams = tss_new( 2, ml ); // more than 2x recursion probably means deep recursion
+	result->subBlocks = tba_new( 1, ml );
+	result->startIndex = di? di->index : 0;
+	if( di )
+		tba_append( di->tb->subBlocks, result ); // FIXME: Could make a cached block visible before it's complete
 	return result;
+	}
+
+FUNC int tb_length( TokenBlock tb )
+	{
+	return oba_count( tb->tokens );
 	}
 
 FUNC void tb_append( TokenBlock tb, Object token )

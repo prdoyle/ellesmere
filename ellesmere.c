@@ -94,11 +94,9 @@ typedef struct fna_struct *FunctionArray;
 
 static FunctionArray productionBodies;
 
-static void dumpStack( File fl )
+static void dumpStack0( File fl ) __attribute__((noinline));
+static void dumpStack0( File fl )
 	{
-	if( !fl )
-		return;
-
 	trace( fl, "    -- Stack: " );
 	sk_sendNTo( stack, 5+ps_reduceContextLength( ps, heap, st ), fl, heap );
 	int i;
@@ -111,11 +109,15 @@ static void dumpStack( File fl )
 	trace( fl, "\n" );
 	}
 
-static void dumpParserState( File fl )
+static inline void dumpStack( File fl )
 	{
-	if( !fl )
-		return;
+	if( fl )
+		dumpStack0( fl );
+	}
 
+static void dumpParserState0( File fl ) __attribute__((noinline));
+static void dumpParserState0( File fl )
+	{
 	trace( fl, "    -- Parser state: " );
 	ps_sendTo( ps, fl, heap, st );
 	int i;
@@ -126,6 +128,12 @@ static void dumpParserState( File fl )
 		ps_sendTo( cf->ps, fl, heap, st );
 		}
 	trace( fl, "\n" );
+	}
+
+static inline void dumpParserState( File fl )
+	{
+	if( fl )
+		dumpParserState0( fl );
 	}
 
 static void push( Object ob )
@@ -553,85 +561,93 @@ static GrammarLine lookupGrammarLine( Production pn, Grammar gr )
 
 static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	{
-	trace( diagnostics, "  Begin recording token block\n" );
-	int stopDepth = ps_depth( ps );
-	TokenBlock tb = ts_beginBlock( tokenStream );
-	tb_append( tb, oh_symbolToken( heap, sy_byName( "{", st ) ) );
 	Grammar gr = ps_grammar( ps );
-	nopAction( handle, gl );
-	handle = ps_handle( ps, cx_filter( curContext, ts_current( tokenStream ), heap ) );
-	if( handle )
+	TokenBlock tb = ts_skipBlock( tokenStream );
+	if( !tb )
 		{
-		// Assume it's an empty token block
-		nopAction( handle, NULL );
-		push( ts_current( tokenStream ) );
-		ts_advance( tokenStream );
-		// FIXME: There could be multiple reduces required to hit the stopRecordingTokenBlockAction.
-		// Should really just reduce this like other handles and let it happen naturally
-		}
-	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
-	while( ts_current( tokenStream ) )
-		{
-		Object raw    = ts_current( tokenStream );
-		Object ob     = cx_filter( curContext, ts_current( tokenStream ), heap );
-		Object nextOb = cx_filter( curContext, ts_next( tokenStream )   , heap );
-		if( !nextOb )
-			nextOb = endOfInput;
-		if( details )
+		trace( diagnostics, "  Begin recording token block\n" );
+		int stopDepth = ps_depth( ps );
+		tb = ts_beginBlock( tokenStream );
+		tb_append( tb, oh_symbolToken( heap, sy_byName( "{", st ) ) );
+		nopAction( handle, gl );
+		handle = ps_handle( ps, cx_filter( curContext, ts_current( tokenStream ), heap ) );
+		if( handle )
 			{
-			trace( details, "token from %p is ", tokenStream );
-			ob_sendTo( raw, details, heap );
-			trace( details, " (parsed as " );
-			ob_sendTo( ob, details, heap );
-			trace( details, ")\n  next is ");
-			ob_sendTo( nextOb, details, heap );
-			trace( details, "\n");
-			}
-		push( ob );
-		ts_advance( tokenStream );
-		handle = ps_handle( ps, nextOb );
-		while( handle )
-			{
-			if( diagnostics )
-				{
-				dumpParserState( details );
-				dumpStack( diagnostics );
-				trace( diagnostics, "    # Recording handle: " );
-				pn_sendTo( handle, diagnostics, gr, st );
-				trace( diagnostics, "\n" );
-				}
-			if(   pn_index( handle, gr ) < fna_count( productionBodies ) // recursive calls won't yet have a body defined
-				&& !fna_get( productionBodies, pn_index( handle, gr ) ) )
-				{
-				NativeAction action = lookupGrammarLine( handle, gr )->response.action;
-				int depthWithoutHandle = ps_depth( ps ) - pn_length( handle, gr );
-				if( action == stopRecordingTokenBlockAction && depthWithoutHandle < stopDepth )
-					{
-					trace( diagnostics, "    # Found the stopRecording handle\n" );
-					goto done; // end marker
-					}
-				}
+			// Assume it's an empty token block
 			nopAction( handle, NULL );
-			// tokenStream may have changed!
-			Object nextOb = cx_filter( curContext, ts_current( tokenStream ), heap );
+			push( ts_current( tokenStream ) );
+			ts_advance( tokenStream );
+			// FIXME: There could be multiple reduces required to hit the stopRecordingTokenBlockAction.
+			// Should really just reduce this like other handles and let it happen naturally
+			}
+		Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
+		while( ts_current( tokenStream ) )
+			{
+			Object raw    = ts_current( tokenStream );
+			Object ob     = cx_filter( curContext, ts_current( tokenStream ), heap );
+			Object nextOb = cx_filter( curContext, ts_next( tokenStream )   , heap );
 			if( !nextOb )
 				nextOb = endOfInput;
+			if( details )
+				{
+				trace( details, "token from %p is ", tokenStream );
+				ob_sendTo( raw, details, heap );
+				trace( details, " (parsed as " );
+				ob_sendTo( ob, details, heap );
+				trace( details, ")\n  next is ");
+				ob_sendTo( nextOb, details, heap );
+				trace( details, "\n");
+				}
+			push( ob );
+			ts_advance( tokenStream );
 			handle = ps_handle( ps, nextOb );
+			while( handle )
+				{
+				if( diagnostics )
+					{
+					dumpParserState( details );
+					dumpStack( diagnostics );
+					trace( diagnostics, "    # Recording handle: " );
+					pn_sendTo( handle, diagnostics, gr, st );
+					trace( diagnostics, "\n" );
+					}
+				if(   pn_index( handle, gr ) < fna_count( productionBodies ) // recursive calls won't yet have a body defined
+					&& !fna_get( productionBodies, pn_index( handle, gr ) ) )
+					{
+					NativeAction action = lookupGrammarLine( handle, gr )->response.action;
+					int depthWithoutHandle = ps_depth( ps ) - pn_length( handle, gr );
+					if( action == stopRecordingTokenBlockAction && depthWithoutHandle < stopDepth )
+						{
+						trace( diagnostics, "    # Found the stopRecording handle\n" );
+						goto done; // end marker
+						}
+					}
+				nopAction( handle, NULL );
+				// tokenStream may have changed!
+				Object nextOb = cx_filter( curContext, ts_current( tokenStream ), heap );
+				if( !nextOb )
+					nextOb = endOfInput;
+				handle = ps_handle( ps, nextOb );
+				}
+			tb_append( tb, raw ); // If we get to here, we didn't hit stopRecordingTokenBlockAction
+			trace( details, "    Recorded token " );
+			ob_sendTo( ob, details, heap );
+			trace( details, "\n");
 			}
-		tb_append( tb, raw ); // If we get to here, we didn't hit stopRecordingTokenBlockAction
-		trace( details, "    Recorded token " );
-		ob_sendTo( ob, details, heap );
-		trace( details, "\n");
+		done:
+		tb_append( tb, oh_symbolToken( heap, sy_byName( "}", st ) ) );
+		tb_stopAppending( tb );
 		}
-	done:
-	tb_append( tb, oh_symbolToken( heap, sy_byName( "}", st ) ) );
-	tb_stopAppending( tb );
 	popN( pn_length( handle, gr ) );
 	push( ob_fromTokenBlock( tb, heap ) );
 	if( details )
 		{
-		trace( details, "    Stack after recording: " );
-		sk_sendTo( stack, details, heap );
+		trace( details, "    Recorded token block: " );
+		tb_sendTo( tb, details, heap );
+		trace( details, "\n    Now current: " );
+		ob_sendTo( ts_current( tokenStream ), details, heap );
+		trace( details, "\n  next is ");
+		ob_sendTo( ts_next( tokenStream ), details, heap );
 		trace( details, "\n" );
 		}
 	}

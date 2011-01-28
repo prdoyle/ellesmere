@@ -63,6 +63,8 @@ static FieldList fl_bySymbol( SymbolIndex si, FieldList fl )
 		return fl;
 	}
 
+#undef WRAP_TOKEN_BLOCKS
+
 struct ob_struct
 	{
 	SymbolIndex tag;
@@ -72,7 +74,9 @@ struct ob_struct
 		const char *characters;
 		Symbol      symbol;
 		Function    function;
+#ifdef WRAP_TOKEN_BLOCKS
 		TokenBlock  tokenBlock;
+#endif
 		TokenStream tokenStream;
 		} data;
 	int checkListIndex;
@@ -139,9 +143,13 @@ FUNC Symbol ob_toSymbol( Object ob, ObjectHeap heap )
 
 FUNC Object ob_fromTokenBlock( TokenBlock tb, ObjectHeap heap )
 	{
+#ifdef WRAP_TOKEN_BLOCKS
 	Object result = (Object)ml_alloc( heap->ml, (sizeof(*result)) );
 	result->tag = SYM_TOKEN_BLOCK;
 	result->data.tokenBlock = tb;
+#else
+	Object result = (Object)tb;
+#endif
 	assert( ob_kind( result ) == OB_STRUCT );
 	return result;
 	}
@@ -154,7 +162,11 @@ FUNC bool ob_isTokenBlock( Object ob, ObjectHeap heap )
 FUNC TokenBlock ob_toTokenBlock( Object ob, ObjectHeap heap )
 	{
 	assert( ob_isTokenBlock( ob, heap ) );
+#ifdef WRAP_TOKEN_BLOCKS
 	return ob->data.tokenBlock;
+#else
+	return (TokenBlock)ob;
+#endif
 	}
 
 FUNC Object ob_fromFunction( Function fn, ObjectHeap heap )
