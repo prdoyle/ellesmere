@@ -185,8 +185,9 @@ FUNC TokenBlock ts_pop( TokenStream ts )
 
 enum { DEFAULT_TOKEN_BLOCK_LENGTH=29 };
 
-FUNC TokenBlock tb_new( MemoryLifetime ml )
+FUNC TokenBlock ts_beginBlock( TokenStream ts )
 	{
+	MemoryLifetime ml = ml_singleton(); // theLexTokenStream is a singleton
 	TokenBlock result = (TokenBlock)ml_alloc( ml, sizeof(*result) );
 	result->tokens  = oba_new( DEFAULT_TOKEN_BLOCK_LENGTH, ml );
 	result->streams = tss_new( 2, ml ); // more than 2x recursion probably means deep recursion

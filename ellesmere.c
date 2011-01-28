@@ -555,7 +555,7 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	{
 	trace( diagnostics, "  Begin recording token block\n" );
 	int stopDepth = ps_depth( ps );
-	TokenBlock tb = tb_new( ml_undecided() );
+	TokenBlock tb = ts_beginBlock( tokenStream );
 	tb_append( tb, oh_symbolToken( heap, sy_byName( "{", st ) ) );
 	Grammar gr = ps_grammar( ps );
 	nopAction( handle, gl );
