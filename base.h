@@ -31,6 +31,7 @@ typedef struct ob_struct *Object;
 typedef struct oh_struct *ObjectHeap;
 typedef struct ps_struct *Parser;
 typedef struct pn_struct *Production;
+typedef struct rd_struct *Record;
 typedef struct sk_struct *Stack;
 typedef struct st_struct *SymbolTable;
 typedef struct sy_struct *Symbol;

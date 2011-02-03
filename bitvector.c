@@ -39,9 +39,7 @@ FUNC BitVector bv_new( int numBits, MemoryLifetime ml )
 	int numBytes = numWords * sizeof( Word );
 	BitVector result;
 	result    = (BitVector)ml_alloc( ml, sizeof(*result) );
-	//result->words = (Word*)ml_allocZeros( ml, numBytes );
-	result->words = (Word*)ml_alloc( ml, numBytes );
-	memset( result->words, 0, numBytes );
+	result->words = (Word*)ml_allocZeros( ml, numBytes );
 	result->numWords = numWords;
 	result->ml       = ml;
 	return result;
@@ -95,6 +93,13 @@ FUNC void bv_unset( BitVector bv, int bitIndex )
 	assert( 0 <= wordIndex );
 	if( wordIndex < bv->numWords )
 		bv->words[ wordIndex ] &= ~bit2mask( bitIndex );
+	}
+
+FUNC void bv_populate( BitVector bv, int *entries, int numEntries )
+	{
+	int i;
+	for( i=0; i < numEntries; i++ )
+		bv_set( bv, entries[i] );
 	}
 
 FUNC int bv_nextBit( BitVector bv, int prevBit )
@@ -314,10 +319,8 @@ FUNC int bv_sendFormattedTo( BitVector bv, File fl, const char *firstFormat, con
 
 static BitVector populate( int *entries, int numEntries )
 	{
-	int i;
 	BitVector bv = bv_new( entries[ numEntries-1 ], ml_indefinite() );
-	for( i=0; i < numEntries; i++ )
-		bv_set( bv, entries[i] );
+	bv_populate( bv, entries, numEntries );
 	return bv;
 	}
 

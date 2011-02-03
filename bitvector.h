@@ -9,6 +9,7 @@ FUNC BitVector bv_new     ( int numBits, MemoryLifetime ml );
 FUNC bool      bv_isSet   ( BitVector bv, int bitIndex );
 FUNC void      bv_set     ( BitVector bv, int bitIndex );
 FUNC void      bv_unset   ( BitVector bv, int bitIndex );
+FUNC void      bv_populate( BitVector bv, int *entries, int numEntries );
 
 enum { bv_END=-1 }; // indicates there are no more bits
 FUNC int       bv_firstBit   ( BitVector bv );
