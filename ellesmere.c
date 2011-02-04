@@ -184,9 +184,9 @@ static void closeTokenStreamsAsNecessary()
 	{
 	while( !ts_current( tokenStream ) && ts_curBlock( tokenStream ) )
 		{
-		TokenBlock tb = ts_pop( tokenStream );
+		ts_pop( tokenStream );
 		cx_restore( curContext );
-		trace( diagnostics, "  Returned to TokenBlock %p\n", tb );
+		trace( diagnostics, "  Returned to TokenBlock %p\n", ts_curBlock( tokenStream ) );
 		}
 	}
 
@@ -400,11 +400,11 @@ static void returnAction( Production handle, GrammarLine gl )
 	{
 	Object result = pop();
 	popToken();
-	TokenBlock tb = ts_pop( tokenStream );
+	ts_pop( tokenStream );
 	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
 	cx_restore( curContext );
 	cf_pop();
-	trace( diagnostics, "  Returned to TokenBlock %p\n", tb );
+	trace( diagnostics, "  Returned to TokenBlock %p\n", ts_curBlock( tokenStream ) );
 	push( result );
 	}
 
@@ -590,7 +590,7 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 				nextOb = endOfInput;
 			if( details )
 				{
-				trace( details, "token from %p is ", tokenStream );
+				trace( details, "token from %p is ", ts_curBlock( tokenStream ) );
 				ob_sendTo( raw, details, heap );
 				trace( details, " (parsed as " );
 				ob_sendTo( ob, details, heap );
@@ -689,7 +689,7 @@ int main( int argc, char **argv )
 			nextOb = endOfInput;
 		if( details )
 			{
-			trace( details, "token from %p is ", tokenStream );
+			trace( details, "token from %p is ", ts_curBlock( tokenStream ) );
 			ob_sendTo( ob, details, heap );
 			trace( details, "\n  next is ");
 			ob_sendTo( nextOb, details, heap );
