@@ -964,14 +964,13 @@ static Object ps_nextState( Parser ps, Object ob )
 		trace( ps->detailedDiagnostics, "\n" );
 		}
 	// Not sure how I'm dealing with tokens as first-class objects yet...
+	Object result = NULL;
 	if( ob_isToken( ob, oh ) )
 		{
 		Symbol literalToken = ob_toSymbol( ob, oh );
-		if( ob_hasField( curState, literalToken, oh ) && ob_getField( curState, literalToken, oh ) )
-			token = literalToken;
+		result = ob_getField( curState, literalToken, oh );
 		}
-	Object result = NULL;
-	if( ob_hasField( curState, token, oh ) )
+	if( !result )
 		result = ob_getField( curState, token, oh );
 	if( ps->detailedDiagnostics )
 		{

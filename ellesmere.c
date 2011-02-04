@@ -336,11 +336,11 @@ static void addProductionAction( Production handle, GrammarLine gl )
 	Object parm;
 	for(
 		parm = ob_getField( production, sym_parms, heap);
-		ob_hasField( parm, sym_tag, heap );
+		ob_getField( parm, sym_tag, heap );
 		parm = ob_getField( parm, sym_next, heap ) )
 		{
 		Symbol tag  = ob_toSymbol( ob_getField( parm, sym_tag,  heap ), heap );
-		if( ob_hasField( parm, sym_name, heap ) )
+		if( ob_getField( parm, sym_name, heap ) )
 			pn_appendWithName( pn, ob_toSymbol( ob_getField( parm, sym_name, heap ), heap ), tag, gr );
 		else
 			pn_append( pn, tag, gr );

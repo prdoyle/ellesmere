@@ -238,28 +238,18 @@ static bool ob_hasItems( Object ob )
 	return ob_kind(ob) != OB_INT && ob->tag >= NUM_SPECIAL_OBJECT_TAGS;
 	}
 
-static bool ob_hasItem( Object ob, SymbolIndex si, ObjectHeap heap )
-	{
-	if( !ob_hasItems(ob) )
-		return false;
-	else if( rd_indexOf( sy_instanceShape( ob_tag(ob,heap), heap->st ), si ) )
-		return true;
-	else
-		return fl_bySymbol( si, ob->data.listFields ) != NULL;
-	}
-
 static Object ob_getItem( Object ob, SymbolIndex si, ObjectHeap heap )
 	{
-	assert( ob_hasItem( ob, si, heap ) );
 	int index = rd_indexOf( sy_instanceShape( ob_tag(ob,heap), heap->st ), si );
 	if( index )
 		return ob->recordFields[ index-1 ];
 	else
 		{
 		FieldList fl = fl_bySymbol( si, ob->data.listFields );
-		assert( fl );
-		return fl->value;
+		if( fl )
+			return fl->value;
 		}
+	return NULL;
 	}
 
 static void ob_setItem( Object ob, SymbolIndex si, Object value, ObjectHeap heap )
@@ -276,18 +266,12 @@ static void ob_setItem( Object ob, SymbolIndex si, Object value, ObjectHeap heap
 		else
 			ob->data.listFields = fl_new( si, value, ob->data.listFields, heap );
 		}
-	assert( ob_hasItem( ob, si, heap ) );
 	assert( ob_getItem( ob, si, heap ) == value );
-	}
-
-FUNC bool ob_hasField( Object ob, Symbol field, ObjectHeap heap )
-	{
-	return ob_hasItem( ob, sy_index( field, heap->st ), heap );
 	}
 
 FUNC Object ob_getField( Object ob, Symbol field, ObjectHeap heap )
 	{
-	check( ob_hasField( ob, field, heap ) );
+	check( ob_hasItems( ob ) );
 	return ob_getItem( ob, sy_index( field, heap->st ), heap );
 	}
 
@@ -295,18 +279,12 @@ FUNC void ob_setField( Object ob, Symbol field, Object value, ObjectHeap heap )
 	{
 	check( ob_hasItems( ob ) );
 	ob_setItem( ob, sy_index( field, heap->st ), value, heap );
-	assert( ob_hasField( ob, field, heap ) );
 	assert( ob_getField( ob, field, heap ) == value );
-	}
-
-FUNC bool ob_hasElement( Object ob, int index, ObjectHeap heap )
-	{
-	return ob_hasItem( ob, (SymbolIndex)index, heap );
 	}
 
 FUNC Object ob_getElement( Object ob, int index, ObjectHeap heap )
 	{
-	check( ob_hasElement( ob, index, heap ) );
+	check( ob_hasItems( ob ) );
 	return ob_getItem( ob, (SymbolIndex)index, heap );
 	}
 
@@ -314,7 +292,6 @@ FUNC void ob_setElement( Object ob, int index, Object value, ObjectHeap heap )
 	{
 	check( ob_hasItems(ob) );
 	ob_setItem( ob, (SymbolIndex)index, value, heap );
-	assert( ob_hasElement( ob, index, heap ) );
 	assert( ob_getElement( ob, index, heap ) == value );
 	}
 
