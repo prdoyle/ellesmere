@@ -4,6 +4,7 @@
 #include "memory.h"
 #include "objects.h"
 #include "stack.h"
+#include "records.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -82,6 +83,7 @@ typedef struct pg_struct
 	int             *sstIndexes;
 	SymbolVector     nullableSymbols;
 	ItemSetTable     itemSets;
+	Symbol           stateNodeTag;
 	} *ParserGenerator;
 
 static int pg_symbolSideTableIndex( ParserGenerator pg, Symbol sy )
@@ -185,7 +187,7 @@ static ItemSet pg_createItemSet( ParserGenerator pg, ItemVector items )
 	{
 	ItemSet result = itst_nextElement( pg->itemSets );
 	result->items = items;
-	result->stateNode = ob_create( sy_byIndex( SYM_STATE_NODE, pg->st ), pg->heap );
+	result->stateNode = ob_create( pg->stateNodeTag, pg->heap );
 #ifdef ITEM_SET_NUMS
 	ob_setField(
 		result->stateNode,
@@ -204,25 +206,15 @@ static ItemSet pg_createItemSet( ParserGenerator pg, ItemVector items )
 	return result;
 	}
 
-#if 0
-static ItemSet pg_findOrCreateItemSet( ParserGenerator pg, ItemVector items )
-	{
-	ItemSet result = pg_findItemSet( pg, items );
-	if( result )
-		return result;
-	else
-		return pg_createItemSet( pg, items );
-	}
-#endif
-
-static ParserGenerator pg_new( Grammar gr, SymbolTable st, MemoryLifetime generateTime, MemoryLifetime parseTime, ObjectHeap heap )
+static ParserGenerator pg_new( Grammar gr, SymbolTable st, Symbol stateNodeTag, MemoryLifetime generateTime, MemoryLifetime parseTime, ObjectHeap heap )
 	{
 	ParserGenerator pg = (ParserGenerator)ml_alloc( generateTime, sizeof(*pg) );
 	pg->gr = gr;
 	pg->st = st;
 	pg->generateTime = generateTime;
 	pg->parseTime    = parseTime;
-	pg->heap = heap;
+	pg->heap         = heap;
+	pg->stateNodeTag = stateNodeTag;
 	return pg;
 	}
 
@@ -261,8 +253,8 @@ static void pg_populateSymbolSideTable( ParserGenerator pg, File traceFile )
 	int itemIndex;
 	pg->sstIndexes = (int*)ml_allocZeros( ml, st_count(st) * sizeof(pg->sstIndexes[0]));
 	pg->sst = sst_new( 100, ml );
-	pg->nullableSymbols = bv_new( 100, ml );
 	sst_incCount( pg->sst ); // sst index zero is used for "null" so skip that one
+	pg->nullableSymbols = bv_new( 100, ml );
 	itemIndex = 0;
 	for( i=0; i < gr_numProductions(gr); i++ )
 		{
@@ -294,13 +286,16 @@ static void pg_populateSymbolSideTable( ParserGenerator pg, File traceFile )
 
 	// Some more initialization now that we know how many side table entries there are
 	int numSymbols = sst_count( pg->sst );
-	for( i=0; i < numSymbols; i++ )
+	BitVector stateNodeFields = bv_new( numSymbols, pg->generateTime );
+	for( i=1; i < numSymbols; i++ )
 		{
 		SymbolSideTableEntry sste = sst_element( pg->sst, i );
 		sste->first     = bv_new( numSymbols, pg->generateTime );
 		sste->follow    = bv_new( numSymbols, pg->generateTime );
 		bv_set( sste->first, i );
+		bv_set( stateNodeFields, sy_index( sste->sy, st ) );
 		}
+	sy_setInstanceShape( pg->stateNodeTag, rd_new( stateNodeFields, pg->parseTime ), st );
 	}
 
 static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
@@ -870,7 +865,12 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File confl
 	trace( diagnostics, "Generating automaton\n" );
 	MemoryLifetime generateTime = ml_begin( 100000, ml );
 
-	ParserGenerator pg = pg_new( gr, st, generateTime, ml, theObjectHeap() );
+	Automaton result = (Automaton)ml_alloc( ml, sizeof(*result) );
+	char stateTagName[50];
+	sprintf( stateTagName, "SN%d", st_count( st ) );
+	Symbol stateNodeTag = sy_byName( stateTagName, st );
+
+	ParserGenerator pg = pg_new( gr, st, stateNodeTag, generateTime, ml, theObjectHeap() );
 	pg_populateItemTable( pg, diagnostics );
 	pg_populateSymbolSideTable( pg, diagnostics );
 	Object startState = pg_computeLR0StateNodes( pg, diagnostics );
@@ -879,7 +879,6 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File confl
 	pg_computeSLRLookaheads( pg, diagnostics );
 	pg_computeReduceActions( pg, conflictLog, diagnostics );
 
-	Automaton result = (Automaton)ml_alloc( ml, sizeof(*result) );
 	result->gr = gr;
 	result->stateHeap  = theObjectHeap();
 	result->startState = startState;
@@ -968,7 +967,7 @@ static Object ps_nextState( Parser ps, Object ob )
 	if( ob_isToken( ob, oh ) )
 		{
 		Symbol literalToken = ob_toSymbol( ob, oh );
-		if( ob_hasField( curState, literalToken, oh ) )
+		if( ob_hasField( curState, literalToken, oh ) && ob_getField( curState, literalToken, oh ) )
 			token = literalToken;
 		}
 	Object result = NULL;

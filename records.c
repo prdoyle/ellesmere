@@ -20,6 +20,7 @@ struct rd_struct
 	int hashParameter;
 	int log2numBuckets;
 	struct hb_struct *buckets;
+	BitVector fieldIDs;
 	};
 
 static int flog2( int arg ) // floor of log base 2
@@ -86,6 +87,8 @@ FUNC Record rd_new( BitVector fieldIDs, MemoryLifetime ml )
 		return NULL; // TODO: Do the first N and then quit?
 	result = (Record)ml_alloc( ml, sizeof(*result) );
 	result->maxIndex = numFields;
+	result->fieldIDs = bv_new( bv_lastBit( fieldIDs ), ml );
+	bv_copy( result->fieldIDs, fieldIDs );
 
 	// Try pseudorandom (ok not all that random) hash parameters until one is perfect.
 	// Shouldn't take many tries. random
@@ -125,11 +128,14 @@ FUNC Record rd_new( BitVector fieldIDs, MemoryLifetime ml )
 
 FUNC int rd_maxIndex( Record rd )
 	{
-	return rd->maxIndex;
+	return rd? rd->maxIndex : 0;
 	}
 
 FUNC int rd_indexOf( Record rd, int fieldID )
 	{
+	if( !rd )
+		return 0;
+
 	int hash = rd_hash( rd, fieldID );
 	HashBucket hb = rd->buckets + hash;
 	int subBucket = hb_subBucketIndex( hb, fieldID );
@@ -137,6 +143,23 @@ FUNC int rd_indexOf( Record rd, int fieldID )
 		return hb->indexes[ subBucket ];
 	else
 		return 0;
+	}
+
+FUNC int rd_firstField( Record rd )
+	{
+	return rd? bv_firstBit( rd->fieldIDs ) : rd_NONE;
+	}
+
+FUNC int rd_nextField( Record rd, int prevField )
+	{
+	if( !rd )
+		return rd_NONE;
+
+	int result = bv_nextBit( rd->fieldIDs, prevField );
+	if( result == bv_END )
+		return rd_NONE;
+	else
+		return result;
 	}
 
 #ifdef RECORDS_T
@@ -174,4 +197,6 @@ int main( int argc, char *argv[] )
 	}
 
 #endif
+
+//MERGE:35
 

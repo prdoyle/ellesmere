@@ -32,7 +32,9 @@ FUNC SymbolIndex st_count   ( SymbolTable st );
 FUNC SymbolIndex       sy_index ( Symbol sy, SymbolTable st );
 FUNC const const char *sy_name  ( Symbol sy, SymbolTable st );
 FUNC Symbol            sy_byIndex ( SymbolIndex index, SymbolTable st ); // 0 <= index < st_count(st)
-FUNC Symbol            sy_byName  ( const char *name, SymbolTable st ); // Creates a symbol if none already exists
+FUNC Symbol            sy_byName  ( const char *name, SymbolTable st );  // Creates a symbol if none already exists
+FUNC Record            sy_instanceShape    ( Symbol sy, SymbolTable st );
+FUNC void              sy_setInstanceShape ( Symbol sy, Record rd, SymbolTable st );
 FUNC int               sy_sendTo  ( Symbol sy, File fl, SymbolTable st );
 
 FUNC Context      cx_new( SymbolTable st );
@@ -43,8 +45,8 @@ FUNC Object       cx_filter( Context cx, Object ob, ObjectHeap heap );
 FUNC int          cx_sendTo( Context cx, File fl );
 
 // Attributes of symbols
-FUNC Object            sy_value              ( Symbol sy, Context cx );
-FUNC void              sy_setValue           ( Symbol sy, Object value, Context cx );
+FUNC Object       sy_value     ( Symbol sy, Context cx );
+FUNC void         sy_setValue  ( Symbol sy, Object value, Context cx );
 
 #endif
 

@@ -27,16 +27,6 @@ typedef struct dis_struct *DigressionStack;
 	#define dis_new( size, ml ) dis_newAnnotated( size, ml, __FILE__, __LINE__ )
 #endif
 
-typedef struct oba_struct *ObjectArray;
-#define AR_PREFIX  oba
-#define AR_TYPE    ObjectArray
-#define AR_ELEMENT Object
-#define AR_BYVALUE
-#include "array_template.h"
-#ifndef NDEBUG
-	#define oba_new( size, ml ) oba_newAnnotated( size, ml, __FILE__, __LINE__ )
-#endif
-
 struct ts_struct
 	{
 	ObjectHeap      heap;

@@ -80,6 +80,16 @@ FUNC const char *sy_name( Symbol sy, SymbolTable st )
 	return sy->name;
 	}
 
+FUNC Record sy_instanceShape( Symbol sy, SymbolTable st )
+	{
+	return sy->instanceShape;
+	}
+
+FUNC void sy_setInstanceShape( Symbol sy, Record rd, SymbolTable st )
+	{
+	sy->instanceShape = rd;
+	}
+
 typedef struct ss_struct
 	{
 	Symbol sy;

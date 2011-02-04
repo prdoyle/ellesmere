@@ -13,6 +13,7 @@ struct sy_struct
 	{
 	const char *name;
 	Object token;
+	Record instanceShape;
 	struct sy_scopedDefs scopedDefs;
 	};
 

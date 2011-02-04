@@ -1,5 +1,6 @@
 
 #include "objects.h"
+#include "records.h"
 #include "memory.h"
 #include <stdint.h>
 #include <string.h>
@@ -70,7 +71,7 @@ struct ob_struct
 	SymbolIndex tag;
 	union
 		{
-		FieldList   fields;
+		FieldList   listFields;
 		const char *characters;
 		Symbol      symbol;
 		Function    function;
@@ -80,13 +81,24 @@ struct ob_struct
 		TokenStream tokenStream;
 		} data;
 	int checkListIndex;
+	Object recordFields[1]; // actually numRecordFields(tag) elements
 	};
+
+static int numRecordFields( Symbol tag, SymbolTable st )
+	{
+	if( sy_instanceShape( tag, st ) )
+		return rd_maxIndex( sy_instanceShape( tag, st ) );
+	else
+		return 0;
+	}
 
 FUNC Object ob_create( Symbol tag, ObjectHeap heap )
 	{
-	Object result = (Object)ml_alloc( heap->ml, (sizeof(*result)) );
+	Object result;
+	int recordFieldBytes = numRecordFields( tag, heap->st ) * sizeof( result->recordFields[0] );
+	result = (Object)ml_allocZeros( heap->ml, sizeof(*result) - sizeof(result->recordFields) + recordFieldBytes );
 	result->tag = sy_index( tag, heap->st );
-	result->data.fields = NULL;
+	result->data.listFields = NULL;
 	result->checkListIndex = heap->curCheckListIndex;
 	heap->curCheckListIndex += 2;
 	assert( ob_kind( result ) == OB_STRUCT );
@@ -226,43 +238,57 @@ static bool ob_hasItems( Object ob )
 	return ob_kind(ob) != OB_INT && ob->tag >= NUM_SPECIAL_OBJECT_TAGS;
 	}
 
-static bool ob_hasItem( Object ob, SymbolIndex si )
+static bool ob_hasItem( Object ob, SymbolIndex si, ObjectHeap heap )
 	{
-	if( ob_hasItems(ob) )
-		return fl_bySymbol( si, ob->data.fields ) != NULL;
-	else
+	if( !ob_hasItems(ob) )
 		return false;
+	else if( rd_indexOf( sy_instanceShape( ob_tag(ob,heap), heap->st ), si ) )
+		return true;
+	else
+		return fl_bySymbol( si, ob->data.listFields ) != NULL;
 	}
 
-static Object ob_getItem( Object ob, SymbolIndex si )
+static Object ob_getItem( Object ob, SymbolIndex si, ObjectHeap heap )
 	{
-	assert( ob_hasItem( ob, si ) );
-	FieldList fl = fl_bySymbol( si, ob->data.fields );
-	assert( fl );
-	return fl->value;
+	assert( ob_hasItem( ob, si, heap ) );
+	int index = rd_indexOf( sy_instanceShape( ob_tag(ob,heap), heap->st ), si );
+	if( index )
+		return ob->recordFields[ index-1 ];
+	else
+		{
+		FieldList fl = fl_bySymbol( si, ob->data.listFields );
+		assert( fl );
+		return fl->value;
+		}
 	}
 
 static void ob_setItem( Object ob, SymbolIndex si, Object value, ObjectHeap heap )
 	{
 	assert( ob_hasItems( ob ) );
-	FieldList fl = fl_bySymbol( si, ob->data.fields );
-	if( fl )
-		fl->value = value;
+	int index = rd_indexOf( sy_instanceShape( ob_tag(ob,heap), heap->st ), si );
+	if( index )
+		ob->recordFields[ index-1 ] = value;
 	else
-		ob->data.fields = fl_new( si, value, ob->data.fields, heap );
-	assert( ob_hasItem( ob, si ) );
-	assert( ob_getItem( ob, si ) == value );
+		{
+		FieldList fl = fl_bySymbol( si, ob->data.listFields );
+		if( fl )
+			fl->value = value;
+		else
+			ob->data.listFields = fl_new( si, value, ob->data.listFields, heap );
+		}
+	assert( ob_hasItem( ob, si, heap ) );
+	assert( ob_getItem( ob, si, heap ) == value );
 	}
 
 FUNC bool ob_hasField( Object ob, Symbol field, ObjectHeap heap )
 	{
-	return ob_hasItem( ob, sy_index( field, heap->st ) );
+	return ob_hasItem( ob, sy_index( field, heap->st ), heap );
 	}
 
 FUNC Object ob_getField( Object ob, Symbol field, ObjectHeap heap )
 	{
 	check( ob_hasField( ob, field, heap ) );
-	return ob_getItem( ob, sy_index( field, heap->st ) );
+	return ob_getItem( ob, sy_index( field, heap->st ), heap );
 	}
 
 FUNC void ob_setField( Object ob, Symbol field, Object value, ObjectHeap heap )
@@ -275,13 +301,13 @@ FUNC void ob_setField( Object ob, Symbol field, Object value, ObjectHeap heap )
 
 FUNC bool ob_hasElement( Object ob, int index, ObjectHeap heap )
 	{
-	return ob_hasItem( ob, (SymbolIndex)index );
+	return ob_hasItem( ob, (SymbolIndex)index, heap );
 	}
 
 FUNC Object ob_getElement( Object ob, int index, ObjectHeap heap )
 	{
 	check( ob_hasElement( ob, index, heap ) );
-	return ob_getItem( ob, (SymbolIndex)index );
+	return ob_getItem( ob, (SymbolIndex)index, heap );
 	}
 
 FUNC void ob_setElement( Object ob, int index, Object value, ObjectHeap heap )
@@ -393,28 +419,45 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 	return charsSent;
 	}
 
+static int sendEdgeTo( Symbol sy, Object value, ObjectHeap heap, File fl )
+	{
+	int charsSent = 0;
+	charsSent += fl_write( fl, "  " );
+	charsSent += sy_sendTo( sy, fl, heap->st );
+	charsSent += fl_write( fl, "->" );
+	charsSent += ob_sendTo( value, fl, heap );
+	charsSent += fl_write( fl, "\n" );
+	return charsSent;
+	}
+
 static int sendDeepTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 	{
 	int charsSent = 0;
 	if( !cl_isChecked( cl, ob ) && fl )
 		{
 		FieldList field;
+		int fieldID;
 		cl_check( cl, ob );
 		if( ob_hasItems( ob ) )
 			{
 			ob_sendTo( ob, fl, heap );
 			fl_write( fl, "\n  {\n" );
-			for( field = ob->data.fields; field; field = field->tail )
+			Record rd = sy_instanceShape( ob_tag(ob,heap), heap->st );
+			for( fieldID = rd_firstField(rd); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
 				{
-				fl_write( fl, "  " );
-				sy_sendTo( sy_byIndex( field->si, heap->st ), fl, heap->st );
-				fl_write( fl, "->" );
-				ob_sendTo( field->value, fl, heap );
-				fl_write( fl, "\n" );
+				Symbol sy = sy_byIndex( fieldID, heap->st );
+				charsSent += sendEdgeTo( sy, ob_getField( ob, sy, heap ), heap, fl );
 				}
+			for( field = ob->data.listFields; field; field = field->tail )
+				charsSent += sendEdgeTo( sy_byIndex( field->si, heap->st ), field->value, heap, fl );
 			fl_write( fl, "  }\n" );
-			for( field = ob->data.fields; field; field = field->tail )
-				sendDeepTo( field->value, fl, heap, cl );
+			for( fieldID = rd_firstField(rd); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
+				{
+				Symbol sy = sy_byIndex( fieldID, heap->st );
+				charsSent += sendDeepTo( ob_getField( ob, sy, heap ), fl, heap, cl );
+				}
+			for( field = ob->data.listFields; field; field = field->tail )
+				charsSent += sendDeepTo( field->value, fl, heap, cl );
 			}
 		else
 			{
@@ -434,33 +477,54 @@ FUNC int ob_sendDeepTo( Object ob, File fl, ObjectHeap heap )
 	return result;
 	}
 
+static int sendDotEdgesTo( Object ob, File fl, ObjectHeap heap, CheckList cl );
+
+static int sendDotEdgeTo( Object ob, Symbol sy, Object value, ObjectHeap heap, File fl, CheckList cl )
+	{
+	if( !value )
+		return 0;
+
+	int charsSent = 0;
+	if( ob_hasItems( value ) )
+		{
+		charsSent += fl_write( fl,
+			"n%p -> n%p [label=\"%s\"]\n",
+			ob, value, sy_name( sy, heap->st ) );
+		charsSent += sendDotEdgesTo( value, fl, heap, cl );
+		}
+#if 0
+	else if( ob_isInt( value, heap ) )
+		{
+		charsSent += fl_write( fl,
+			"n%p -> %d [label=\"%s\"]\n",
+			ob, ob_toInt( value, heap ), sy_name( sy, heap->st ) );
+		}
+#endif
+	return charsSent;
+	}
+
 static int sendDotEdgesTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 	{
 	int charsSent = 0;
 	if( !cl_isChecked( cl, ob ) )
 		{
 		FieldList field;
+		int fieldID;
 		cl_check( cl, ob );
 		if( ob_hasItems( ob ) )
 			{
-			for( field = ob->data.fields; field; field = field->tail )
+			Record rd = sy_instanceShape( ob_tag(ob,heap), heap->st );
+			for( fieldID = rd_firstField(rd); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
+				{
+				Symbol sy = sy_byIndex( fieldID, heap->st );
+				charsSent += sendDotEdgeTo( ob, sy, ob_getField( ob, sy, heap ), heap, fl, cl );
+				}
+			if( ob->data.listFields )
+				fl_write( fl, "// listFields for n%p begin here\n", ob );
+			for( field = ob->data.listFields; field; field = field->tail )
 				{
 				Symbol sy = sy_byIndex( field->si, heap->st );
-				if( ob_hasItems( field->value ) )
-					{
-					charsSent += fl_write( fl,
-						"n%p -> n%p [label=\"%s\"]\n",
-						ob, field->value, sy_name( sy, heap->st ) );
-					charsSent += sendDotEdgesTo( field->value, fl, heap, cl );
-					}
-#if 0
-				else if( ob_isInt( field->value, heap ) )
-					{
-					charsSent += fl_write( fl,
-						"n%p -> %d [label=\"%s\"]\n",
-						ob, ob_toInt( field->value, heap ), sy_name( sy, heap->st ) );
-					}
-#endif
+				charsSent += sendDotEdgeTo( ob, sy, field->value, heap, fl, cl );
 				}
 			}
 		}

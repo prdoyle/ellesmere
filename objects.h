@@ -53,5 +53,15 @@ FUNC int ob_sendTo         ( Object ob, File fl, ObjectHeap heap );
 FUNC int ob_sendDeepTo     ( Object ob, File fl, ObjectHeap heap );
 FUNC int ob_sendDotEdgesTo ( Object ob, File fl, ObjectHeap heap );
 
+typedef struct oba_struct *ObjectArray;
+#define AR_PREFIX  oba
+#define AR_TYPE    ObjectArray
+#define AR_ELEMENT Object
+#define AR_BYVALUE
+#include "array_template.h"
+#ifndef NDEBUG
+	#define oba_new( size, ml ) oba_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
+
 #endif
 
