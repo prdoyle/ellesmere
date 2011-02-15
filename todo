@@ -23,6 +23,7 @@
 - Two reduces with the same action (and possibly same RHS?) should not conflict.
     Not sure how to do that because Grammar doesn't know the actions.
 - Figure out what I'm doing with if statements in the brave new world where "return" is unnecessary
+- Wiki syntax thing
 
 
 Ideas

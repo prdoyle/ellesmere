@@ -54,10 +54,11 @@ const char *lastWord()          { return _lastString; }
 %option noyyset_debug
 
 DIGIT       [0-9]
-ALPHA       [A-Za-z_]
-ALNUM       [0-9A-Za-z_]
-OPER        [~!@$%^&*-+=<>|,.?/:]
-ALONE       [(){}]|\[|\]|[;]
+START       [A-Za-z]
+MIDDLE      [0-9A-Za-z_]
+END         [!?]?
+OPER        [~!@$%^&*-+=<>|?/:]
+ALONE       [(){},.;]|\[|\]
 WS          [ \t\r]
 
 %%
@@ -66,11 +67,12 @@ WS          [ \t\r]
 #.*$                  { ; /* comment */ }
 \n                    { ++_lineNumber; }
 
-{ALPHA}{ALNUM}*       { setLastWord(yytext); return WORD; }
-{OPER}+_{ALNUM}*      { setLastWord(yytext); return WORD; }
-{ALONE}               { setLastWord(yytext); return WORD; }
-{OPER}+               { setLastWord(yytext); return WORD; }
--                     { setLastWord(yytext); return WORD; }
+{START}{MIDDLE}*{END}   { setLastWord(yytext); return WORD; }
+{OPER}+                 { setLastWord(yytext); return WORD; }
+{OPER}+_{MIDDLE}*{END}  { setLastWord(yytext); return WORD; }
+{OPER}+^{MIDDLE}*{END}  { setLastWord(yytext); return WORD; }
+{ALONE}                 { setLastWord(yytext); return WORD; }
+-                       { setLastWord(yytext); return WORD; }
 
 \"[^"]*(\\\"[^"]*)*\" { setLastString(yytext); return STRING; }
 
