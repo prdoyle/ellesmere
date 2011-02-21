@@ -170,6 +170,7 @@ static ItemSet pg_findItemSet( ParserGenerator pg, ItemVector items )
 	return NULL;
 	}
 
+#ifdef REDUCE_CONTEXT_LENGTH
 static int its_maxDot( ItemSet its, ParserGenerator pg )
 	{
 	int result = 0;
@@ -182,6 +183,7 @@ static int its_maxDot( ItemSet its, ParserGenerator pg )
 		}
 	return result;
 	}
+#endif
 
 static ItemSet pg_createItemSet( ParserGenerator pg, ItemVector items )
 	{

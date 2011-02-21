@@ -27,7 +27,7 @@ FUNC int        ps_sendTo  ( Parser ps,    File fl, ObjectHeap heap, SymbolTable
 #ifdef REDUCE_CONTEXT_LENGTH
 FUNC          int ps_reduceContextLength( Parser ps, ObjectHeap heap, SymbolTable st );
 #else
-static inline int ps_reduceContextLength( Parser ps, SymbolTable st ) { return 0; }
+static inline int ps_reduceContextLength( Parser ps, ObjectHeap heap, SymbolTable st ) { return ps_depth(ps); }
 #endif
 
 static inline Grammar ps_grammar( Parser ps )

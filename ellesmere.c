@@ -136,20 +136,24 @@ static inline void dumpParserState( File fl )
 		dumpParserState0( fl );
 	}
 
+static void dumpStuff( File fl )
+	{
+	dumpStack( fl );
+	dumpParserState( fl );
+	}
+
 static void push( Object ob )
 	{
 	sk_push( stack, ob );
 	ps_push( ps, ob );
-	dumpParserState( details );
-	dumpStack( details );
+	dumpStuff( details );
 	}
 
 static Object pop()
 	{
 	Object result = sk_pop( stack );
 	ps_popN( ps, 1 );
-	dumpParserState( details );
-	dumpStack( details );
+	dumpStuff( details );
 	return result;
 	}
 
@@ -157,8 +161,7 @@ static void popN( int n )
 	{
 	sk_popN( stack, n );
 	ps_popN( ps, n );
-	dumpParserState( details );
-	dumpStack( details );
+	dumpStuff( details );
 	}
 
 static int popInt()
@@ -223,16 +226,16 @@ static void passThrough( Production handle, GrammarLine gl )
 
 static void addAction( Production handle, GrammarLine gl )
 	{
-	int right = popInt();
 	popToken();
+	int right = popInt();
 	int left = popInt();
 	push( ob_fromInt( left + right, heap ) );
 	}
 
 static void subAction( Production handle, GrammarLine gl )
 	{
-	int right = popInt();
 	popToken();
+	int right = popInt();
 	int left;
 	if( gl->response.parm1 == 2 )
 		left = popInt();
@@ -243,23 +246,24 @@ static void subAction( Production handle, GrammarLine gl )
 
 static void mulAction( Production handle, GrammarLine gl )
 	{
-	int right = popInt();
 	popToken();
+	int right = popInt();
 	int left = popInt();
 	push( ob_fromInt( left * right, heap ) );
 	}
 
 static void divAction( Production handle, GrammarLine gl )
 	{
-	int right = popInt();
 	popToken();
+	int right = popInt();
 	int left = popInt();
 	push( ob_fromInt( left / right, heap ) );
 	}
 
 static void printAction( Production handle, GrammarLine gl )
 	{
-	ob_sendTo( sk_top( stack ), stdout, heap );
+	int depth = gl->response.parm1;
+	ob_sendTo( sk_item( stack, depth ), stdout, heap );
 	printf("\n");
 	nopAction( handle, gl );
 	}
@@ -398,8 +402,10 @@ static void defAction( Production handle, GrammarLine gl )
 
 static void returnAction( Production handle, GrammarLine gl )
 	{
-	Object result = pop();
-	popToken();
+	Grammar gr = ps_grammar( ps );
+	int depth = gl->response.parm1;
+	Object result = sk_item( stack, depth );
+	popN( pn_length( handle, gr ) );
 	ts_pop( tokenStream );
 	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
 	cx_restore( curContext );
@@ -410,6 +416,7 @@ static void returnAction( Production handle, GrammarLine gl )
 
 static void nonzeroAction( Production handle, GrammarLine gl )
 	{
+	popToken();
 	int value = popInt();
 	if( value )
 		pushToken( SYM_TRUE );
@@ -419,8 +426,8 @@ static void nonzeroAction( Production handle, GrammarLine gl )
 
 static void leAction( Production handle, GrammarLine gl )
 	{
-	int right = popInt();
 	popToken();
+	int right = popInt();
 	int left = popInt();
 	if( left <= right )
 		pushToken( SYM_TRUE );
@@ -452,12 +459,12 @@ static struct gl_struct grammar1[] =
 	{ { "VOID",     "{", "VOIDS", "}"                               }, { nopAction } },
 	{ { "VOID",     "{",          "}"                               }, { nopAction } },
 
-	{ { "VOID",            "print", "INT"                           }, { printAction } },
+	{ { "VOID",     "INT", "print!"                                 }, { printAction, 1 } },
 
-	{ { "VOID",            "return", "INT"                          }, { returnAction } },
-	{ { "VOID",            "return", "VOID"                         }, { returnAction } },
+	{ { "VOID",     "INT",  "return!",                              }, { returnAction, 1 } },
+	{ { "VOID",     "VOID", "return!",                              }, { returnAction, 1 } },
 
-	{ { "VOID",            "TOKEN@name", ":=", "INT@value"          }, { setAction } },
+	{ { "VOID",     "TOKEN@name", "INT@value", "set!"               }, { setAction } },
 
 	{ { "PARAMETER_LIST"                                            }, { parseTreeAction } },
 	{ { "PARAMETER_LIST",  "TOKEN@tag",      "PARAMETER_LIST@next"  }, { parseTreeAction } },
@@ -471,44 +478,26 @@ static struct gl_struct grammar1[] =
  	{ { "TB_START",        "{",                                     }, { recordTokenBlockAction } },
 	{ { "VOID",            "def", "PRODUCTION", "as", "TOKEN_BLOCK" }, { defAction } },
 
-	{ { "FALSE",           "INT"                                    }, { nonzeroAction } },
-	{ { "FALSE",           "INT", "<=", "INT"                       }, { leAction } },
+	{ { "INT",             "INT", "INT", "add!"                     }, { addAction } },
+	{ { "INT",             "INT", "INT", "sub!"                     }, { subAction, 2 } },
+	{ { "INT",             "INT", "INT", "mul!"                     }, { mulAction } },
+	{ { "INT",             "INT", "INT", "div!"                     }, { divAction } },
+
+	{ { "FALSE",           "INT", "nz!"                             }, { nonzeroAction } },
+	{ { "FALSE",           "INT", "INT", "le!"                      }, { leAction } },
 
 	{{NULL}},
 	};
 
 static struct gl_struct booleans1[] =
 	{
-	{ { "TRUE",            "INT"                                    }, { nonzeroAction } },
-	{ { "TRUE",            "INT", "<=", "INT"                       }, { leAction } },
+	{ { "TRUE",            "INT", "nz!"                             }, { nonzeroAction } },
+	{ { "TRUE",            "INT", "INT", "le!"                      }, { leAction } },
 
 	{{NULL}},
 	};
 
-static struct gl_struct arithmetic1[] =
-	{
-	{ { "INT",            "-", "INT" }, { subAction, 1 } },
-
-	{{NULL}},
-	};
-
-static struct gl_struct arithmetic2[] =
-	{
-	{ { "INT",         "INT", "+", "INT" }, { addAction    }, CR_REDUCE_BEATS_SHIFT },
-	{ { "INT",         "INT", "-", "INT" }, { subAction, 2 }, CR_REDUCE_BEATS_SHIFT },
-
-	{{NULL}},
-	};
-
-static struct gl_struct arithmetic3[] =
-	{
-	{ { "INT",         "INT", "*", "INT" }, { mulAction }, CR_REDUCE_BEATS_SHIFT },
-	{ { "INT",         "INT", "/", "INT" }, { divAction }, CR_REDUCE_BEATS_SHIFT },
-	{ { "INT",         "(", "INT", ")"   }, { passThrough, 1 } },
-	{{NULL}},
-	};
-
-static GrammarLine initialGrammarNest[] = { grammar1, booleans1, arithmetic1, arithmetic2, arithmetic3 };
+static GrammarLine initialGrammarNest[] = { grammar1, booleans1 };
 
 static Grammar populateGrammar( SymbolTable st )
 	{
@@ -605,8 +594,8 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 				{
 				if( diagnostics )
 					{
-					dumpParserState( details );
 					dumpStack( diagnostics );
+					dumpParserState( details );
 					trace( diagnostics, "    # Recording handle: " );
 					pn_sendTo( handle, diagnostics, gr, st );
 					trace( diagnostics, "\n" );
@@ -703,8 +692,8 @@ int main( int argc, char **argv )
 			Grammar gr = ps_grammar( ps ); // Grammar can change as the program proceeds
 			if( diagnostics )
 				{
-				dumpParserState( details );
 				dumpStack( diagnostics );
+				dumpParserState( details );
 				trace( diagnostics, "    # Handle: " );
 				pn_sendTo( handle, diagnostics, gr, st );
 				trace( diagnostics, "\n" );

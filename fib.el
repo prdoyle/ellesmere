@@ -16,13 +16,13 @@ def VOID
 as { result }
 
 def INT
-	fib ( n:INT )
+	n:INT fib!
 as
 	{
-	if n <= 1 then
+	if n 1 le! then
 		{ 1 }
 	else
-		{ fib(n-1) + fib(n-2) }
+		{ n 1 sub! fib! n 2 sub! fib! add! }
 	end
 	}
 
@@ -30,13 +30,13 @@ def VOID
 	fibs ( n:INT )
 as
 	{
-	if 1 <= n then
-		{ fibs( n-1 ) }
+	if 1 n le! then
+		{ fibs( n 1 sub! ) }
 	else
 		{ }
 	end
-	print n
-	print fib(n)
+	n print!
+	n fib! print!
 	}
 
 fibs( 24 )

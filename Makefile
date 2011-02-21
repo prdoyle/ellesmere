@@ -88,6 +88,13 @@ gprof.txt: gmon.out
 gmon.out: prof
 	./ellesmere < fib.el
 
+oprof.txt: fast
+	sudo opcontrol --reset
+	sudo opcontrol --start
+	./ellesmere < fib.el
+	sudo opcontrol --stop
+	opannotate --assembly --objdump-params "-Mintel" --include-file ./ellesmere | sort -rn > $@
+
 bitvector.t: CFLAGS += -DBITVECTOR_T
 bitvector.t: bitvector.o memory.o file.o
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
@@ -108,7 +115,9 @@ states.dot: parser.t
 	./parser.t > states.dot 3> trace.txt
 
 clean:
-	rm -f memreport.txt ellesmere tags _merged.c gmon.out *.gcda $(GEN_C_FILES) $(GEN_H_FILES) $(O_FILES) $(I_FILES) $(D_FILES)
+	rm -f ellesmere tags _merged.c $(GEN_C_FILES) $(GEN_H_FILES) $(O_FILES) $(I_FILES) $(D_FILES)
+	rm -f memreport.txt gmon.out *.gcda
+	rm -f memreport.txt gmon.out *.gcda oprof.txt gprof.txt
 	rm -f bitvector.t parser.t records.t states.dot states.pdf trace.txt
 
 .PHONY: all merged memreport.txt

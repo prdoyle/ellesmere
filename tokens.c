@@ -132,11 +132,16 @@ FUNC Object ts_current( TokenStream ts )
 
 FUNC Object ts_next( TokenStream ts )
 	{
-	Digression di = ts_digression( ts );
-	if( di )
-		return di_token( di, 1 );
-	else
-		return ts->lex.next;
+	Object result = NULL;
+	int i, index=1;
+	for( i = 0; !result && i < dis_count( ts->digressions ); i++ )
+		{
+		result = di_token( dis_last( ts->digressions, i ), index );
+		index = 0;
+		}
+	if( !result )
+		result = ts->lex.next;
+	return result;
 	}
 
 FUNC void ts_advance( TokenStream ts )
