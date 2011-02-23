@@ -337,6 +337,7 @@ static void addProductionAction( Production handle, GrammarLine gl )
 	// Define the nested grammar with this extra production
 	Grammar gr = gr_nested( ps_grammar(ps), 1, ml_indefinite() );
 	Production pn = pn_new( gr, ob_toSymbol( ob_getField( production, sym_result, heap ), heap ), 3 );
+	pn_setConflictResolution( pn, gl->response.parm1, gr );
 	Object parm;
 	for(
 		parm = ob_getField( production, sym_parms, heap);
@@ -453,8 +454,12 @@ static struct gl_struct grammar1[] =
 	{ { "STATEMENT_BLOCK", "{", "VOIDS", "}"                        }, { nopAction } },
 	{ { "STATEMENT_BLOCK", "{",          "}"                        }, { nopAction } },
 
-	{ { "INT",      "{", "VOIDS", "INT", "}"                        }, { passThrough, 1 } },
-	{ { "INT",      "{",          "INT", "}"                        }, { passThrough, 1 } },
+	{ { "INT",      "{", "VOIDS", "INT",   "}"                      }, { passThrough, 1 } },
+	{ { "INT",      "{",          "INT",   "}"                      }, { passThrough, 1 } },
+	{ { "TRUE",     "{", "VOIDS", "TRUE",  "}"                      }, { passThrough, 1 } },
+	{ { "TRUE",     "{",          "TRUE",  "}"                      }, { passThrough, 1 } },
+	{ { "FALSE",    "{", "VOIDS", "FALSE", "}"                      }, { passThrough, 1 } },
+	{ { "FALSE",    "{",          "FALSE", "}"                      }, { passThrough, 1 } },
 
 	{ { "VOID",     "{", "VOIDS", "}"                               }, { nopAction } },
 	{ { "VOID",     "{",          "}"                               }, { nopAction } },
@@ -471,10 +476,15 @@ static struct gl_struct grammar1[] =
 	{ { "PARAMETER_LIST",  "TOKEN@tag",  "@", "TOKEN@name", "PARAMETER_LIST@next"  }, { parseTreeAction } },
 	{ { "PARAMETER_LIST",  "TOKEN@name", ":", "TOKEN@tag",  "PARAMETER_LIST@next"  }, { parseTreeAction } },
 	{ { "PRODUCTION",      "TOKEN@result", "PARAMETER_LIST@parms"   }, { addProductionAction } },
+	{ { "PRODUCTION",      "l2r", "TOKEN@result", "PARAMETER_LIST@parms"   }, { addProductionAction, CR_REDUCE_BEATS_SHIFT } },
  	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "}"                 }, { stopRecordingTokenBlockAction } },
  	{ { "TOKEN_BLOCK",     "TB_START",          "}"                 }, { stopRecordingTokenBlockAction } },
  	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "INT", "}"          }, { stopRecordingTokenBlockAction } },
  	{ { "TOKEN_BLOCK",     "TB_START", "INT", "}"                   }, { stopRecordingTokenBlockAction } },
+ 	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "TRUE", "}"         }, { stopRecordingTokenBlockAction } },
+ 	{ { "TOKEN_BLOCK",     "TB_START", "TRUE", "}"                  }, { stopRecordingTokenBlockAction } },
+ 	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "FALSE", "}"        }, { stopRecordingTokenBlockAction } },
+ 	{ { "TOKEN_BLOCK",     "TB_START", "FALSE", "}"                 }, { stopRecordingTokenBlockAction } },
  	{ { "TB_START",        "{",                                     }, { recordTokenBlockAction } },
 	{ { "VOID",            "def", "PRODUCTION", "as", "TOKEN_BLOCK" }, { defAction } },
 
