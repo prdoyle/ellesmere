@@ -8,16 +8,22 @@
 typedef enum
 	{
 	NULL_SYMBOL_INDEX=0,
+
+	// Objects with these tags have no fields
+	//
 	SYM_INT,
 	SYM_STRING,
 	SYM_TOKEN,
+	// Reflected internal data structures
 	SYM_FUNCTION,
 	SYM_TOKEN_BLOCK,
 	SYM_TOKEN_STREAM,
-	SYM_END_OF_INPUT,
 	NUM_SPECIAL_OBJECT_TAGS,
 
-	SYM_STATE_NODE         = NUM_SPECIAL_OBJECT_TAGS,
+	// Other symbols used internally
+	//
+	SYM_END_OF_INPUT             = NUM_SPECIAL_OBJECT_TAGS,
+	SYM_STATE_NODE,
 	SYM_ITEM_SET_NUM,
 	SYM_REDUCE_CONTEXT_LENGTH,
 	SYM_BOOLEAN,
