@@ -977,7 +977,6 @@ static Object ps_nextState( Parser ps, Object ob )
 		ob_sendTo( ob, ps->detailedDiagnostics, theObjectHeap() );
 		trace( ps->detailedDiagnostics, "\n" );
 		}
-	// Not sure how I'm dealing with tokens as first-class objects yet...
 	Object result = NULL;
 	if( ob_isToken( ob, oh ) )
 		{
@@ -1010,19 +1009,45 @@ FUNC void ps_push( Parser ps, Object ob )
 		if( pg )
 			{
 			// Extended debug info
-			// Until I think of a good way to trim this down, just print all items from each itemSet on the stack
 			int i,j,k;
 			int charsSent = 0;
 			fl_write( stderr, "State:\n" );
 			Symbol isn = sy_byIndex( SYM_ITEM_SET_NUM, pg->st );
-			SymbolVector follow = bv_new( sst_count(pg->sst), ml_undecided() );
-			for( i = sk_depth( ps->stateStack )-1; i >= 0; i-- )
+			SymbolVector  follow = bv_new( sst_count(pg->sst),  ml_undecided() );
+			ItemVector curItems  = bv_new( gr_numItems(pg->gr), ml_undecided() );
+			ItemVector nextItems = bv_new( gr_numItems(pg->gr), ml_undecided() );
+			bool firstIteration = true; // easiest to initialize during first iteration of loop below
+			// Too bad the nextItems logic requires us to print the innermost frame first...
+			for( i = 0; i < sk_depth( ps->stateStack ); i++ )
 				{
+				bv_clear( nextItems );
 				int itemSetNum = ps_itemSetNum( ps, i, isn );
 				ItemSet its = itst_element( pg->itemSets, itemSetNum );
 				for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
 					{
 					Item it = ita_element( pg->items, j );
+					// Figure out what stuff to print
+					if( !bv_isSet( curItems, j ) && !firstIteration )
+						continue;
+					switch( it->dot )
+						{
+						case 0:
+							// Nothing to do
+							break;
+						case 1:
+							{
+							// Once we get past this item, we'll be at position 0, so
+							// we'll want everything before this guy's lhs.
+							SymbolSideTableEntry lhs = pg_sideTableEntry( pg, pn_lhs( it->pn, pg->gr ), NULL );
+							bv_or( nextItems, lhs->expectingItems );
+							}
+							// fall through
+						default:
+							bv_set( nextItems, j-1 );
+							break;
+						}
+
+					// Print it
 					charsSent += fl_write( stderr, "    " );
 					charsSent += pn_sendItemTo( it->pn, it->dot, stderr, pg->gr, pg->st );
 					charsSent += fl_write( stderr, "  [ " );
@@ -1038,6 +1063,8 @@ FUNC void ps_push( Parser ps, Object ob )
 					charsSent += fl_write( stderr, " ]\n" );
 					}
 				charsSent += fl_write( stderr, "  ----\n" );
+				firstIteration = false;
+				bv_copy( curItems, nextItems );
 				}
 			}
 		fl_write( stderr, "Unexpected object: " );
