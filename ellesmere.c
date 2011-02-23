@@ -437,9 +437,9 @@ static void leAction( Production handle, GrammarLine gl )
 
 static void setAction( Production handle, GrammarLine gl )
 	{
-	Object rhs = pop();
 	popToken();
 	Symbol name = popToken();
+	Object rhs = pop();
 	sy_setValue( name, rhs, curContext );
 	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
 	}
@@ -464,7 +464,7 @@ static struct gl_struct grammar1[] =
 	{ { "VOID",     "INT",  "return!",                              }, { returnAction, 1 } },
 	{ { "VOID",     "VOID", "return!",                              }, { returnAction, 1 } },
 
-	{ { "VOID",     "TOKEN@name", "INT@value", "set!"               }, { setAction } },
+	{ { "VOID",     "INT@value", "TOKEN@name", "set!"               }, { setAction } },
 
 	{ { "PARAMETER_LIST"                                            }, { parseTreeAction } },
 	{ { "PARAMETER_LIST",  "TOKEN@tag",      "PARAMETER_LIST@next"  }, { parseTreeAction } },

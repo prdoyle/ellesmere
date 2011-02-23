@@ -781,6 +781,8 @@ struct au_struct
 	ObjectHeap stateHeap;
 	// Perf tweaks
 	ParserArray parsers;
+	// Debugging
+	ParserGenerator pg;
 	};
 
 enum
@@ -865,7 +867,11 @@ static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 FUNC Automaton au_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File conflictLog, File diagnostics )
 	{
 	trace( diagnostics, "Generating automaton\n" );
+#ifdef NDEBUG
 	MemoryLifetime generateTime = ml_begin( 100000, ml );
+#else
+	MemoryLifetime generateTime = ml;
+#endif
 
 	Automaton result = (Automaton)ml_alloc( ml, sizeof(*result) );
 	char stateTagName[50];
@@ -893,7 +899,13 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File confl
 		trace( diagnostics, "\n" );
 		}
 
-	ml_end( generateTime );
+	if( generateTime == ml )
+		result->pg = pg;
+	else
+		{
+		ml_end( generateTime );
+		result->pg = NULL;
+		}
 
 	return result;
 	}
@@ -991,6 +1003,47 @@ FUNC bool ps_expects( Parser ps, Object ob )
 FUNC void ps_push( Parser ps, Object ob )
 	{
 	Object nextState = ps_nextState( ps, ob );
+	if( !nextState )
+		{
+		ObjectHeap oh = ps->au->stateHeap;
+		ParserGenerator pg = ps_automaton(ps)->pg;
+		if( pg )
+			{
+			// Extended debug info
+			// Until I think of a good way to trim this down, just print all items from each itemSet on the stack
+			int i,j,k;
+			int charsSent = 0;
+			fl_write( stderr, "State:\n" );
+			Symbol isn = sy_byIndex( SYM_ITEM_SET_NUM, pg->st );
+			SymbolVector follow = bv_new( sst_count(pg->sst), ml_undecided() );
+			for( i = sk_depth( ps->stateStack )-1; i >= 0; i-- )
+				{
+				int itemSetNum = ps_itemSetNum( ps, i, isn );
+				ItemSet its = itst_element( pg->itemSets, itemSetNum );
+				for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
+					{
+					Item it = ita_element( pg->items, j );
+					charsSent += fl_write( stderr, "    " );
+					charsSent += pn_sendItemTo( it->pn, it->dot, stderr, pg->gr, pg->st );
+					charsSent += fl_write( stderr, "  [ " );
+					char *sep = "";
+					bv_clear( follow );
+					it_getFollow( it, follow, pg, NULL );
+					for( k = bv_firstBit( follow ); k != bv_END; k = bv_nextBit( follow, k ) )
+						{
+						SymbolSideTableEntry sste = sst_element( pg->sst, k );
+						charsSent += fl_write( stderr, "%s%s", sep, sy_name( sste->sy, pg->st ) );
+						sep = " ";
+						}
+					charsSent += fl_write( stderr, " ]\n" );
+					}
+				charsSent += fl_write( stderr, "  ----\n" );
+				}
+			}
+		fl_write( stderr, "Unexpected object: " );
+		ob_sendTo( ob, stderr, oh );
+		fl_write( stderr, "\n" );
+		}
 	check( nextState );
 	sk_push( ps->stateStack, nextState );
 	}
