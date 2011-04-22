@@ -1,7 +1,7 @@
 def INT
-	double n:INT
+	n:INT double!
 as
-	{ n+n }
+	{ n n add! }
 
-print double 3
-print double 4
+3 double! print!
+4 double! print!

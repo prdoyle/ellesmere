@@ -18,6 +18,7 @@ typedef enum
 	SYM_FUNCTION,
 	SYM_TOKEN_BLOCK,
 	SYM_TOKEN_STREAM,
+	SYM_GRAMMAR,
 	NUM_SPECIAL_OBJECT_TAGS,
 
 	// Other symbols used internally

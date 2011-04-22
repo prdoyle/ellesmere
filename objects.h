@@ -65,5 +65,9 @@ FUNC Object       ob_fromTokenStream( TokenStream ts, ObjectHeap heap );
 FUNC bool         ob_isTokenStream( Object ob, ObjectHeap heap );
 FUNC TokenStream  ob_toTokenStream( Object ob, ObjectHeap heap );
 
+FUNC Object       ob_fromGrammar( Grammar gr, ObjectHeap heap );
+FUNC bool         ob_isGrammar( Object ob, ObjectHeap heap );
+FUNC Grammar      ob_toGrammar( Object ob, ObjectHeap heap );
+
 #endif
 

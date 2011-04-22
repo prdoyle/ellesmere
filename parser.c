@@ -705,8 +705,15 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 					bv_and ( conflictingSymbols, competitorSymbols );
 					if( pg_itemIsRightmost( pg, k ) )
 						{
-						pg_reportConflict( pg, its, it, competitor, conflictingSymbols, conflictLog, traceFile, "Reduce-reduce" );
-						trace( traceFile, "        BAD!\n" );
+						if( both( it, competitor, CR_ARBITRARY_REDUCE, pg ) )
+							{
+							trace( traceFile, "        CR_ARBITRARY_REDUCE -- favouring competitor\n" );
+							}
+						else
+							{
+							pg_reportConflict( pg, its, it, competitor, conflictingSymbols, conflictLog, traceFile, "Reduce-reduce" );
+							trace( traceFile, "        BAD!\n" );
+							}
 						continue;
 						}
 					else
@@ -866,12 +873,14 @@ static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 
 FUNC Automaton au_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File conflictLog, File diagnostics )
 	{
-	trace( diagnostics, "Generating automaton\n" );
+	trace( diagnostics, "Generating automaton for {\n" );
+	gr_sendTo( gr, diagnostics, st );
 #ifdef NDEBUG
 	MemoryLifetime generateTime = ml_begin( 100000, ml );
 #else
 	MemoryLifetime generateTime = ml;
 #endif
+	trace( diagnostics, "}\n" );
 
 	Automaton result = (Automaton)ml_alloc( ml, sizeof(*result) );
 	char stateTagName[50];
@@ -1001,10 +1010,10 @@ FUNC bool ps_expects( Parser ps, Object ob )
 
 FUNC void ps_push( Parser ps, Object ob )
 	{
+	ObjectHeap oh = ps->au->stateHeap;
 	Object nextState = ps_nextState( ps, ob );
 	if( !nextState )
 		{
-		ObjectHeap oh = ps->au->stateHeap;
 		ParserGenerator pg = ps_automaton(ps)->pg;
 		if( pg )
 			{
@@ -1067,7 +1076,7 @@ FUNC void ps_push( Parser ps, Object ob )
 				bv_copy( curItems, nextItems );
 				}
 			}
-		fl_write( stderr, "Unexpected object: " );
+		fl_write( stderr, "Unexpected %s: ", sy_name( ob_tag( ob, oh ), pg->st ) );
 		ob_sendTo( ob, stderr, oh );
 		fl_write( stderr, "\n" );
 		}

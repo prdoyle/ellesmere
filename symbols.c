@@ -24,6 +24,7 @@ static struct sy_struct predefinedSymbols[] =
 	{ "FUNCTION" },
 	{ "TOKEN_BLOCK" },
 	{ "TOKEN_STREAM" },
+	{ "GRAMMAR" },
 	{ "END_OF_INPUT" },
 	{ "STATE_NODE" },
 	{ "ITEM_SET_NUM" },

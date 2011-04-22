@@ -23,6 +23,7 @@ typedef enum
 
 	CR_SHIFT_BEATS_REDUCE,
 	CR_REDUCE_BEATS_SHIFT,
+	CR_ARBITRARY_REDUCE,   // Don't sweat reduce-reduce conflicts
 
 	CR_COUNT
 	} ConflictResolutions;

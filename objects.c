@@ -79,6 +79,7 @@ struct ob_struct
 		TokenBlock  tokenBlock;
 #endif
 		TokenStream tokenStream;
+		Grammar     grammar;
 		} data;
 	int checkListIndex;
 	Object recordFields[1]; // actually numRecordFields(tag) elements
@@ -219,6 +220,26 @@ FUNC TokenStream ob_toTokenStream( Object ob, ObjectHeap heap )
 	{
 	assert( ob_isTokenStream( ob, heap ) );
 	return ob->data.tokenStream;
+	}
+
+FUNC Object ob_fromGrammar( Grammar gr, ObjectHeap heap )
+	{
+	Object result = (Object)ml_alloc( heap->ml, (sizeof(*result)) );
+	result->tag = SYM_GRAMMAR;
+	result->data.grammar = gr;
+	assert( ob_kind( result ) == OB_STRUCT );
+	return result;
+	}
+
+FUNC bool ob_isGrammar( Object ob, ObjectHeap heap )
+	{
+	return ob_kind( ob ) == OB_STRUCT && ob->tag == SYM_GRAMMAR;
+	}
+
+FUNC Grammar ob_toGrammar( Object ob, ObjectHeap heap )
+	{
+	assert( ob_isGrammar( ob, heap ) );
+	return ob->data.grammar;
 	}
 
 FUNC Symbol ob_tag( Object ob, ObjectHeap heap )
