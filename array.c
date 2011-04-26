@@ -101,13 +101,6 @@ FUNC void ar_setCount( Array ar, int newCount, int elementSize )
 	assert( ar_count(ar) == newCount );
 	}
 
-FUNC int ar_incCount( Array ar, int elementSize ) __attribute__((always_inline));
-FUNC int ar_incCount( Array ar, int elementSize )
-	{ 
-	ar_setCount( ar, ar_count(ar) + 1, elementSize );
-	return ar->count;
-	}
-
 FUNC int ar_incCountBy( Array ar, int delta, int elementSize ) __attribute__((always_inline));
 FUNC int ar_incCountBy( Array ar, int delta, int elementSize )
 	{ 

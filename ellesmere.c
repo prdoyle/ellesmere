@@ -76,10 +76,20 @@ static void cf_pop()
 #endif
 	}
 
+typedef struct gl_struct *GrammarLine;
+typedef void (*NativeAction)( Production handle, GrammarLine gl );
+
 struct fn_struct
 	{
 	Production production;
-	TokenBlock body;
+	enum {
+		FN_NATIVE,
+		FN_TOKEN_BLOCK,
+	} kind;
+	union {
+		TokenBlock   tb;
+		NativeAction na;
+	} body;
 	};
 
 typedef struct fna_struct *FunctionArray;
@@ -192,10 +202,6 @@ static void closeTokenStreamsAsNecessary()
 		trace( diagnostics, "  Returned to TokenBlock %p\n", ts_curBlock( tokenStream ) );
 		}
 	}
-
-typedef struct gl_struct *GrammarLine;
-	 
-typedef void (*NativeAction)( Production handle, GrammarLine gl );
 
 struct gl_struct
 	{
@@ -396,7 +402,8 @@ static void defAction( Production handle, GrammarLine gl )
 	int pnIndex = ob_toInt( ob_getField( production, sy_byName( "index", st ), heap ), heap );
 	Function fn = (Function)ml_alloc( ml_indefinite(), sizeof(*fn) );
 	fn->production = gr_production( ps_grammar(ps), pnIndex );
-	fn->body = block;
+	fn->kind       = FN_TOKEN_BLOCK;
+	fn->body.tb    = block;
 	fna_setCount( productionBodies, pnIndex+1 );
 	fna_set( productionBodies, pnIndex, fn );
 	}
@@ -727,7 +734,7 @@ int main( int argc, char **argv )
 						sy_setValue( nameSymbol, value, curContext );
 						}
 					}
-				ts_push( tokenStream, functionToCall->body );
+				ts_push( tokenStream, functionToCall->body.tb );
 				cf_push();
 				trace( diagnostics, "    Calling body %p for production %d\n", tokenStream, pn_index( handle, gr ) );
 				handle = NULL;

@@ -40,7 +40,7 @@ static inline void AR_PREFIXED( _store )( AR_TYPE ar, int index, AR_ELEMENT *new
 	{ ar_store( (Array)ar, index, newValue, sizeof(AR_ELEMENT) ); }
 
 static inline int AR_PREFIXED( _incCount )( AR_TYPE ar )
-	{ return ar_incCount( (Array)ar, sizeof(AR_ELEMENT) ); }
+	{ return ar_incCountBy( (Array)ar, 1, sizeof(AR_ELEMENT) ); }
 
 static inline int AR_PREFIXED( _incCountBy )( AR_TYPE ar, int delta )
 	{ return ar_incCountBy( (Array)ar, delta, sizeof(AR_ELEMENT) ); }
@@ -52,7 +52,7 @@ static inline void AR_PREFIXED( _setCapacity )( AR_TYPE ar, int newCapacity )
 	{ ar_setCapacity( (Array)ar, newCapacity, sizeof(AR_ELEMENT) ); }
 
 static inline AR_ELEMENT *AR_PREFIXED( _nextElement )( AR_TYPE ar )
-	{ return (AR_ELEMENT*)ar_element( (Array)ar, ar_incCount( (Array)ar, sizeof(AR_ELEMENT) ) - 1, sizeof(AR_ELEMENT) ); }
+	{ return (AR_ELEMENT*)ar_element( (Array)ar, ar_incCountBy( (Array)ar, 1, sizeof(AR_ELEMENT) ) - 1, sizeof(AR_ELEMENT) ); }
 
 static inline void AR_PREFIXED( _shrinkWrap )( AR_TYPE ar )
 	{ ar_setCapacity( (Array)ar, ar_count( (Array)ar ), sizeof(AR_ELEMENT) ); }
@@ -72,7 +72,7 @@ static inline void AR_PREFIXED( _set )( AR_TYPE ar, int index, AR_ELEMENT newVal
 	{ ar_store( (Array)ar, index, &newValue, sizeof(AR_ELEMENT) ); }
 
 static inline void AR_PREFIXED( _append )( AR_TYPE ar, AR_ELEMENT newValue )
-	{ ar_store( (Array)ar, ar_incCount( (Array)ar, sizeof(AR_ELEMENT) ) - 1, &newValue, sizeof(AR_ELEMENT) ); }
+	{ ar_store( (Array)ar, ar_incCountBy( (Array)ar, 1, sizeof(AR_ELEMENT) ) - 1, &newValue, sizeof(AR_ELEMENT) ); }
 #endif
 
 #undef AR_PREFIX
