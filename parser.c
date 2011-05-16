@@ -1012,7 +1012,7 @@ FUNC void ps_push( Parser ps, Object ob )
 	{
 	ObjectHeap oh = ps->au->stateHeap;
 	Object nextState = ps_nextState( ps, ob );
-	if( !nextState )
+	if( !nextState || ob_isInt( nextState, oh ) )
 		{
 		ParserGenerator pg = ps_automaton(ps)->pg;
 		if( pg )

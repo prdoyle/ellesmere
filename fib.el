@@ -66,4 +66,5 @@ as
 	fib(n) print!
 	}
 
+#fibs( 12 )
 fibs( 24 )

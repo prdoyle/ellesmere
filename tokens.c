@@ -98,6 +98,28 @@ static Object di_token( Digression di, int offset )
 		return NULL;
 	}
 
+static int di_sendNTo( Digression di, int tokenLimit, File fl, ObjectHeap heap )
+	{
+	TokenBlock tb = di->tb;
+	char *ending = NULL;
+	int stopIndex = di->index + tokenLimit;
+	if( stopIndex >= oba_count( tb->tokens ) )
+		stopIndex = oba_count( tb->tokens );
+	else
+		ending = "  ...";
+
+	int charsSent = 0;
+	int i;
+	for( i=di->index; i < stopIndex; i++ )
+		{
+		charsSent += fl_write( fl, " " );
+		charsSent += ob_sendTo( oba_get( tb->tokens, i ), fl, heap );
+		}
+	if( ending )
+		charsSent += fl_write( fl, ending );
+	return charsSent;
+	}
+
 FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st )
 	{
 	static TokenStream result = NULL;
@@ -128,20 +150,6 @@ FUNC Object ts_current( TokenStream ts )
 		return di_token( di, 0 );
 	else
 		return ts->lex.current;
-	}
-
-FUNC Object ts_next( TokenStream ts )
-	{
-	Object result = NULL;
-	int i, index=1;
-	for( i = 0; !result && i < dis_count( ts->digressions ); i++ )
-		{
-		result = di_token( dis_last( ts->digressions, i ), index );
-		index = 0;
-		}
-	if( !result )
-		result = ts->lex.next;
-	return result;
 	}
 
 FUNC void ts_advance( TokenStream ts )
@@ -249,27 +257,42 @@ FUNC int ts_sendTo( TokenStream ts, File fl )
 	for( i = dis_count( ts->digressions )-1; i >= 0; i-- )
 		{
 		Digression di = dis_element( ts->digressions, i );
-		charsSent += ob_sendTo( di_token( di, 0 ), fl, ts->heap );
-		charsSent += fl_write( fl, " (" );
-		charsSent += ob_sendTo( di_token( di, 1 ), fl, ts->heap );
-		charsSent += fl_write( fl, ") " );
+		di_sendNTo( di, 4, fl, ts->heap );
+		charsSent += fl_write( fl, "  ||  " );
 		}
-	charsSent += ob_sendTo( ts->lex.current, fl, ts->heap );
-	charsSent += fl_write( fl, " (" );
-	charsSent += ob_sendTo( ts->lex.next,    fl, ts->heap );
-	charsSent += fl_write( fl, ") " );
+	if( ts->lex.current )
+		{
+		charsSent += ob_sendTo( ts->lex.current, fl, ts->heap );
+		if( ts->lex.next )
+			{
+			charsSent += fl_write( fl, " " );
+			charsSent += ob_sendTo( ts->lex.next, fl, ts->heap );
+			charsSent += fl_write( fl, "  ..." );
+			}
+		}
+	return charsSent;
+	}
+
+FUNC int tb_sendNTo( TokenBlock tb, int tokenLimit, File fl, ObjectHeap heap )
+	{
+	int i;
+	int charsSent = 0;
+	if( tokenLimit > oba_count( tb->tokens ) )
+		tokenLimit = oba_count( tb->tokens );
+	for( i=0; i < tokenLimit; i++ )
+		{
+		charsSent += fl_write( fl, " " );
+		charsSent += ob_sendTo( oba_get( tb->tokens, i ), fl, heap );
+		}
+	if( tokenLimit < oba_count( tb->tokens ) )
+		charsSent += fl_write( fl, "  ..." );
 	return charsSent;
 	}
 
 FUNC int tb_sendTo( TokenBlock tb, File fl, ObjectHeap heap )
 	{
-	int i;
 	int charsSent = fl_write( fl, "TokenBlock_%p length %d:", tb, oba_count( tb->tokens ) );
-	for( i=0; i < oba_count( tb->tokens ); i++ )
-		{
-		charsSent += fl_write( fl, " " );
-		charsSent += ob_sendTo( oba_get( tb->tokens, i ), fl, heap );
-		}
+	charsSent += tb_sendNTo( tb, oba_count( tb->tokens ), fl, heap );
 	return charsSent;
 	}
 

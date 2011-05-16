@@ -190,7 +190,7 @@ FUNC SymbolTable cx_symbolTable( Context cx )
 	return cx->st;
 	}
 
-FUNC Object cx_filter( Context cx, Object ob, ObjectHeap heap )
+FUNC Object cx_filter( Context cx, Object ob, Object defaultIfNull, ObjectHeap heap )
 	{
 	if( ob && ob_isToken( ob, heap ) )
 		{
@@ -199,7 +199,7 @@ FUNC Object cx_filter( Context cx, Object ob, ObjectHeap heap )
 		if( value )
 			return value;
 		}
-	return ob;
+	return ob ? ob : defaultIfNull;
 	}
 
 FUNC int sy_sendTo( Symbol sy, File fl, SymbolTable st )

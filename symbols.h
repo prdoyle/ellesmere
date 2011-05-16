@@ -48,7 +48,7 @@ FUNC Context      cx_new( SymbolTable st );
 FUNC void         cx_save( Context cx );
 FUNC void         cx_restore( Context cx );
 FUNC SymbolTable  cx_symbolTable( Context cx );
-FUNC Object       cx_filter( Context cx, Object ob, ObjectHeap heap );
+FUNC Object       cx_filter( Context cx, Object ob, Object defaultIfNull, ObjectHeap heap );
 FUNC int          cx_sendTo( Context cx, File fl );
 
 // Attributes of symbols

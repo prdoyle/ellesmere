@@ -14,8 +14,9 @@ static Stack       stack;
 static Context     curContext;
 static ObjectHeap  heap;
 static Parser      ps;
-FILE *diagnostics;
-FILE *details;
+FILE *programTrace;            // Follow user program step-by-step
+FILE *interpreterDiagnostics;  // High-level messages describing unusual events in the interpreter
+FILE *interpreterTrace;        // Follow interpreter step-by-step
 FILE *conflictLog;
 FILE *parserGenTrace;
 
@@ -51,7 +52,7 @@ static void cf_push()
 	callStackDepth += 1;
 	if( callStackDepth >= cs_count(callStack) )
 		{
-		trace( details, "Growing call stack to depth=%d\n", callStackDepth );
+		trace( interpreterTrace, "Growing call stack to depth=%d\n", callStackDepth );
 		cf = cs_nextElement( callStack );
 		cf->stack = sk_new( ml_indefinite() );
 		}
@@ -102,7 +103,7 @@ typedef struct fna_struct *FunctionArray;
 	#define fna_new( size, ml ) fna_newAnnotated( size, ml, __FILE__, __LINE__ )
 #endif
 
-static FunctionArray productionBodies;
+static FunctionArray productionBodiesDuringExecution;
 
 static void dumpStack0( File fl ) __attribute__((noinline));
 static void dumpStack0( File fl )
@@ -146,24 +147,42 @@ static inline void dumpParserState( File fl )
 		dumpParserState0( fl );
 	}
 
+static void dumpTokenStream0( File fl ) __attribute__((noinline));
+static void dumpTokenStream0( File fl )
+	{
+	trace( fl, "    -- Token stream: " );
+	ts_sendTo( tokenStream, fl );
+	trace( fl, "\n" );
+	}
+
+static inline void dumpTokenStream( File fl )
+	{
+	if( fl )
+		dumpTokenStream0( fl );
+	}
+
 static void dumpStuff( File fl )
 	{
 	dumpStack( fl );
 	dumpParserState( fl );
+	dumpTokenStream( fl );
 	}
 
 static void push( Object ob )
 	{
+	trace( interpreterTrace, "push(" );
+	ob_sendTo( ob, interpreterTrace, heap );
+	trace( interpreterTrace, ")\n" );
 	sk_push( stack, ob );
 	ps_push( ps, ob );
-	dumpStuff( details );
+	dumpStuff( interpreterTrace );
 	}
 
 static Object pop()
 	{
 	Object result = sk_pop( stack );
 	ps_popN( ps, 1 );
-	dumpStuff( details );
+	dumpStuff( interpreterTrace );
 	return result;
 	}
 
@@ -171,7 +190,7 @@ static void popN( int n )
 	{
 	sk_popN( stack, n );
 	ps_popN( ps, n );
-	dumpStuff( details );
+	dumpStuff( interpreterTrace );
 	}
 
 static int popInt()
@@ -199,7 +218,7 @@ static void closeTokenStreamsAsNecessary()
 		{
 		ts_pop( tokenStream );
 		cx_restore( curContext );
-		trace( diagnostics, "  Returned to TokenBlock %p\n", ts_curBlock( tokenStream ) );
+		trace( programTrace, "  Returned to TokenBlock %p\n", ts_curBlock( tokenStream ) );
 		}
 	}
 
@@ -360,13 +379,13 @@ static void addProductionAction( Production handle, GrammarLine gl )
 	gr_stopAdding( gr );
 	ps_close( ps );
 	ps = ps_new( au_new( gr, st, ml_indefinite(), conflictLog, parserGenTrace ), ml_indefinite(), parserGenTrace );
-	trace( diagnostics, "    NEW PARSER\n" );
+	trace( interpreterDiagnostics, "    NEW PARSER\n" );
 
 	// Prime the parser state with the current stack contents
 	int i;
 	for( i = sk_depth(stack) - 1; i >= 0; i-- )
 		ps_push( ps, sk_item( stack, i ) );
-	dumpParserState( details );
+	dumpParserState( interpreterTrace );
 
 	// Build a context with a symbol for each named parameter
 	cx_save( curContext );
@@ -376,7 +395,7 @@ static void addProductionAction( Production handle, GrammarLine gl )
 		Symbol tag   = pn_token( pn, i, gr );
 		if( name )
 			{
-			trace( details, "    -- bound %s to token %s\n", sy_name( name, st ), sy_name( tag, st ) );
+			trace( interpreterTrace, "    -- bound %s to token %s\n", sy_name( name, st ), sy_name( tag, st ) );
 			sy_setValue( name, oh_symbolToken( heap, tag ), curContext );
 			}
 		}
@@ -404,8 +423,8 @@ static void defAction( Production handle, GrammarLine gl )
 	fn->production = gr_production( ps_grammar(ps), pnIndex );
 	fn->kind       = FN_TOKEN_BLOCK;
 	fn->body.tb    = block;
-	fna_setCount( productionBodies, pnIndex+1 );
-	fna_set( productionBodies, pnIndex, fn );
+	fna_setCount( productionBodiesDuringExecution, pnIndex+1 );
+	fna_set( productionBodiesDuringExecution, pnIndex, fn );
 	}
 
 static void returnAction( Production handle, GrammarLine gl )
@@ -418,7 +437,7 @@ static void returnAction( Production handle, GrammarLine gl )
 	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
 	cx_restore( curContext );
 	cf_pop();
-	trace( diagnostics, "  Returned to TokenBlock %p\n", ts_curBlock( tokenStream ) );
+	trace( programTrace, "  Returned to TokenBlock %p\n", ts_curBlock( tokenStream ) );
 	push( result );
 	}
 
@@ -558,11 +577,149 @@ static GrammarLine lookupGrammarLine( Production pn, Grammar gr )
 	{
 	int depth = pn_nestDepth( pn, gr );
 	Grammar definingGrammar = gr_outerNth( gr, depth );
-	GrammarLine array = initialGrammarNest[ gr_nestDepth( gr ) - depth ];
+	if( gr_nestDepth( definingGrammar ) >= asizeof( initialGrammarNest ) )
+		return NULL;
+
+	GrammarLine array = initialGrammarNest[ gr_nestDepth( definingGrammar ) ];
 	int index = pn_index( pn, gr );
 	if( gr_outer( definingGrammar ) )
 		index -= gr_numProductions( gr_outer( definingGrammar ) );
 	return array + index;
+	}
+
+static void mainParsingLoop( TokenBlock recording, FunctionArray productionBodies )
+	{
+	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
+	int startingDepth = ps_depth( ps );
+
+	if( interpreterTrace )
+		{
+		trace( interpreterTrace, "Starting mainParsingLoop( " );
+		if( recording )
+			tb_sendTo( recording, interpreterTrace, heap );
+		else
+			trace( interpreterTrace, "NULL" );
+		trace( interpreterTrace, ", %p ) startingDepth=%d\n", productionBodies, startingDepth );
+		}
+
+	while( 1 )
+		{
+		Production handle;
+		for (
+			handle = ps_handle( ps, cx_filter( curContext, ts_current( tokenStream ), endOfInput, heap ) );
+			handle;
+			handle = ps_handle( ps, cx_filter( curContext, ts_current( tokenStream ), endOfInput, heap ) )
+			){
+			Grammar gr = ps_grammar( ps ); // Grammar can change as the program proceeds
+			if( programTrace )
+				{
+				dumpStack( programTrace );
+				dumpParserState( interpreterTrace );
+				trace( programTrace, "    # Handle %d: ", pn_index( handle, gr ) );
+				pn_sendTo( handle, programTrace, gr, st );
+				int i;
+				char *sep = "  with  ";
+				for( i=0; i < pn_length( handle, gr ); i++ )
+					{
+					Symbol nameSymbol = pn_name( handle, i, gr );
+					if( nameSymbol )
+						{
+						Object value = sk_item( stack, pn_length( handle, gr ) - i - 1 );
+						trace( programTrace, "%s%s=", sep, sy_name( nameSymbol, st ) );
+						ob_sendTo( value, programTrace, heap );
+						sep = " ";
+						}
+					}
+				trace( programTrace, "\n" );
+				}
+			Function functionToCall = NULL;
+			if(   productionBodies
+				&& pn_index( handle, gr ) < fna_count( productionBodies ) // recursive calls won't yet have a body defined
+				){
+				functionToCall = fna_get( productionBodies, pn_index( handle, gr ) );
+				}
+			if( functionToCall )
+				{
+				assert( handle );
+				closeTokenStreamsAsNecessary(); // tail call optimization?
+				cx_save( curContext );
+				int i;
+				for( i = pn_length( handle, gr ) - 1; i >= 0; i-- )
+					{
+					Symbol nameSymbol = pn_name( handle, i, gr );
+					Object value = pop();
+					if( nameSymbol )
+						sy_setValue( nameSymbol, value, curContext );
+					}
+				ts_push( tokenStream, functionToCall->body.tb );
+				cf_push();
+				trace( programTrace, "    Calling body %p for production %d\n", tokenStream, pn_index( handle, gr ) );
+				}
+			else
+				{
+				GrammarLine line = lookupGrammarLine( handle, gr );
+				if( recording )
+					{
+					int depthWithoutHandle = ps_depth( ps ) - pn_length( handle, gr );
+					nopAction( handle, NULL );
+					if( line && line->response.action == stopRecordingTokenBlockAction && depthWithoutHandle < startingDepth )
+						{
+						closeTokenStreamsAsNecessary();
+						goto done;
+						}
+					}
+				else
+					{
+					assert( line );
+					trace( interpreterTrace, "   Calling native action %p\n", line );
+					line->response.action( handle, line );
+					trace( interpreterTrace, "   Done native action %p\n", line );
+					}
+				}
+			}
+		Object raw = ts_current( tokenStream );
+		if( !raw )
+			{
+			trace( interpreterTrace, "   Raw token is NULL\n" );
+			closeTokenStreamsAsNecessary();
+			goto done;
+			}
+		if( recording )
+			{
+			if( interpreterTrace )
+				{
+				trace( interpreterTrace, "   Appending " );
+				ob_sendTo( raw, interpreterTrace, heap );
+				trace( interpreterTrace, " to ");
+				tb_sendTo( recording, interpreterTrace, heap );
+				trace( interpreterTrace, "\n");
+				}
+			tb_append( recording, raw );
+			}
+		Object toPush = cx_filter( curContext, raw, endOfInput, heap );
+		if( interpreterTrace )
+			{
+			trace( interpreterTrace, "Pushing token from %p: ", ts_curBlock( tokenStream ) );
+			ob_sendTo( toPush, interpreterTrace, heap );
+			trace( interpreterTrace, "\n");
+			}
+		push( toPush );
+		trace( interpreterTrace, "Advancing %p\n", ts_curBlock( tokenStream ) );
+		ts_advance( tokenStream );
+		closeTokenStreamsAsNecessary();
+		}
+
+	done:
+	if( interpreterTrace )
+		{
+		trace( interpreterTrace, "Exiting mainParsingLoop" );
+		if( tokenStream && ts_current( tokenStream ) )
+			{
+			trace( interpreterTrace, "; current token on %p is ", ts_curBlock( tokenStream ) );
+			ob_sendTo( ts_current( tokenStream ), interpreterTrace, heap );
+			}
+		trace( interpreterTrace, "\n" );
+		}
 	}
 
 static void recordTokenBlockAction( Production handle, GrammarLine gl )
@@ -571,90 +728,25 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	TokenBlock tb = ts_skipBlock( tokenStream );
 	if( !tb )
 		{
-		trace( diagnostics, "  Begin recording token block\n" );
-		int stopDepth = ps_depth( ps );
+		trace( programTrace, "  Begin recording token block\n" );
 		tb = ts_beginBlock( tokenStream );
 		tb_append( tb, oh_symbolToken( heap, sy_byName( "{", st ) ) );
 		nopAction( handle, gl );
-		handle = ps_handle( ps, cx_filter( curContext, ts_current( tokenStream ), heap ) );
-		if( handle )
-			{
-			// Assume it's an empty token block
-			nopAction( handle, NULL );
-			push( ts_current( tokenStream ) );
-			ts_advance( tokenStream );
-			// FIXME: There could be multiple reduces required to hit the stopRecordingTokenBlockAction.
-			// Should really just reduce this like other handles and let it happen naturally
-			}
-		Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
-		while( ts_current( tokenStream ) )
-			{
-			Object raw    = ts_current( tokenStream );
-			Object ob     = cx_filter( curContext, ts_current( tokenStream ), heap );
-			Object nextOb = cx_filter( curContext, ts_next( tokenStream )   , heap );
-			if( !nextOb )
-				nextOb = endOfInput;
-			if( details )
-				{
-				trace( details, "token from %p is ", ts_curBlock( tokenStream ) );
-				ob_sendTo( raw, details, heap );
-				trace( details, " (parsed as " );
-				ob_sendTo( ob, details, heap );
-				trace( details, ")\n  next is ");
-				ob_sendTo( nextOb, details, heap );
-				trace( details, "\n");
-				}
-			push( ob );
-			ts_advance( tokenStream );
-			handle = ps_handle( ps, nextOb );
-			while( handle )
-				{
-				if( diagnostics )
-					{
-					dumpStack( diagnostics );
-					dumpParserState( details );
-					trace( diagnostics, "    # Recording handle: " );
-					pn_sendTo( handle, diagnostics, gr, st );
-					trace( diagnostics, "\n" );
-					}
-				if(   pn_index( handle, gr ) < fna_count( productionBodies ) // recursive calls won't yet have a body defined
-					&& !fna_get( productionBodies, pn_index( handle, gr ) ) )
-					{
-					NativeAction action = lookupGrammarLine( handle, gr )->response.action;
-					int depthWithoutHandle = ps_depth( ps ) - pn_length( handle, gr );
-					if( action == stopRecordingTokenBlockAction && depthWithoutHandle < stopDepth )
-						{
-						trace( diagnostics, "    # Found the stopRecording handle\n" );
-						goto done; // end marker
-						}
-					}
-				nopAction( handle, NULL );
-				// tokenStream may have changed!
-				Object nextOb = cx_filter( curContext, ts_current( tokenStream ), heap );
-				if( !nextOb )
-					nextOb = endOfInput;
-				handle = ps_handle( ps, nextOb );
-				}
-			tb_append( tb, raw ); // If we get to here, we didn't hit stopRecordingTokenBlockAction
-			trace( details, "    Recorded token " );
-			ob_sendTo( ob, details, heap );
-			trace( details, "\n");
-			}
-		done:
-		tb_append( tb, oh_symbolToken( heap, sy_byName( "}", st ) ) );
+
+		mainParsingLoop( tb, NULL );
+
+		// Wonder why I don't need this: tb_append( tb, oh_symbolToken( heap, sy_byName( "}", st ) ) );
 		tb_stopAppending( tb );
 		}
 	popN( pn_length( handle, gr ) );
 	push( ob_fromTokenBlock( tb, heap ) );
-	if( details )
+	if( interpreterTrace )
 		{
-		trace( details, "    Recorded token block: " );
-		tb_sendTo( tb, details, heap );
-		trace( details, "\n    Now current: " );
-		ob_sendTo( ts_current( tokenStream ), details, heap );
-		trace( details, "\n  next is ");
-		ob_sendTo( ts_next( tokenStream ), details, heap );
-		trace( details, "\n" );
+		trace( interpreterTrace, "    Recorded token block: " );
+		tb_sendTo( tb, interpreterTrace, heap );
+		trace( interpreterTrace, "\n    Now current: " );
+		ob_sendTo( ts_current( tokenStream ), interpreterTrace, heap );
+		trace( interpreterTrace, "\n" );
 		}
 	}
 
@@ -672,92 +764,24 @@ static File openTrace( int fd, char *name )
 int main( int argc, char **argv )
 	{
 	conflictLog = stderr;
-	diagnostics    = openTrace( 3, "Ellesmere diagnostics" );
-	details        = openTrace( 4, "Ellesmere details" );
-	parserGenTrace = openTrace( 5, "Ellesmere parserGenTrace" );
+	programTrace           = openTrace( 3, "Ellesmere program trace" );
+	interpreterDiagnostics = openTrace( 4, "Ellesmere interpreter diagnostics" );
+	interpreterTrace       = openTrace( 5, "Ellesmere interpreter trace" );
+	parserGenTrace = openTrace( 6, "Ellesmere parserGenTrace" );
 	st = theSymbolTable();
 	heap = theObjectHeap();
 	curContext = cx_new( st );
 	callStack = cs_new( 30, ml_indefinite() );
 	cs_setCount( callStack, 1 );
 	Grammar initialGrammar = populateGrammar( st );
-	productionBodies = fna_new( 20 + gr_numProductions( initialGrammar ), ml_indefinite() );
-	fna_setCount( productionBodies, gr_numProductions( initialGrammar ) );
+	productionBodiesDuringExecution = fna_new( 20 + gr_numProductions( initialGrammar ), ml_indefinite() );
+	fna_setCount( productionBodiesDuringExecution, gr_numProductions( initialGrammar ) );
 	ps = ps_new( au_new( initialGrammar, st, ml_indefinite(), conflictLog, parserGenTrace ), ml_indefinite(), parserGenTrace );
 	stack = sk_new( ml_indefinite() );
-	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
 	tokenStream = theLexTokenStream( heap, st );
-	while( ts_current( tokenStream ) )
-		{
-		Object ob     = cx_filter( curContext, ts_current( tokenStream ), heap );
-		Object nextOb = cx_filter( curContext, ts_next( tokenStream )   , heap );
-		if( !nextOb )
-			nextOb = endOfInput;
-		if( details )
-			{
-			trace( details, "token from %p is ", ts_curBlock( tokenStream ) );
-			ob_sendTo( ob, details, heap );
-			trace( details, "\n  next is ");
-			ob_sendTo( nextOb, details, heap );
-			trace( details, "\n");
-			}
-		push( ob );
-		Production handle = ps_handle( ps, nextOb );
-		ts_advance( tokenStream );
-		while( handle )
-			{
-			Grammar gr = ps_grammar( ps ); // Grammar can change as the program proceeds
-			if( diagnostics )
-				{
-				dumpStack( diagnostics );
-				dumpParserState( details );
-				trace( diagnostics, "    # Handle: " );
-				pn_sendTo( handle, diagnostics, gr, st );
-				trace( diagnostics, "\n" );
-				}
-			Function functionToCall = fna_get( productionBodies, pn_index( handle, gr ) );
-			if( functionToCall )
-				{
-				assert( handle );
-				closeTokenStreamsAsNecessary(); // tail call optimization?
-				cx_save( curContext );
-				int i;
-				for( i = pn_length( handle, gr ) - 1; i >= 0; i-- )
-					{
-					Symbol nameSymbol = pn_name( handle, i, gr );
-					Object value = pop();
-					if( nameSymbol )
-						{
-						trace( details, "    -- bound %s to value ", sy_name( nameSymbol, st ) );
-						ob_sendTo( value, details, heap );
-						trace( details, "\n" );
-						sy_setValue( nameSymbol, value, curContext );
-						}
-					}
-				ts_push( tokenStream, functionToCall->body.tb );
-				cf_push();
-				trace( diagnostics, "    Calling body %p for production %d\n", tokenStream, pn_index( handle, gr ) );
-				handle = NULL;
-				}
-			else
-				{
-				GrammarLine line = lookupGrammarLine( handle, gr );
-				line->response.action( handle, line );
-				// tokenStream may have changed!
-				Object nextOb = cx_filter( curContext, ts_current( tokenStream ), heap );
-				if( !nextOb )
-					nextOb = endOfInput;
-				if( details )
-					{
-					trace( details, "  next is now ");
-					ob_sendTo( nextOb, details, heap );
-					trace( details, "\n");
-					}
-				handle = ps_handle( ps, nextOb );
-				}
-			}
-		closeTokenStreamsAsNecessary();
-		}
+
+	mainParsingLoop( NULL, productionBodiesDuringExecution );
+
 #ifndef NDEBUG
 	File memreport = fdopen( 6, "wt" );
 	ml_sendReportTo( memreport );

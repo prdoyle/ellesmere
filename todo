@@ -1,9 +1,8 @@
 NEXT:
-- Combine executing and recording into a single loop THAT WORKS
+- Symbol DAG?
+- Ints as symbols?
 
 Other:
-- Think of a way to reduce multiple levels naturally for empty productions
-  - Also possibly combine recording, executing, and discarding into a single loop
 - Implement tail call elimination
 - Variables + tail calls can implement for-loops
 - Implement objects
