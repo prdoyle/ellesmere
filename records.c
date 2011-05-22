@@ -18,7 +18,7 @@ struct rd_struct
 	{
 	int maxIndex;
 	int hashParameter;
-	int log2numBuckets;
+	int8_t log2numBuckets;
 	struct hb_struct *buckets;
 	BitVector fieldIDs;
 	};
@@ -59,7 +59,7 @@ static int rd_hash( Record rd, int key )
 	{
 	key = key * rd->hashParameter | 1; // Should be odd -> relatively prime to power-of-two table size
 	int result = 0;
-	const int log2numBuckets = rd->log2numBuckets;
+	const int8_t log2numBuckets = rd->log2numBuckets;
 	const int chunkMask = ( 1 << log2numBuckets ) - 1;
 	while( key )
 		{
@@ -92,7 +92,7 @@ FUNC Record rd_new( BitVector fieldIDs, MemoryLifetime ml )
 
 	// Try pseudorandom (ok not all that random) hash parameters until one is perfect.
 	// Shouldn't take many tries. random
-	int log2numBuckets = computeLog2numBuckets( numFields );
+	int8_t log2numBuckets = computeLog2numBuckets( numFields );
 	result->log2numBuckets = log2numBuckets;
 	int numBuckets = 1 << log2numBuckets;
 	int parameter;

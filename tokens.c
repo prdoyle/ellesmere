@@ -35,7 +35,6 @@ struct ts_struct
 	struct
 		{
 		Object current;
-		Object next;
 		} lex;
 	};
 
@@ -130,7 +129,6 @@ FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st )
 		result->st   = st;
 		result->digressions = dis_new( 20, ml_singleton() );
 		result->lex.current = getLexToken( result );
-		result->lex.next    = getLexToken( result );
 		}
 	return result;
 	}
@@ -162,8 +160,7 @@ FUNC void ts_advance( TokenStream ts )
 		}
 	else
 		{
-		ts->lex.current = ts->lex.next;
-		ts->lex.next    = getLexToken( ts );
+		ts->lex.current = getLexToken( ts );
 		}
 	}
 
@@ -261,15 +258,7 @@ FUNC int ts_sendTo( TokenStream ts, File fl )
 		charsSent += fl_write( fl, "  ||  " );
 		}
 	if( ts->lex.current )
-		{
 		charsSent += ob_sendTo( ts->lex.current, fl, ts->heap );
-		if( ts->lex.next )
-			{
-			charsSent += fl_write( fl, " " );
-			charsSent += ob_sendTo( ts->lex.next, fl, ts->heap );
-			charsSent += fl_write( fl, "  ..." );
-			}
-		}
 	return charsSent;
 	}
 

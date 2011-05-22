@@ -93,7 +93,8 @@ oprof.txt: fast
 	sudo opcontrol --start
 	./ellesmere < fib.el
 	sudo opcontrol --stop
-	opannotate --assembly --objdump-params "-Mintel" --include-file ./ellesmere | sort -rn > $@
+	opannotate --assembly --objdump-params "-Mintel" --include-file ./ellesmere > $@
+	sort -rn $@ > sorted-$@
 
 bitvector.t: CFLAGS += -DBITVECTOR_T
 bitvector.t: bitvector.o memory.o file.o
@@ -117,7 +118,7 @@ states.dot: parser.t
 clean:
 	rm -f ellesmere tags _merged.c $(GEN_C_FILES) $(GEN_H_FILES) $(O_FILES) $(I_FILES) $(D_FILES)
 	rm -f memreport.txt gmon.out *.gcda
-	rm -f memreport.txt gmon.out *.gcda oprof.txt gprof.txt
+	rm -f memreport.txt gmon.out *.gcda oprof.txt sorted-oprof.txt gprof.txt
 	rm -f bitvector.t parser.t records.t states.dot states.pdf trace.txt
 
 .PHONY: all merged memreport.txt
