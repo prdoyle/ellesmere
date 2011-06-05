@@ -1,6 +1,5 @@
 NEXT:
 - Symbol DAG?
-- Ints as symbols?
 
 Other:
 - Implement tail call elimination

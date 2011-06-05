@@ -303,16 +303,33 @@ FUNC void ob_setField( Object ob, Symbol field, Object value, ObjectHeap heap )
 	assert( ob_getField( ob, field, heap ) == value );
 	}
 
+static SymbolIndex elementSymbolIndex( int index )
+	{
+	// A real SymbolIndex is >= 0.  We choose these fake SymbolIndexes to be negative
+	// numbers that are small if the given index is near zero.
+	//
+	//  0  ->  -1
+	// -1  ->  -2
+	//  1  ->  -3
+	// -2  ->  -4
+	//  2  ->  -5
+	//    ...
+	//
+	int numBits = 8*sizeof(index);
+	int nonNegativeMask = (-index) >> (numBits-1); // All ones if index >= 0
+	return (SymbolIndex)( (index<<1) ^ nonNegativeMask );
+	}
+
 FUNC Object ob_getElement( Object ob, int index, ObjectHeap heap )
 	{
 	check( ob_hasItems( ob ) );
-	return ob_getItem( ob, (SymbolIndex)index, heap );
+	return ob_getItem( ob, elementSymbolIndex( index ), heap );
 	}
 
 FUNC void ob_setElement( Object ob, int index, Object value, ObjectHeap heap )
 	{
 	check( ob_hasItems(ob) );
-	ob_setItem( ob, (SymbolIndex)index, value, heap );
+	ob_setItem( ob, elementSymbolIndex( index ), value, heap );
 	assert( ob_getElement( ob, index, heap ) == value );
 	}
 
