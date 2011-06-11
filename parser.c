@@ -1009,6 +1009,16 @@ FUNC void au_augment( Automaton au, Object inheritanceRelationIndex, ObjectHeap 
 			}
 		}
 	cl_close( pushedStates );
+
+	// Note: it would be possible to build a bitvector of all the symbols in
+	// inheritanceRelationIndex, and filter originalEdges against that before
+	// iterating over it, because nothing interesting will happen to unindexed
+	// edges anyway.  However, building that bitvector would be O(n) in the size
+	// of the subtype graph, and thus far we have avoided a dependence on that.
+	// The subtype graph could contain many tags that don't appear in our
+	// automaton, in which case it can be cheaper just to do the pointless index
+	// lookups for edges that aren't there, rather than try to avoid them with
+	// filtering.
 	}
 
 FUNC Parser ps_new( Automaton au, MemoryLifetime ml, File diagnostics )
