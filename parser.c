@@ -924,6 +924,93 @@ FUNC Grammar au_grammar( Automaton au )
 	return au->gr;
 	}
 
+FUNC void au_augment( Automaton au, Object inheritanceRelationIndex, ObjectHeap heap, SymbolTable st, File diagnostics )
+	{
+	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, st );
+	MemoryLifetime augmentTime = ml_begin( 10000, ml_undecided() );
+	CheckList pushedStates = cl_open( au->stateHeap );
+	BitVector originalEdges = bv_new( st_count(st), augmentTime );
+	Stack states = sk_new( augmentTime ); // automaton states
+	Stack nodes  = sk_new( augmentTime ); // nodes in the inheritance relation
+	sk_push( states, au->startState );
+	cl_check( pushedStates, au->startState );
+	while( sk_depth( states ) != 0 )
+		{
+		Object state = sk_pop( states );
+		bv_clear( originalEdges );
+		ob_getFieldSymbols( state, originalEdges, heap );
+		if( diagnostics )
+			{
+			trace( diagnostics, "  State: " );
+			ob_sendTo( state, diagnostics, heap );
+			trace( diagnostics, " originalEdges: " );
+			bv_sendTo( originalEdges, diagnostics );
+			trace( diagnostics, "\n" );
+			}
+		int edge;
+		for( edge = bv_firstBit( originalEdges ); edge != bv_END; edge = bv_nextBit( originalEdges, edge ) )
+			{
+			Symbol edgeSymbol = sy_byIndex( edge, st );
+			Object targetState = ob_getField( state, edgeSymbol, au->stateHeap );
+			if( diagnostics )
+				{
+				trace( diagnostics, "    Edge %s targetState: ", sy_name( edgeSymbol, st ) );
+				ob_sendTo( targetState, diagnostics, heap );
+				trace( diagnostics, "\n" );
+				}
+			if( !cl_isChecked( pushedStates, targetState ) )
+				{
+				cl_check( pushedStates, targetState );
+				sk_push( states, targetState );
+				trace( diagnostics, "    - Pushed\n" );
+				}
+
+			Object node = ob_getField( inheritanceRelationIndex, edgeSymbol, heap );
+			if( node )
+				{
+				CheckList pushedNodes = cl_open( heap );
+				sk_push( nodes, node );
+				cl_check( pushedNodes, node );
+				while( sk_depth( nodes ) != 0 )
+					{
+					node = sk_pop( nodes );
+					if( diagnostics )
+						{
+						trace( diagnostics, "      Inheritance node: " );
+						ob_sendTo( node, diagnostics, heap );
+						trace( diagnostics, "\n" );
+						}
+					int subtagIndex;
+					Object subnode;
+					for( subtagIndex = 1; NULL != ( subnode = ob_getElement( node, subtagIndex, heap ) ); subtagIndex++ )
+						{
+						Symbol subtag = ob_toSymbol( ob_getField( subnode, subtagSymbol, heap ), heap );
+						trace( diagnostics, "        Subtag %s ", sy_name( subtag, st ) );
+						if( ob_getField( state, subtag, heap ) )
+							{
+							trace( diagnostics, "Already present\n" );
+							check( bv_isSet( originalEdges, sy_index( subtag, st ) ) ); // Otherwise it's a conflict
+							}
+						else
+							{
+							trace( diagnostics, "Copying from %s\n", sy_name );
+							ob_setField( state, subtag, targetState, heap );
+							if( !cl_isChecked( pushedNodes, subnode ) )
+								{
+								cl_check( pushedNodes, subnode );
+								sk_push( nodes, subnode );
+								trace( diagnostics, "        - Pushed\n" );
+								}
+							}
+						}
+					}
+				cl_close( pushedNodes );
+				}
+			}
+		}
+	cl_close( pushedStates );
+	}
+
 FUNC Parser ps_new( Automaton au, MemoryLifetime ml, File diagnostics )
 	{
 	Parser result = NULL;
@@ -1252,6 +1339,11 @@ static GrammarLine grammar2[] =
 	{ ":INT",         ":INT", "/", ":INT" },
 	{ ":INT",         "(", ":INT", ")" },
 	};
+
+static GrammarLine subtags[] =
+	{
+	{ ":INT",         ":NATURAL" },
+	};
 #endif
 
 #if 0
@@ -1329,11 +1421,12 @@ static void dumpItemLookaheads( ParserGenerator pg, File traceFile )
 
 int main( int argc, char *argv[] )
 	{
-	int i, j; SymbolTable st; Symbol goal; Grammar gr; ParserGenerator pg;
+	int i, j; SymbolTable st; Symbol goal; Grammar gr; ParserGenerator pg; ObjectHeap heap;
 	File traceFile = fdopen( 3, "wt" );
 	File dotFile   = stdout;
 
 	st = theSymbolTable();
+	heap = theObjectHeap();
 	goal = sy_byName( grammar[0][0], st );
 	gr = gr_new( goal, asizeof( grammar ), ml_indefinite() );
 	for( i=0; i < asizeof( grammar ); i++ )
@@ -1355,73 +1448,110 @@ int main( int argc, char *argv[] )
 	gr_stopAdding( gr );
 	gr_sendTo( gr, traceFile, st );
 
-	pg = pg_new( gr, st, ml_begin( 10000, ml_indefinite() ), ml_indefinite(), theObjectHeap() );
+	char nodeTagName[50];
+	sprintf( nodeTagName, "SUB%d", st_count( st ) );
+	Symbol nodeTag = sy_byName( nodeTagName, st );
 
-	pg_populateItemTable( pg, traceFile );
-	fl_write( traceFile, "Items:\n" );
-	for( i=0; i < ita_count( pg->items ); i++ )
+	Object inheritanceRelationIndex = ob_create( nodeTag, heap );
+	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, st );
+	for( i=0; i < asizeof( subtags ); i++ )
 		{
-		Item it = ita_element( pg->items, i );
-		fl_write( traceFile, "  %3d: ", i );
-		pn_sendItemTo( it->pn, it->dot, traceFile, gr, st );
-		fl_write( traceFile, "\n" );
-		}
-	fl_write( traceFile, "  rightmostItems: " );
-	bv_sendFormattedTo( pg->rightmostItems, traceFile, "i%d", ", i%d" );
-	fl_write( traceFile, "\n" );
+		char **line = subtags[ i ];
+		Symbol headSym = sy_byName( line[0], st );
+		Object head = ob_getOrCreateField( inheritanceRelationIndex, headSym, nodeTag, heap );
+		ob_setField( head, subtagSymbol, oh_symbolToken( heap, headSym ), heap );
 
-	pg_populateSymbolSideTable( pg, traceFile );
-	fl_write( traceFile, "SymbolSideTable:\n" );
-	for( i=1; i < sst_count( pg->sst ); i++ )
-		{
-		SymbolSideTableEntry sste = sst_element( pg->sst, i );
-		int symbolIndex = sy_index( sste->sy, st );
-		if( pg->sstIndexes[ symbolIndex ] == i )
+		int tailIndex;
+		char *tailName;
+		for( tailIndex = 1; NULL != ( tailName = line[ tailIndex ] ); tailIndex++ )
 			{
+			Symbol tailSym = sy_byName( tailName, st );
+			Object tail = ob_getOrCreateField( inheritanceRelationIndex, tailSym, nodeTag, heap );
+			ob_setField( tail, subtagSymbol, oh_symbolToken( heap, tailSym ), heap );
+			ob_setElement( head, tailIndex, tail, heap );
+			}
+		}
+	fl_write( traceFile, "Inheritance relation:\n" );
+	ob_sendDeepTo( inheritanceRelationIndex, traceFile, heap );
+
+	if( false )
+		{
+		char stateTagName[50];
+		sprintf( stateTagName, "SN_TEST_%d", st_count( st ) );
+		Symbol stateNodeTag = sy_byName( stateTagName, st );
+		pg = pg_new( gr, st, stateNodeTag, ml_begin( 10000, ml_indefinite() ), ml_indefinite(), theObjectHeap() );
+
+		pg_populateItemTable( pg, traceFile );
+		fl_write( traceFile, "Items:\n" );
+		for( i=0; i < ita_count( pg->items ); i++ )
+			{
+			Item it = ita_element( pg->items, i );
+			fl_write( traceFile, "  %3d: ", i );
+			pn_sendItemTo( it->pn, it->dot, traceFile, gr, st );
+			fl_write( traceFile, "\n" );
+			}
+		fl_write( traceFile, "  rightmostItems: " );
+		bv_sendFormattedTo( pg->rightmostItems, traceFile, "i%d", ", i%d" );
+		fl_write( traceFile, "\n" );
+
+		pg_populateSymbolSideTable( pg, traceFile );
+		fl_write( traceFile, "SymbolSideTable:\n" );
+		for( i=1; i < sst_count( pg->sst ); i++ )
+			{
+			SymbolSideTableEntry sste = sst_element( pg->sst, i );
+			int symbolIndex = sy_index( sste->sy, st );
+			if( pg->sstIndexes[ symbolIndex ] == i )
+				{
+				fl_write( traceFile, "  %3d: %s\n", i, sy_name( sste->sy, st ) );
+				if( sste->leftmostItems )
+					{
+					fl_write( traceFile, "     leftmostItems: " );
+					bv_sendFormattedTo( sste->leftmostItems, traceFile, "i%d", ", i%d" );
+					fl_write( traceFile, "\n" );
+					}
+				if( sste->expectingItems )
+					{
+					fl_write( traceFile, "    expectingItems: " );
+					bv_sendFormattedTo( sste->expectingItems, traceFile, "i%d", ", i%d" );
+					fl_write( traceFile, "\n" );
+					}
+				}
+			else
+				{
+				fl_write( traceFile, "INDEX MISMATCH: entry %d is symbol %s. index %d, which has entry %d\n",
+					i, sste->sy, symbolIndex, pg->sstIndexes[ symbolIndex ] );
+				}
+			}
+
+		pg_computeLR0StateNodes( pg, traceFile );
+
+		pg_computeFirstSets( pg, traceFile );
+		pg_computeFollowSets( pg, traceFile );
+		fl_write( traceFile, "Symbol sets:\n" );
+		for( i=1; i < sst_count( pg->sst ); i++ )
+			{
+			SymbolSideTableEntry sste = sst_element( pg->sst, i );
 			fl_write( traceFile, "  %3d: %s\n", i, sy_name( sste->sy, st ) );
-			if( sste->leftmostItems )
-				{
-				fl_write( traceFile, "     leftmostItems: " );
-				bv_sendFormattedTo( sste->leftmostItems, traceFile, "i%d", ", i%d" );
-				fl_write( traceFile, "\n" );
-				}
-			if( sste->expectingItems )
-				{
-				fl_write( traceFile, "    expectingItems: " );
-				bv_sendFormattedTo( sste->expectingItems, traceFile, "i%d", ", i%d" );
-				fl_write( traceFile, "\n" );
-				}
+			fl_write( traceFile, "     first: " );
+			bv_sendFormattedTo( sste->first, traceFile, "s%d", ", s%d" );
+			fl_write( traceFile, "\n" );
+			fl_write( traceFile, "     follow: " );
+			bv_sendFormattedTo( sste->follow, traceFile, "s%d", ", s%d" );
+			fl_write( traceFile, "\n" );
 			}
-		else
-			{
-			fl_write( traceFile, "INDEX MISMATCH: entry %d is symbol %s. index %d, which has entry %d\n",
-				i, sste->sy, symbolIndex, pg->sstIndexes[ symbolIndex ] );
-			}
+
+		pg_computeSLRLookaheads( pg, traceFile );
+		dumpItemLookaheads( pg, traceFile );
+		pg_computeReduceActions( pg, traceFile, traceFile );
+		ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
+
+		pg_sendDotTo( pg, dotFile );
 		}
 
-	pg_computeLR0StateNodes( pg, traceFile );
-
-	pg_computeFirstSets( pg, traceFile );
-	pg_computeFollowSets( pg, traceFile );
-	fl_write( traceFile, "Symbol sets:\n" );
-	for( i=1; i < sst_count( pg->sst ); i++ )
-		{
-		SymbolSideTableEntry sste = sst_element( pg->sst, i );
-		fl_write( traceFile, "  %3d: %s\n", i, sy_name( sste->sy, st ) );
-		fl_write( traceFile, "     first: " );
-		bv_sendFormattedTo( sste->first, traceFile, "s%d", ", s%d" );
-		fl_write( traceFile, "\n" );
-		fl_write( traceFile, "     follow: " );
-		bv_sendFormattedTo( sste->follow, traceFile, "s%d", ", s%d" );
-		fl_write( traceFile, "\n" );
-		}
-
-	pg_computeSLRLookaheads( pg, traceFile );
-	dumpItemLookaheads( pg, traceFile );
-	pg_computeReduceActions( pg, traceFile, traceFile );
-	ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
-
-	pg_sendDotTo( pg, dotFile );
+	Automaton au = au_new( gr, st, ml_indefinite(), traceFile, traceFile );
+	au_augment( au, inheritanceRelationIndex, heap, st, traceFile );
+	fl_write( traceFile, "Augmented automaton:\n" );
+	au_sendTo( au, traceFile, heap, st );
 
 #if 0
 	fl_write( traceFile, "Parsing...\n" );

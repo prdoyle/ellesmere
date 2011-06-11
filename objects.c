@@ -303,7 +303,23 @@ FUNC void ob_setField( Object ob, Symbol field, Object value, ObjectHeap heap )
 	assert( ob_getField( ob, field, heap ) == value );
 	}
 
-static SymbolIndex elementSymbolIndex( int index )
+FUNC void ob_getFieldSymbols( Object ob, BitVector result, ObjectHeap heap )
+	{
+	if( ob_hasItems( ob ) )
+		{
+		Record rd = sy_instanceShape( ob_tag(ob,heap), heap->st );
+		int fieldID;
+		for( fieldID = rd_firstField(rd); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
+			if( ob_getItem( ob, fieldID, heap ) )
+				bv_set( result, fieldID );
+		FieldList field;
+		for( field = ob->data.listFields; field; field = field->tail )
+			if( field->value )
+				bv_set( result, field->si );
+		}
+	}
+
+static SymbolIndex elementIndex2SymbolIndex( int index )
 	{
 	// A real SymbolIndex is >= 0.  We choose these fake SymbolIndexes to be negative
 	// numbers that are small if the given index is near zero.
@@ -320,16 +336,26 @@ static SymbolIndex elementSymbolIndex( int index )
 	return (SymbolIndex)( (index<<1) ^ nonNegativeMask );
 	}
 
+static int symbolIndex2ElementIndex( SymbolIndex siArg )
+	{
+	int si = (int)siArg; // enums can be unsigned
+	assert( si < 0 ); // otherwise it's not an element index at all, but rather a bona fide symbol index
+	int signMask = - ( si & 1 );
+	int result = signMask ^ ( si >> 1 );
+	assert( elementIndex2SymbolIndex( result ) == si );
+	return result;
+	}
+
 FUNC Object ob_getElement( Object ob, int index, ObjectHeap heap )
 	{
 	check( ob_hasItems( ob ) );
-	return ob_getItem( ob, elementSymbolIndex( index ), heap );
+	return ob_getItem( ob, elementIndex2SymbolIndex( index ), heap );
 	}
 
 FUNC void ob_setElement( Object ob, int index, Object value, ObjectHeap heap )
 	{
 	check( ob_hasItems(ob) );
-	ob_setItem( ob, elementSymbolIndex( index ), value, heap );
+	ob_setItem( ob, elementIndex2SymbolIndex( index ), value, heap );
 	assert( ob_getElement( ob, index, heap ) == value );
 	}
 
@@ -434,11 +460,15 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 	return charsSent;
 	}
 
-static int sendEdgeTo( Symbol sy, Object value, ObjectHeap heap, File fl )
+static int sendEdgeTo( SymbolIndex siArg, Object value, ObjectHeap heap, File fl )
 	{
+	int si = (int)siArg;
 	int charsSent = 0;
 	charsSent += fl_write( fl, "  " );
-	charsSent += sy_sendTo( sy, fl, heap->st );
+	if( si < 0 )
+		charsSent += fl_write( fl, "%d", symbolIndex2ElementIndex( si ) );
+	else
+		charsSent += sy_sendTo( sy_byIndex( si, heap->st ), fl, heap->st );
 	charsSent += fl_write( fl, "->" );
 	charsSent += ob_sendTo( value, fl, heap );
 	charsSent += fl_write( fl, "\n" );
@@ -461,15 +491,19 @@ static int sendDeepTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 			for( fieldID = rd_firstField(rd); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
 				{
 				Symbol sy = sy_byIndex( fieldID, heap->st );
-				charsSent += sendEdgeTo( sy, ob_getField( ob, sy, heap ), heap, fl );
+				Object target = ob_getField( ob, sy, heap );
+				if( target )
+					charsSent += sendEdgeTo( fieldID, target, heap, fl );
 				}
 			for( field = ob->data.listFields; field; field = field->tail )
-				charsSent += sendEdgeTo( sy_byIndex( field->si, heap->st ), field->value, heap, fl );
+				charsSent += sendEdgeTo( field->si, field->value, heap, fl );
 			fl_write( fl, "  }\n" );
 			for( fieldID = rd_firstField(rd); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
 				{
 				Symbol sy = sy_byIndex( fieldID, heap->st );
-				charsSent += sendDeepTo( ob_getField( ob, sy, heap ), fl, heap, cl );
+				Object target = ob_getField( ob, sy, heap );
+				if( target )
+					charsSent += sendDeepTo( target, fl, heap, cl );
 				}
 			for( field = ob->data.listFields; field; field = field->tail )
 				charsSent += sendDeepTo( field->value, fl, heap, cl );

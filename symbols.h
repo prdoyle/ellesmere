@@ -30,6 +30,7 @@ typedef enum
 	SYM_BOOLEAN,
 	SYM_FALSE,
 	SYM_TRUE,
+	SYM_SYMBOL,
 	NUM_PREDEFINED_SYMBOLS
 	} SymbolIndex;
 

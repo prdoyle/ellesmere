@@ -10,6 +10,7 @@
 
 FUNC Automaton  au_new ( Grammar gr, SymbolTable st, MemoryLifetime ml, File conflictLog, File diagnostics );
 FUNC Grammar    au_grammar ( Automaton au );
+FUNC void       au_augment ( Automaton au, Object inheritanceRelationIndex, ObjectHeap heap, SymbolTable st, File diagnostics );
 
 FUNC Parser     ps_new ( Automaton au, MemoryLifetime ml, File diagnostics );
 FUNC Automaton  ps_automaton ( Parser ps );

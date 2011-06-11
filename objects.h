@@ -13,6 +13,7 @@ FUNC Symbol ob_tag( Object ob, ObjectHeap heap );
 
 FUNC Object ob_getField( Object ob, Symbol field, ObjectHeap heap );
 FUNC void   ob_setField( Object ob, Symbol field, Object value, ObjectHeap heap );
+FUNC void   ob_getFieldSymbols( Object ob, BitVector result, ObjectHeap heap ); // TODO: Not necessarily the most efficient interface, but handy
 
 FUNC Object ob_getElement( Object ob, int index, ObjectHeap heap );
 FUNC void   ob_setElement( Object ob, int index, Object value, ObjectHeap heap );
@@ -26,6 +27,17 @@ FUNC bool      cl_isChecked ( CheckList cl, Object ob );
 FUNC int ob_sendTo         ( Object ob, File fl, ObjectHeap heap );
 FUNC int ob_sendDeepTo     ( Object ob, File fl, ObjectHeap heap );
 FUNC int ob_sendDotEdgesTo ( Object ob, File fl, ObjectHeap heap );
+
+static inline Object ob_getOrCreateField( Object ob, Symbol field, Symbol tag, ObjectHeap heap )
+	{
+	Object result = ob_getField( ob, field, heap );
+	if( !result )
+		{
+		result = ob_create( tag, heap );
+		ob_setField( ob, field, result, heap );
+		}
+	return result;
+	}
 
 typedef struct oba_struct *ObjectArray;
 #define AR_PREFIX  oba
