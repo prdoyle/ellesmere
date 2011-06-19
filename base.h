@@ -26,6 +26,7 @@ typedef struct cx_struct *Context;
 typedef struct di_struct *Dispatcher;
 typedef struct fn_struct *Function;
 typedef struct gr_struct *Grammar;
+typedef struct ir_struct *InheritanceRelation;
 typedef struct ml_struct *MemoryLifetime;
 typedef struct ob_struct *Object;
 typedef struct oh_struct *ObjectHeap;

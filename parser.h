@@ -10,7 +10,7 @@
 
 FUNC Automaton  au_new ( Grammar gr, SymbolTable st, MemoryLifetime ml, File conflictLog, File diagnostics );
 FUNC Grammar    au_grammar ( Automaton au );
-FUNC void       au_augment ( Automaton au, Object inheritanceRelationIndex, ObjectHeap heap, SymbolTable st, File diagnostics );
+FUNC void       au_augment ( Automaton au, InheritanceRelation ir, SymbolTable st, File diagnostics );
 
 FUNC Parser     ps_new ( Automaton au, MemoryLifetime ml, File diagnostics );
 FUNC Automaton  ps_automaton ( Parser ps );
@@ -24,6 +24,9 @@ FUNC void       ps_close   ( Parser ps ); // Can't use ps anymore after this
 
 FUNC int        au_sendTo  ( Automaton au, File fl, ObjectHeap heap, SymbolTable st );
 FUNC int        ps_sendTo  ( Parser ps,    File fl, ObjectHeap heap, SymbolTable st );
+
+FUNC InheritanceRelation ir_new( ObjectHeap heap, SymbolTable st, MemoryLifetime ml );
+FUNC void                ir_add( InheritanceRelation ir, Symbol super, Symbol sub );
 
 #ifdef REDUCE_CONTEXT_LENGTH
 FUNC          int ps_reduceContextLength( Parser ps, ObjectHeap heap, SymbolTable st );

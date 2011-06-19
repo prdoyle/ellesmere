@@ -5,6 +5,7 @@
 #include "objects.h"
 #include "stack.h"
 #include "records.h"
+#include "symbols.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -924,8 +925,47 @@ FUNC Grammar au_grammar( Automaton au )
 	return au->gr;
 	}
 
-FUNC void au_augment( Automaton au, Object inheritanceRelationIndex, ObjectHeap heap, SymbolTable st, File diagnostics )
+struct ir_struct
 	{
+	Object      index;
+	Symbol      nodeTag;
+	ObjectHeap  nodeHeap;
+	SymbolTable st;
+	};
+
+#define SUBTAG_START_INDEX 1
+
+FUNC InheritanceRelation ir_new( ObjectHeap heap, SymbolTable st, MemoryLifetime ml )
+	{
+	char indexTagName[30], nodeTagName[30];
+	sprintf( indexTagName, "IR_INDEX_%d", st_count( st ) );
+	sprintf( nodeTagName,  "IR_NODE_%d",  st_count( st ) );
+
+	InheritanceRelation result = (InheritanceRelation)ml_alloc( ml, sizeof(*result) );
+	result->index    = ob_create( sy_byName( indexTagName, st ), heap );
+	result->nodeTag  = sy_byName( nodeTagName, st );
+	result->nodeHeap = heap;
+	result->st       = st;
+	return result;
+	}
+
+FUNC void ir_add( InheritanceRelation ir, Symbol super, Symbol sub )
+	{
+	SymbolTable st = ir->st;
+	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, st );
+	Symbol countSymbol  = sy_byIndex( SYM_ELEMENT_COUNT, st );
+	Object superNode = ob_getOrCreateField( ir->index, super, ir->nodeTag, ir->nodeHeap );
+	Object subNode   = ob_getOrCreateField( ir->index, sub,   ir->nodeTag, ir->nodeHeap );
+	ob_setField( superNode, subtagSymbol, oh_symbolToken( ir->nodeHeap, super ), ir->nodeHeap );
+	ob_setField( subNode,   subtagSymbol, oh_symbolToken( ir->nodeHeap, sub   ), ir->nodeHeap );
+	int subIndex = 1 + ob_getIntField( superNode, countSymbol, SUBTAG_START_INDEX-1, ir->nodeHeap );
+	ob_setField( superNode, countSymbol, ob_fromInt( subIndex, ir->nodeHeap ), ir->nodeHeap );
+	ob_setElement( superNode, subIndex, subNode, ir->nodeHeap );
+	}
+
+FUNC void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, File diagnostics )
+	{
+	trace( diagnostics, "Augmenting automaton %p:\n", au );
 	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, st );
 	MemoryLifetime augmentTime = ml_begin( 10000, ml_undecided() );
 	CheckList pushedStates = cl_open( au->stateHeap );
@@ -938,11 +978,11 @@ FUNC void au_augment( Automaton au, Object inheritanceRelationIndex, ObjectHeap 
 		{
 		Object state = sk_pop( states );
 		bv_clear( originalEdges );
-		ob_getFieldSymbols( state, originalEdges, heap );
+		ob_getFieldSymbols( state, originalEdges, au->stateHeap );
 		if( diagnostics )
 			{
 			trace( diagnostics, "  State: " );
-			ob_sendTo( state, diagnostics, heap );
+			ob_sendTo( state, diagnostics, au->stateHeap );
 			trace( diagnostics, " originalEdges: " );
 			bv_sendTo( originalEdges, diagnostics );
 			trace( diagnostics, "\n" );
@@ -954,21 +994,21 @@ FUNC void au_augment( Automaton au, Object inheritanceRelationIndex, ObjectHeap 
 			Object targetState = ob_getField( state, edgeSymbol, au->stateHeap );
 			if( diagnostics )
 				{
-				trace( diagnostics, "    Edge %s targetState: ", sy_name( edgeSymbol, st ) );
-				ob_sendTo( targetState, diagnostics, heap );
+				trace( diagnostics, "    Edge %d %s targetState: ", edge, sy_name( edgeSymbol, st ) );
+				ob_sendTo( targetState, diagnostics, au->stateHeap );
 				trace( diagnostics, "\n" );
 				}
-			if( !cl_isChecked( pushedStates, targetState ) )
+			if( !ob_isInt( targetState, au->stateHeap ) && !cl_isChecked( pushedStates, targetState ) )
 				{
 				cl_check( pushedStates, targetState );
 				sk_push( states, targetState );
 				trace( diagnostics, "    - Pushed\n" );
 				}
 
-			Object node = ob_getField( inheritanceRelationIndex, edgeSymbol, heap );
+			Object node = ob_getField( ir->index, edgeSymbol, ir->nodeHeap );
 			if( node )
 				{
-				CheckList pushedNodes = cl_open( heap );
+				CheckList pushedNodes = cl_open( ir->nodeHeap );
 				sk_push( nodes, node );
 				cl_check( pushedNodes, node );
 				while( sk_depth( nodes ) != 0 )
@@ -977,16 +1017,16 @@ FUNC void au_augment( Automaton au, Object inheritanceRelationIndex, ObjectHeap 
 					if( diagnostics )
 						{
 						trace( diagnostics, "      Inheritance node: " );
-						ob_sendTo( node, diagnostics, heap );
+						ob_sendTo( node, diagnostics, ir->nodeHeap );
 						trace( diagnostics, "\n" );
 						}
 					int subtagIndex;
 					Object subnode;
-					for( subtagIndex = 1; NULL != ( subnode = ob_getElement( node, subtagIndex, heap ) ); subtagIndex++ )
+					for( subtagIndex = SUBTAG_START_INDEX; NULL != ( subnode = ob_getElement( node, subtagIndex, ir->nodeHeap ) ); subtagIndex++ )
 						{
-						Symbol subtag = ob_toSymbol( ob_getField( subnode, subtagSymbol, heap ), heap );
+						Symbol subtag = ob_toSymbol( ob_getField( subnode, subtagSymbol, ir->nodeHeap ), ir->nodeHeap );
 						trace( diagnostics, "        Subtag %s ", sy_name( subtag, st ) );
-						if( ob_getField( state, subtag, heap ) )
+						if( ob_getField( state, subtag, au->stateHeap ) )
 							{
 							trace( diagnostics, "Already present\n" );
 							check( bv_isSet( originalEdges, sy_index( subtag, st ) ) ); // Otherwise it's a conflict
@@ -994,7 +1034,7 @@ FUNC void au_augment( Automaton au, Object inheritanceRelationIndex, ObjectHeap 
 						else
 							{
 							trace( diagnostics, "Copying from %s\n", sy_name );
-							ob_setField( state, subtag, targetState, heap );
+							ob_setField( state, subtag, targetState, au->stateHeap );
 							if( !cl_isChecked( pushedNodes, subnode ) )
 								{
 								cl_check( pushedNodes, subnode );
@@ -1011,14 +1051,13 @@ FUNC void au_augment( Automaton au, Object inheritanceRelationIndex, ObjectHeap 
 	cl_close( pushedStates );
 
 	// Note: it would be possible to build a bitvector of all the symbols in
-	// inheritanceRelationIndex, and filter originalEdges against that before
-	// iterating over it, because nothing interesting will happen to unindexed
-	// edges anyway.  However, building that bitvector would be O(n) in the size
-	// of the subtype graph, and thus far we have avoided a dependence on that.
-	// The subtype graph could contain many tags that don't appear in our
-	// automaton, in which case it can be cheaper just to do the pointless index
-	// lookups for edges that aren't there, rather than try to avoid them with
-	// filtering.
+	// ir->index, and filter originalEdges against that before iterating over
+	// it, because nothing interesting will happen to unindexed edges anyway.
+	// However, building that bitvector would be O(n) in the size of the subtype
+	// graph, and thus far we have avoided a dependence on that.  The subtype
+	// graph could contain many tags that don't appear in our automaton, in
+	// which case it can be cheaper just to do the pointless index lookups for
+	// edges that aren't there, rather than try to avoid them with filtering.
 	}
 
 FUNC Parser ps_new( Automaton au, MemoryLifetime ml, File diagnostics )
@@ -1458,31 +1497,21 @@ int main( int argc, char *argv[] )
 	gr_stopAdding( gr );
 	gr_sendTo( gr, traceFile, st );
 
-	char nodeTagName[50];
-	sprintf( nodeTagName, "SUB%d", st_count( st ) );
-	Symbol nodeTag = sy_byName( nodeTagName, st );
-
-	Object inheritanceRelationIndex = ob_create( nodeTag, heap );
-	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, st );
+	InheritanceRelation ir = ir_new( heap, st, ml_indefinite() );
 	for( i=0; i < asizeof( subtags ); i++ )
 		{
 		char **line = subtags[ i ];
-		Symbol headSym = sy_byName( line[0], st );
-		Object head = ob_getOrCreateField( inheritanceRelationIndex, headSym, nodeTag, heap );
-		ob_setField( head, subtagSymbol, oh_symbolToken( heap, headSym ), heap );
-
-		int tailIndex;
-		char *tailName;
-		for( tailIndex = 1; NULL != ( tailName = line[ tailIndex ] ); tailIndex++ )
+		Symbol superSym = sy_byName( line[0], st );
+		int subIndex;
+		char *subName;
+		for( subIndex = 1; NULL != ( subName = line[ subIndex ] ); subIndex++ )
 			{
-			Symbol tailSym = sy_byName( tailName, st );
-			Object tail = ob_getOrCreateField( inheritanceRelationIndex, tailSym, nodeTag, heap );
-			ob_setField( tail, subtagSymbol, oh_symbolToken( heap, tailSym ), heap );
-			ob_setElement( head, tailIndex, tail, heap );
+			Symbol subSym = sy_byName( subName, st );
+			ir_add( ir, superSym, subSym );
 			}
 		}
 	fl_write( traceFile, "Inheritance relation:\n" );
-	ob_sendDeepTo( inheritanceRelationIndex, traceFile, heap );
+	ob_sendDeepTo( ir->index, traceFile, heap );
 
 	if( false )
 		{
@@ -1559,7 +1588,7 @@ int main( int argc, char *argv[] )
 		}
 
 	Automaton au = au_new( gr, st, ml_indefinite(), traceFile, traceFile );
-	au_augment( au, inheritanceRelationIndex, heap, st, traceFile );
+	au_augment( au, ir, st, traceFile );
 	fl_write( traceFile, "Augmented automaton:\n" );
 	au_sendTo( au, traceFile, heap, st );
 

@@ -33,6 +33,7 @@ static struct sy_struct predefinedSymbols[] =
 	{ "FALSE" },
 	{ "TRUE" },
 	{ "SYMBOL" },
+	{ "ELEMENT_COUNT" },
 	};
 
 FUNC SymbolTable theSymbolTable()

@@ -31,6 +31,7 @@ typedef enum
 	SYM_FALSE,
 	SYM_TRUE,
 	SYM_SYMBOL,
+	SYM_ELEMENT_COUNT,
 	NUM_PREDEFINED_SYMBOLS
 	} SymbolIndex;
 

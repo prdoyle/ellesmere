@@ -14,6 +14,7 @@ static Stack       stack;
 static Context     curContext;
 static ObjectHeap  heap;
 static Parser      ps;
+static InheritanceRelation ir;
 FILE *programTrace;            // Follow user program step-by-step
 FILE *interpreterDiagnostics;  // High-level messages describing unusual events in the interpreter
 FILE *interpreterTrace;        // Follow interpreter step-by-step
@@ -378,7 +379,8 @@ static void addProductionAction( Production handle, GrammarLine gl )
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
 	ps_close( ps );
-	ps = ps_new( au_new( gr, st, ml_indefinite(), conflictLog, parserGenTrace ), ml_indefinite(), parserGenTrace );
+	Automaton au = au_new( gr, st, ml_indefinite(), conflictLog, parserGenTrace );
+	ps = ps_new( au, ml_indefinite(), parserGenTrace );
 	trace( interpreterDiagnostics, "    NEW PARSER\n" );
 
 	// Prime the parser state with the current stack contents
@@ -535,6 +537,13 @@ static struct gl_struct booleans1[] =
 
 static GrammarLine initialGrammarNest[] = { grammar1, booleans1 };
 
+static struct gl_struct inheritance[] =
+	{
+	{{ "BOOLEAN",    "FALSE", "TRUE" }},
+
+	{{NULL}},
+	};
+
 static Grammar populateGrammar( SymbolTable st )
 	{
 	Grammar gr = NULL;
@@ -571,6 +580,23 @@ static Grammar populateGrammar( SymbolTable st )
 		}
 	gr_stopAdding( gr );
 	return gr;
+	}
+
+static InheritanceRelation initialIR( ObjectHeap heap, SymbolTable st, MemoryLifetime ml )
+	{
+	int superIndex, subIndex;
+	InheritanceRelation result = ir_new( heap, st, ml );
+	for( superIndex = 0; inheritance[ superIndex ].tokens[0]; superIndex++ )
+		{
+		GrammarLine gl = inheritance + superIndex;
+		Symbol super = sy_byName( gl->tokens[0], st );
+		for( subIndex = 1; gl->tokens[ subIndex ]; subIndex++ )
+			{
+			Symbol sub = sy_byName( gl->tokens[ subIndex ], st );
+			ir_add( result, super, sub );
+			}
+		}
+	return result;
 	}
 
 static GrammarLine lookupGrammarLine( Production pn, Grammar gr )
@@ -773,10 +799,12 @@ int main( int argc, char **argv )
 	curContext = cx_new( st );
 	callStack = cs_new( 30, ml_indefinite() );
 	cs_setCount( callStack, 1 );
+	ir = initialIR( heap, st, ml_indefinite() );
 	Grammar initialGrammar = populateGrammar( st );
 	productionBodiesDuringExecution = fna_new( 20 + gr_numProductions( initialGrammar ), ml_indefinite() );
 	fna_setCount( productionBodiesDuringExecution, gr_numProductions( initialGrammar ) );
-	ps = ps_new( au_new( initialGrammar, st, ml_indefinite(), conflictLog, parserGenTrace ), ml_indefinite(), parserGenTrace );
+	Automaton au = au_new( initialGrammar, st, ml_indefinite(), conflictLog, parserGenTrace );
+	ps = ps_new( au, ml_indefinite(), parserGenTrace );
 	stack = sk_new( ml_indefinite() );
 	tokenStream = theLexTokenStream( heap, st );
 
