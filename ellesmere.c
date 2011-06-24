@@ -362,7 +362,7 @@ static void addProductionAction( Production handle, GrammarLine gl )
 
 	// Define the nested grammar with this extra production
 	Grammar gr = gr_nested( ps_grammar(ps), 1, ml_indefinite() );
-	Production pn = pn_new( gr, ob_toSymbol( ob_getField( production, sym_result, heap ), heap ), 3 );
+	Production pn = pn_new( gr, ob_getTokenField( production, sym_result, heap ), 3 );
 	pn_setConflictResolution( pn, gl->response.parm1, gr );
 	Object parm;
 	for(
@@ -370,9 +370,9 @@ static void addProductionAction( Production handle, GrammarLine gl )
 		ob_getField( parm, sym_tag, heap );
 		parm = ob_getField( parm, sym_next, heap ) )
 		{
-		Symbol tag  = ob_toSymbol( ob_getField( parm, sym_tag,  heap ), heap );
+		Symbol tag  = ob_getTokenField( parm, sym_tag,  heap );
 		if( ob_getField( parm, sym_name, heap ) )
-			pn_appendWithName( pn, ob_toSymbol( ob_getField( parm, sym_name, heap ), heap ), tag, gr );
+			pn_appendWithName( pn, ob_getTokenField( parm, sym_name, heap ), tag, gr );
 		else
 			pn_append( pn, tag, gr );
 		}
@@ -403,9 +403,11 @@ static void addProductionAction( Production handle, GrammarLine gl )
 		}
 
 	// Stuff the production index into the PRODUCTION object so caller can get it
-	ob_setField( production,
+	ob_setIntField(
+		production,
 		sy_byName( "index", st ),
-		ob_fromInt( pn_index( pn, gr ), heap ), heap );
+		pn_index( pn, gr ),
+		heap );
 	}
 
 static void defAction( Production handle, GrammarLine gl )
@@ -420,7 +422,7 @@ static void defAction( Production handle, GrammarLine gl )
 	cx_restore( curContext );
 
 	// Store the body from the definition
-	int pnIndex = ob_toInt( ob_getField( production, sy_byName( "index", st ), heap ), heap );
+	int pnIndex = ob_getIfIntField( production, sy_byName( "index", st ), -123, heap );
 	Function fn = (Function)ml_alloc( ml_indefinite(), sizeof(*fn) );
 	fn->production = gr_production( ps_grammar(ps), pnIndex );
 	fn->kind       = FN_TOKEN_BLOCK;

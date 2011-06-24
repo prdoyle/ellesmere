@@ -856,7 +856,7 @@ static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 		ItemSet its = itst_element( pg->itemSets, i );
 		charsSent += fl_write( dotFile, "n%p [label=\"%d %s\\n", its->stateNode, i, LR0StateKindNames[ its_LR0StateKind( its, pg ) ] );
 #ifdef REDUCE_CONTEXT_LENGTH
-		charsSent += fl_write( dotFile, "(reduce context: %d)\\n", ob_toInt( ob_getField( its->stateNode, sy_byIndex( SYM_REDUCE_CONTEXT_LENGTH, pg->st ), pg->heap ), pg->heap ) );
+		charsSent += fl_write( dotFile, "(reduce context: %d)\\n", ob_getIntField( its->stateNode, sy_byIndex( SYM_REDUCE_CONTEXT_LENGTH, pg->st ), pg->heap ) );
 #endif
 		for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
 			{
@@ -958,7 +958,7 @@ FUNC void ir_add( InheritanceRelation ir, Symbol super, Symbol sub )
 	Object subNode   = ob_getOrCreateField( ir->index, sub,   ir->nodeTag, ir->nodeHeap );
 	ob_setField( superNode, subtagSymbol, oh_symbolToken( ir->nodeHeap, super ), ir->nodeHeap );
 	ob_setField( subNode,   subtagSymbol, oh_symbolToken( ir->nodeHeap, sub   ), ir->nodeHeap );
-	int subIndex = 1 + ob_getIntField( superNode, countSymbol, SUBTAG_START_INDEX-1, ir->nodeHeap );
+	int subIndex = 1 + ob_getIfIntField( superNode, countSymbol, SUBTAG_START_INDEX-1, ir->nodeHeap );
 	ob_setField( superNode, countSymbol, ob_fromInt( subIndex, ir->nodeHeap ), ir->nodeHeap );
 	ob_setElement( superNode, subIndex, subNode, ir->nodeHeap );
 	}
@@ -1024,7 +1024,7 @@ FUNC void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, File
 					Object subnode;
 					for( subtagIndex = SUBTAG_START_INDEX; NULL != ( subnode = ob_getElement( node, subtagIndex, ir->nodeHeap ) ); subtagIndex++ )
 						{
-						Symbol subtag = ob_toSymbol( ob_getField( subnode, subtagSymbol, ir->nodeHeap ), ir->nodeHeap );
+						Symbol subtag = ob_getTokenField( subnode, subtagSymbol, ir->nodeHeap );
 						trace( diagnostics, "        Subtag %s ", sy_name( subtag, st ) );
 						if( ob_getField( state, subtag, au->stateHeap ) )
 							{
@@ -1107,7 +1107,7 @@ FUNC Automaton ps_automaton( Parser ps )
 static int ps_itemSetNum( Parser ps, int depth, Symbol isn )
 	{
 	ObjectHeap heap = theObjectHeap(); // Cheating a bit
-	return ob_toInt( ob_getField( sk_item( ps->stateStack, depth ), isn, heap ), heap );
+	return ob_getIntField( sk_item( ps->stateStack, depth ), isn, heap );
 	}
 #endif
 
@@ -1269,7 +1269,7 @@ FUNC int ps_sendTo( Parser ps, File fl, ObjectHeap heap, SymbolTable st )
 #ifdef REDUCE_CONTEXT_LENGTH
 FUNC int ps_reduceContextLength( Parser ps, ObjectHeap heap, SymbolTable st )
 	{
-	return ob_toInt( ob_getField( sk_top( ps->stateStack ), sy_byIndex( SYM_REDUCE_CONTEXT_LENGTH, st ), heap ), heap );
+	return ob_getIntField( sk_top( ps->stateStack ), sy_byIndex( SYM_REDUCE_CONTEXT_LENGTH, st ), heap );
 	}
 #endif
 
@@ -1601,9 +1601,9 @@ int main( int argc, char *argv[] )
 	for( i=0; i <= stop; i++ )
 		{
 #ifdef ITEM_SET_NUMS
-		fl_write( traceFile, "State is %d\n", ob_toInt( ob_getField(
+		fl_write( traceFile, "State is %d\n", ob_getIntField(
 			sk_top( ps->stateStack ),
-			sy_byIndex( SYM_ITEM_SET_NUM, st ), heap ), heap ) );
+			sy_byIndex( SYM_ITEM_SET_NUM, st ), heap ) );
 #endif
 		char *cur  = (i >= stop)?   ":END_OF_INPUT" : sentence[i];
 		char *next = (i+1 >= stop)? ":END_OF_INPUT" : sentence[i+1];
@@ -1611,9 +1611,9 @@ int main( int argc, char *argv[] )
 		Symbol sy = sy_byName( cur, st );
 		ps_push( ps, oh_symbolToken( heap, sy ) );
 #ifdef ITEM_SET_NUMS
-		fl_write( traceFile, " -- new state is %d\n", ob_toInt( ob_getField(
+		fl_write( traceFile, " -- new state is %d\n", ob_getIntField(
 			sk_top( ps->stateStack ),
-			sy_byIndex( SYM_ITEM_SET_NUM, st ), heap ), heap ) );
+			sy_byIndex( SYM_ITEM_SET_NUM, st ), heap ) );
 #endif
 		Object lookahead = oh_symbolToken( heap, sy_byName( next, st ) );
 		Production handle = ps_handle( ps, lookahead );
@@ -1625,9 +1625,9 @@ int main( int argc, char *argv[] )
 			ps_popN( ps, pn_length( handle, gr ) );
 			ps_push( ps, oh_symbolToken( heap, pn_lhs( handle, gr ) ) );
 #ifdef ITEM_SET_NUMS
-			fl_write( traceFile, " -- new state is %d\n", ob_toInt( ob_getField(
+			fl_write( traceFile, " -- new state is %d\n", ob_getIntField(
 				sk_top( ps->stateStack ),
-				sy_byIndex( SYM_ITEM_SET_NUM, st ), heap ), heap ) );
+				sy_byIndex( SYM_ITEM_SET_NUM, st ), heap ) );
 #endif
 			handle = ps_handle( ps, lookahead );
 			}
