@@ -872,59 +872,6 @@ static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 	return charsSent;
 	}
 
-FUNC Automaton au_new( Grammar gr, SymbolTable st, MemoryLifetime ml, File conflictLog, File diagnostics )
-	{
-	trace( diagnostics, "Generating automaton for {\n" );
-	gr_sendTo( gr, diagnostics, st );
-#ifdef NDEBUG
-	MemoryLifetime generateTime = ml_begin( 100000, ml );
-#else
-	MemoryLifetime generateTime = ml;
-#endif
-	trace( diagnostics, "}\n" );
-
-	Automaton result = (Automaton)ml_alloc( ml, sizeof(*result) );
-	char stateTagName[50];
-	sprintf( stateTagName, "SN%d", st_count( st ) );
-	Symbol stateNodeTag = sy_byName( stateTagName, st );
-
-	ParserGenerator pg = pg_new( gr, st, stateNodeTag, generateTime, ml, theObjectHeap() );
-	pg_populateItemTable( pg, diagnostics );
-	pg_populateSymbolSideTable( pg, diagnostics );
-	Object startState = pg_computeLR0StateNodes( pg, diagnostics );
-	pg_computeFirstSets( pg, diagnostics );
-	pg_computeFollowSets( pg, diagnostics );
-	pg_computeSLRLookaheads( pg, diagnostics );
-	pg_computeReduceActions( pg, conflictLog, diagnostics );
-
-	result->gr = gr;
-	result->stateHeap  = theObjectHeap();
-	result->startState = startState;
-	result->parsers    = psa_new( 2, ml );
-	if (diagnostics)
-		{
-		trace( diagnostics, "Finished generating automaton %p:\n", result );
-		//au_sendTo( result, diagnostics, theObjectHeap(), st );
-		pg_sendDotTo( pg, diagnostics );
-		trace( diagnostics, "\n" );
-		}
-
-	if( generateTime == ml )
-		result->pg = pg;
-	else
-		{
-		ml_end( generateTime );
-		result->pg = NULL;
-		}
-
-	return result;
-	}
-
-FUNC Grammar au_grammar( Automaton au )
-	{
-	return au->gr;
-	}
-
 struct ir_struct
 	{
 	Object      index;
@@ -963,7 +910,7 @@ FUNC void ir_add( InheritanceRelation ir, Symbol super, Symbol sub )
 	ob_setElement( superNode, subIndex, subNode, ir->nodeHeap );
 	}
 
-FUNC void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, File diagnostics )
+static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, File diagnostics )
 	{
 	trace( diagnostics, "Augmenting automaton %p:\n", au );
 	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, st );
@@ -1058,6 +1005,60 @@ FUNC void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, File
 	// graph could contain many tags that don't appear in our automaton, in
 	// which case it can be cheaper just to do the pointless index lookups for
 	// edges that aren't there, rather than try to avoid them with filtering.
+	}
+
+FUNC Automaton au_new( Grammar gr, SymbolTable st, InheritanceRelation ir, MemoryLifetime ml, File conflictLog, File diagnostics )
+	{
+	trace( diagnostics, "Generating automaton for {\n" );
+	gr_sendTo( gr, diagnostics, st );
+#ifdef NDEBUG
+	MemoryLifetime generateTime = ml_begin( 100000, ml );
+#else
+	MemoryLifetime generateTime = ml;
+#endif
+	trace( diagnostics, "}\n" );
+
+	Automaton result = (Automaton)ml_alloc( ml, sizeof(*result) );
+	char stateTagName[50];
+	sprintf( stateTagName, "SN%d", st_count( st ) );
+	Symbol stateNodeTag = sy_byName( stateTagName, st );
+
+	ParserGenerator pg = pg_new( gr, st, stateNodeTag, generateTime, ml, theObjectHeap() );
+	pg_populateItemTable( pg, diagnostics );
+	pg_populateSymbolSideTable( pg, diagnostics );
+	Object startState = pg_computeLR0StateNodes( pg, diagnostics );
+	pg_computeFirstSets( pg, diagnostics );
+	pg_computeFollowSets( pg, diagnostics );
+	pg_computeSLRLookaheads( pg, diagnostics );
+	pg_computeReduceActions( pg, conflictLog, diagnostics );
+
+	result->gr = gr;
+	result->stateHeap  = theObjectHeap();
+	result->startState = startState;
+	result->parsers    = psa_new( 2, ml );
+	if (diagnostics)
+		{
+		trace( diagnostics, "Finished generating automaton %p:\n", result );
+		//au_sendTo( result, diagnostics, theObjectHeap(), st );
+		pg_sendDotTo( pg, diagnostics );
+		trace( diagnostics, "\n" );
+		}
+
+	if( generateTime == ml )
+		result->pg = pg;
+	else
+		{
+		ml_end( generateTime );
+		result->pg = NULL;
+		}
+
+	au_augment( result, ir, st, diagnostics );
+	return result;
+	}
+
+FUNC Grammar au_grammar( Automaton au )
+	{
+	return au->gr;
 	}
 
 FUNC Parser ps_new( Automaton au, MemoryLifetime ml, File diagnostics )
@@ -1587,8 +1588,7 @@ int main( int argc, char *argv[] )
 		pg_sendDotTo( pg, dotFile );
 		}
 
-	Automaton au = au_new( gr, st, ml_indefinite(), traceFile, traceFile );
-	au_augment( au, ir, st, traceFile );
+	Automaton au = au_new( gr, st, ir, ml_indefinite(), traceFile, traceFile );
 	fl_write( traceFile, "Augmented automaton:\n" );
 	au_sendTo( au, traceFile, heap, st );
 

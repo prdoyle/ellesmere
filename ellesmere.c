@@ -379,7 +379,7 @@ static void addProductionAction( Production handle, GrammarLine gl )
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
 	ps_close( ps );
-	Automaton au = au_new( gr, st, ml_indefinite(), conflictLog, parserGenTrace );
+	Automaton au = au_new( gr, st, ir, ml_indefinite(), conflictLog, parserGenTrace );
 	ps = ps_new( au, ml_indefinite(), parserGenTrace );
 	trace( interpreterDiagnostics, "    NEW PARSER\n" );
 
@@ -805,7 +805,7 @@ int main( int argc, char **argv )
 	Grammar initialGrammar = populateGrammar( st );
 	productionBodiesDuringExecution = fna_new( 20 + gr_numProductions( initialGrammar ), ml_indefinite() );
 	fna_setCount( productionBodiesDuringExecution, gr_numProductions( initialGrammar ) );
-	Automaton au = au_new( initialGrammar, st, ml_indefinite(), conflictLog, parserGenTrace );
+	Automaton au = au_new( initialGrammar, st, ir, ml_indefinite(), conflictLog, parserGenTrace );
 	ps = ps_new( au, ml_indefinite(), parserGenTrace );
 	stack = sk_new( ml_indefinite() );
 	tokenStream = theLexTokenStream( heap, st );
