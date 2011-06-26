@@ -35,7 +35,7 @@ typedef struct oba_struct *ObjectArray;
 #define AR_BYVALUE
 #include "array_template.h"
 #ifndef NDEBUG
-	#define oba_new( size, ml ) oba_newAnnotated( size, ml, __FILE__, __LINE__ )
+	#define oba_new( capacity, ml ) oba_newAnnotated( capacity, ml, __FILE__, __LINE__ )
 #endif
 
 // Primitive types

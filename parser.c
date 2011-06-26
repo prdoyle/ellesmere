@@ -880,7 +880,7 @@ struct ir_struct
 	SymbolTable st;
 	};
 
-#define SUBTAG_START_INDEX 1
+#define IR_START_INDEX 1
 
 FUNC InheritanceRelation ir_new( ObjectHeap heap, SymbolTable st, MemoryLifetime ml )
 	{
@@ -896,18 +896,28 @@ FUNC InheritanceRelation ir_new( ObjectHeap heap, SymbolTable st, MemoryLifetime
 	return result;
 	}
 
+static void appendToArray( Object ob, int whichArray, Object value, InheritanceRelation ir )
+	{
+	SymbolTable st = ir->st;
+	ObjectHeap heap = ir->nodeHeap;
+	Symbol countSymbol  = sy_byIndex( SYM_ELEMENT_COUNT, st );
+	Symbol arraySymbol  = sy_byIndex( SYM_ARRAY, st );
+	Object array = ob_getOrCreateField( ob, sy_byIndex( whichArray, st ), arraySymbol, heap );
+	int nextIndex = 1 + ob_getIfIntField( array, countSymbol, IR_START_INDEX-1, heap );
+	ob_setIntField( array, countSymbol, nextIndex, heap );
+	ob_setElement( array, nextIndex, value, heap );
+	}
+
 FUNC void ir_add( InheritanceRelation ir, Symbol super, Symbol sub )
 	{
 	SymbolTable st = ir->st;
 	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, st );
-	Symbol countSymbol  = sy_byIndex( SYM_ELEMENT_COUNT, st );
 	Object superNode = ob_getOrCreateField( ir->index, super, ir->nodeTag, ir->nodeHeap );
 	Object subNode   = ob_getOrCreateField( ir->index, sub,   ir->nodeTag, ir->nodeHeap );
 	ob_setField( superNode, subtagSymbol, oh_symbolToken( ir->nodeHeap, super ), ir->nodeHeap );
 	ob_setField( subNode,   subtagSymbol, oh_symbolToken( ir->nodeHeap, sub   ), ir->nodeHeap );
-	int subIndex = 1 + ob_getIfIntField( superNode, countSymbol, SUBTAG_START_INDEX-1, ir->nodeHeap );
-	ob_setField( superNode, countSymbol, ob_fromInt( subIndex, ir->nodeHeap ), ir->nodeHeap );
-	ob_setElement( superNode, subIndex, subNode, ir->nodeHeap );
+	appendToArray( superNode, SYM_SUBTAGS,   subNode, ir );
+	appendToArray( subNode,   SYM_SUPERTAGS, superNode, ir );
 	}
 
 static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, File diagnostics )
@@ -967,9 +977,12 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 						ob_sendTo( node, diagnostics, ir->nodeHeap );
 						trace( diagnostics, "\n" );
 						}
+					Object subArray = ob_getField( node, sy_byIndex( SYM_SUBTAGS, st ), ir->nodeHeap );
+					if( !subArray )
+						continue;
 					int subtagIndex;
 					Object subnode;
-					for( subtagIndex = SUBTAG_START_INDEX; NULL != ( subnode = ob_getElement( node, subtagIndex, ir->nodeHeap ) ); subtagIndex++ )
+					for( subtagIndex = IR_START_INDEX; NULL != ( subnode = ob_getElement( subArray, subtagIndex, ir->nodeHeap ) ); subtagIndex++ )
 						{
 						Symbol subtag = ob_getTokenField( subnode, subtagSymbol, ir->nodeHeap );
 						trace( diagnostics, "        Subtag %s ", sy_name( subtag, st ) );
@@ -980,7 +993,7 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 							}
 						else
 							{
-							trace( diagnostics, "Copying from %s\n", sy_name );
+							trace( diagnostics, "Copying from %s\n", sy_name( edgeSymbol, st ) );
 							ob_setField( state, subtag, targetState, au->stateHeap );
 							if( !cl_isChecked( pushedNodes, subnode ) )
 								{
@@ -1007,6 +1020,193 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 	// edges that aren't there, rather than try to avoid them with filtering.
 	}
 
+static int pushNewElements( Object array, Stack sk, CheckList alreadyPushed, ObjectHeap heap, ParserGenerator pg, File traceFile )
+	{
+	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, pg->st );
+	int numNodesPushed = 0;
+	if( array )
+		{
+		int i;
+		Object element;
+		for( i = IR_START_INDEX; NULL != ( element = ob_getElement( array, i, heap ) ); i++ )
+			{
+			if( !cl_isChecked( alreadyPushed, element ) )
+				{
+				cl_check( alreadyPushed, element );
+				sk_push( sk, element );
+				numNodesPushed++;
+				trace( traceFile, "        - Pushed %s\n", sy_name( ob_getTokenField( element, subtagSymbol, heap ), pg->st ) );
+				}
+			}
+		}
+	return numNodesPushed;
+	}
+
+static ObjectArray postOrder( InheritanceRelation ir, Symbol direction, BitVector rootSet, ParserGenerator pg, File diagnostics ) {
+	SymbolTable st = pg->st;
+	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, st );
+	ObjectHeap heap = ir->nodeHeap;
+	CheckList alreadyPushed = cl_open( heap );
+	ObjectArray result = oba_new( 10, pg->generateTime );
+
+	trace( diagnostics, "    Computing postorder %s\n", sy_name( direction, pg->st ) );
+
+	// Initialize worklist to contain ir nodes indicated by rootSet
+	trace( diagnostics, "      Pushing root set\n" );
+	MemoryLifetime worklistTime = ml_begin( 10, pg->generateTime );
+	Stack worklist = sk_new( pg->generateTime );
+	int i;
+	for( i = bv_firstBit( rootSet ); i != bv_END; i = bv_nextBit( rootSet, i ) )
+		{
+		Object root = ob_getField( ir->index, sy_byIndex( i, st ), heap );
+		if( root )
+			{
+			sk_push( worklist, root );
+			cl_check( alreadyPushed, root );
+			trace( diagnostics, "        - Pushed %s\n", sy_name( ob_getTokenField( root, subtagSymbol, heap ), st ) );
+			}
+		}
+
+	// Generate post order
+	trace( diagnostics, "      Processing work list\n" );
+	while( !sk_isEmpty( worklist ) )
+		{
+		Object top = sk_top( worklist );
+		Object array = ob_getField( top, direction, heap );
+		if( 0 == pushNewElements( array, worklist, alreadyPushed, heap, pg, diagnostics ) )
+			{
+			// top's children have already been processed, so append it to the post order
+			oba_append( result, top );
+			sk_pop( worklist );
+			trace( diagnostics, "        - Popped %s\n", sy_name( ob_getTokenField( top, subtagSymbol, heap ), st ) );
+			}
+		}
+
+	cl_close( alreadyPushed );
+	ml_end( worklistTime );
+	return result;
+}
+
+static void bv_propagate( BitVector *target, BitVector source, ParserGenerator pg )
+	{
+	// Tolerate null bitvectors -- treat them as empty
+	if( source )
+		{
+		if( !*target )
+			*target = bv_new( 0, pg->generateTime );
+		bv_or( *target, source );
+		}
+	}
+
+static void sste_propagate( SymbolSideTableEntry target, SymbolSideTableEntry source, ParserGenerator pg, File diagnostics )
+	{
+	bv_propagate( &target->leftmostItems,  source->leftmostItems,  pg );
+	bv_propagate( &target->expectingItems, source->expectingItems, pg );
+	bv_propagate( &target->first,          source->first,          pg );
+	bv_propagate( &target->follow,         source->follow,         pg );
+	trace( diagnostics, "    sste_propagate %s <- %s\n", sy_name( target->sy, pg->st ), sy_name( source->sy, pg->st ) );
+	}
+
+static void propagate( Symbol targetArraySymbol, Object sourceIRNode, ObjectHeap irNodeHeap, ParserGenerator pg, File diagnostics )
+	{
+	SymbolTable st = pg->st;
+	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, st );
+	Symbol sourceSym = ob_getTokenField( sourceIRNode, subtagSymbol, irNodeHeap );
+	trace( diagnostics, "  propagate( %s, %s )\n", sy_name( targetArraySymbol, st ), sy_name( sourceSym, st ) );
+	Object targetArray = ob_getField( sourceIRNode, targetArraySymbol, irNodeHeap );
+	if( !targetArray )
+		return;
+
+	Object targetIRNode; int i;
+	for( i = IR_START_INDEX; NULL != ( targetIRNode = ob_getElement( targetArray, i, irNodeHeap ) ); i++ )
+		{
+		Symbol targetSym = ob_getTokenField( targetIRNode, subtagSymbol, irNodeHeap );
+		sste_propagate(
+			pg_sideTableEntry( pg, targetSym, diagnostics ),
+			pg_sideTableEntry( pg, sourceSym, diagnostics ),
+			pg, diagnostics );
+		}
+	}
+
+static void traceSymbolVector( File diagnostics, const char *name, SymbolVector syv, ParserGenerator pg )
+	{
+	trace( diagnostics, "  | %s:", name );
+	int i; char *sep = " ";
+	for( i = bv_firstBit( syv ); i != bv_END; i = bv_nextBit( syv, i ) )
+		{
+		Symbol sy = sy_byIndex( i, pg->st );
+		trace( diagnostics, "%s%s", sep, sy_name( sy, pg->st ) );
+		sep = ", ";
+		}
+	trace( diagnostics, "\n" );
+	}
+
+static void tracePostOrder( File diagnostics, const char *name, ObjectArray oba, ObjectHeap nodeHeap, ParserGenerator pg )
+	{
+	trace( diagnostics, "  | %s:", name );
+	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, pg->st );
+	int i; char *sep = " ";
+	for( i = 0; i < oba_count( oba ); i++ )
+		{
+		Object node = oba_get( oba, i );
+		Symbol sym = ob_getTokenField( node, subtagSymbol, nodeHeap );
+		trace( diagnostics, "%s%s", sep, sy_name( sym, pg->st ) );
+		sep = ", ";
+		}
+	trace( diagnostics, "\n" );
+	}
+
+static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagnostics )
+	{
+	// "Upstream" is the super-tag relation.  "Downstream" is the sub-tag relation.
+	// All start from a "root set" including all symbols from the sst.
+	//
+	// Propagate sst entries in this order:
+	//    1. Upstream   PO  (top-down)
+	//    2. Downstream RPO (top-down)
+	//    3. Downstream PO  (bottom-up)
+	//    4. Upstream   RPO (bottom-up)
+	//
+	// 1&2 propagate from parent to child, and 3&4 propagate from child to parent.
+	// This will cause each sst entry to include info from all ancestors and descendents,
+	// but not from cousins.
+	//
+	SymbolTable st = pg->st;
+	Symbol supertagsSymbol = sy_byIndex( SYM_SUPERTAGS, st );
+	Symbol subtagsSymbol   = sy_byIndex( SYM_SUBTAGS,   st );
+	SymbolVector rootSet = bv_new( sst_count( pg->sst ), pg->generateTime );
+	int i;
+	for( i=1; i < sst_count( pg->sst ); i++ )
+		bv_set( rootSet, sy_index( sst_element( pg->sst, i )->sy, st ) );
+
+	if( diagnostics )
+		{
+		trace( diagnostics, "Augmenting symbol side table index\n" );
+		trace( diagnostics, "  Inheritance relation: {\n" );
+		ob_sendDeepTo( ir->index, diagnostics, ir->nodeHeap );
+		trace( diagnostics, "}\n" );
+		traceSymbolVector( diagnostics, "  root set", rootSet, pg );
+		}
+
+	ObjectArray upstreamPO   = postOrder( ir, supertagsSymbol, rootSet, pg, diagnostics );
+	ObjectArray downstreamPO = postOrder( ir, subtagsSymbol,   rootSet, pg, diagnostics );
+
+	if( diagnostics )
+		{
+		tracePostOrder( diagnostics, "  upstream", upstreamPO,   ir->nodeHeap, pg );
+		tracePostOrder( diagnostics, "downstream", downstreamPO, ir->nodeHeap, pg );
+		}
+
+	for( i = 0; i < oba_count( upstreamPO ); i++ )
+		propagate( subtagsSymbol, oba_get( upstreamPO, i ),   ir->nodeHeap, pg, diagnostics );
+	for( i = oba_count( downstreamPO ) - 1; i >= 0; i-- )
+		propagate( subtagsSymbol, oba_get( downstreamPO, i ), ir->nodeHeap, pg, diagnostics );
+	for( i = 0; i < oba_count( downstreamPO ); i++ )
+		propagate( supertagsSymbol,   oba_get( downstreamPO, i ), ir->nodeHeap, pg, diagnostics );
+	for( i = oba_count( upstreamPO ) - 1; i >= 0; i-- )
+		propagate( supertagsSymbol, oba_get( upstreamPO, i ),     ir->nodeHeap, pg, diagnostics );
+	}
+
 FUNC Automaton au_new( Grammar gr, SymbolTable st, InheritanceRelation ir, MemoryLifetime ml, File conflictLog, File diagnostics )
 	{
 	trace( diagnostics, "Generating automaton for {\n" );
@@ -1030,6 +1230,7 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, InheritanceRelation ir, Memor
 	pg_computeFirstSets( pg, diagnostics );
 	pg_computeFollowSets( pg, diagnostics );
 	pg_computeSLRLookaheads( pg, diagnostics );
+	sst_augment( ir, pg, diagnostics );
 	pg_computeReduceActions( pg, conflictLog, diagnostics );
 
 	result->gr = gr;
@@ -1392,6 +1593,7 @@ static GrammarLine grammar2[] =
 
 static GrammarLine subtags[] =
 	{
+	{ ":NUMBER",      ":INT" },
 	{ ":INT",         ":NATURAL" },
 	};
 #endif

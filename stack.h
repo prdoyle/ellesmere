@@ -13,6 +13,7 @@ FUNC void   sk_popN   ( Stack sk, int count );
 static inline Object sk_top    ( Stack sk ){ return sk_item( sk, 0 ); }
 static inline Object sk_pop    ( Stack sk ){ Object result = sk_top(sk); sk_popN( sk, 1 ); return result; }
 static inline void   sk_popAll ( Stack sk ){ sk_popN( sk, sk_depth( sk ) ); }
+static inline bool   sk_isEmpty( Stack sk ){ return sk_depth( sk ) == 0; }
 
 FUNC int sk_sendNTo( Stack sk, int numElements, File fl, ObjectHeap heap );
 

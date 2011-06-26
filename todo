@@ -1,5 +1,5 @@
 NEXT:
-- Symbol DAG?
+- Make sure root set doesn't get processed twice
 
 Other:
 - Implement tail call elimination
