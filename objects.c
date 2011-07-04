@@ -2,6 +2,7 @@
 #include "objects.h"
 #include "records.h"
 #include "memory.h"
+#include "stack.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -391,6 +392,11 @@ FUNC void cl_check( CheckList cl, Object ob )
 		bv_set( cl->checkMarks, ob->checkListIndex );
 	}
 
+FUNC void cl_checkAll( CheckList target, CheckList source )
+	{
+	bv_or( target->checkMarks, source->checkMarks );
+	}
+
 FUNC void cl_uncheck( CheckList cl, Object ob )
 	{
 	if( ob_isInt( ob, cl->heap ) )
@@ -406,6 +412,74 @@ FUNC bool cl_isChecked( CheckList cl, Object ob )
 	else
 		return bv_isSet( cl->checkMarks, ob->checkListIndex );
 	}
+
+static int recurseIntoField( Object head, Symbol edgeSymbol, Object tail, Stack workList, CheckList alreadyPushed, ObjectHeap heap, EdgePredicate ep, void *context )
+	{
+	if( !tail )
+		return 0;
+	if( cl_isChecked( alreadyPushed, tail ) )
+		return 0;
+	if( !ep( head, edgeSymbol, 0, tail, context ) )
+		return 0;
+	cl_check( alreadyPushed, tail );
+	sk_push( workList, tail );
+	return 1;
+	}
+
+static int recurseIntoArrayElement( Object head, int index, Object tail, Stack workList, CheckList alreadyPushed, ObjectHeap heap, EdgePredicate ep, void *context )
+	{
+	if( !tail )
+		return 0;
+	if( cl_isChecked( alreadyPushed, tail ) )
+		return 0;
+	if( !ep( head, NULL, index, tail, context ) )
+		return 0;
+	cl_check( alreadyPushed, tail );
+	sk_push( workList, tail );
+	return 1;
+	}
+
+FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexProcedure processVertex, ObjectHeap heap, void *context )
+	{
+	MemoryLifetime walkTime = ml_begin( 1000, ml_indefinite() );
+	CheckList alreadyPushed = cl_open( heap );
+	int i;
+	for( i=0; i < sk_depth( workList ); i++ )
+		cl_check( alreadyPushed, sk_item( workList, i ) );
+	while( !sk_isEmpty( workList ) )
+		{
+		Object curObject = sk_top( workList );
+		int numChildrenPushed = 0;
+		if( ob_hasItems( curObject ) )
+			{
+			Record rd = sy_instanceShape( ob_tag(curObject,heap), heap->st );
+			int fieldID;
+			for( fieldID = rd_firstField(rd); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
+				{
+				Symbol sy = sy_byIndex( fieldID, heap->st );
+				numChildrenPushed += recurseIntoField( curObject, sy, ob_getField( curObject, sy, heap ), workList, alreadyPushed, heap, recurseIntoEdge, context );
+				}
+			FieldList field;
+			for( field = curObject->data.listFields; field; field = field->tail )
+				{
+				int si = (int)field->si;
+				if( si < 0 )
+					numChildrenPushed += recurseIntoArrayElement( curObject, symbolIndex2ElementIndex( field->si ), field->value, workList, alreadyPushed, heap, recurseIntoEdge, context );
+				else
+					numChildrenPushed += recurseIntoField( curObject, sy_byIndex( field->si, heap->st ), field->value, workList, alreadyPushed, heap, recurseIntoEdge, context );
+				}
+			if( numChildrenPushed == 0 )
+				{
+				sk_pop( workList );
+				processVertex( curObject, context );
+				}
+			}
+		}
+	cl_close( alreadyPushed );
+	ml_end( walkTime );
+	}
+
+bool everyEdge( Object head, Symbol edgeSymbol, int edgeIndex, Object tail, void *context ){ return true; }
 
 FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 	{
@@ -599,6 +673,98 @@ FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy )
 		}
 	return sy->token;
 	}
+
+#ifdef OBJECTS_T
+
+static Object create( char *tagName )
+	{
+	return ob_create( sy_byName( tagName, theSymbolTable() ), theObjectHeap() );
+	}
+
+static void field( Object from, char *edgeName, Object to )
+	{
+	ob_setField( from, sy_byName( edgeName, theSymbolTable() ), to, theObjectHeap() );
+	}
+
+static void element( Object from, int index, Object to )
+	{
+	ob_setElement( from, index, to, theObjectHeap() );
+	}
+
+static const char *ob2str( Object ob )
+	{
+	if( ob )
+		return sy_name( ob_tag( ob, theObjectHeap() ), theSymbolTable() );
+	else
+		return "(NULL)";
+	}
+
+static bool printEveryEdge( Object head, Symbol edgeSymbol, int edgeIndex, Object tail, void *fileArg )
+	{
+	File file = (File)fileArg;
+	if( edgeSymbol )
+		fl_write( file, "%s -%s-> %s\n", ob2str( head ), sy_name( edgeSymbol, theSymbolTable() ), ob2str( tail ) );
+	else
+		fl_write( file, "%s[%d] -> %s\n", ob2str( head ), edgeIndex, ob2str( tail ) );
+	return true;
+	}
+
+static void printNodeTag( Object node, void *fileArg )
+	{
+	File file = (File)fileArg;
+	fl_write( file, "%s\n", ob2str( node ) );
+	}
+
+int main( int argc, char **argv )
+	{
+	Object any             = create( "any" );
+	Object physical        = create( "physical" );
+	Object furniture       = create( "furniture" );
+	Object sofa            = create( "sofa" );
+	Object bed             = create( "bed" );
+	Object sofaBed         = create( "sofaBed" );
+	Object vehicle         = create( "vehicle" );
+	Object truck           = create( "truck" );
+	Object fireTruck       = create( "fireTruck" );
+	Object dumpTruck       = create( "dumpTruck" );
+	Object mobileHome      = create( "mobileHome" );
+	Object number          = create( "number" );
+	Object integer         = create( "integer" );
+	Object positive        = create( "positive" );
+	Object prime           = create( "prime" );
+	Object even            = create( "even" );
+	Object odd             = create( "odd" );
+	Object mersenne        = create( "mersenne" );
+
+	field( physical,  "is", any );
+	field( furniture, "is", physical );
+	field( sofa     , "is", furniture );
+	field( bed      , "is", furniture );
+	element( sofaBed, 1, sofa );
+	element( sofaBed, 2, bed );
+	field( vehicle,   "is", physical );
+	field( truck,     "is", vehicle );
+	field( fireTruck, "is", truck );
+	field( dumpTruck, "is", truck );
+	element( mobileHome, 60, truck );
+	element( mobileHome, 30, bed );
+	element( mobileHome, 10, sofa );
+
+	field( number,   "is", any );
+	field( integer,  "is", number );
+	field( positive, "is", number );
+	field( prime,    "is", positive );
+	field( even,     "is", number );
+	field( odd,      "is", number );
+	field( mersenne, "is", prime );
+	field( mersenne, "isAlso", odd );
+
+	Stack workList = sk_new( ml_indefinite() );
+	sk_push( workList, mobileHome );
+	postorderWalk( workList, printEveryEdge, printNodeTag, theObjectHeap(), stdout );
+	}
+
+#endif
 
 //MERGE:40
 

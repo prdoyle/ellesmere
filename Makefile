@@ -106,6 +106,10 @@ parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvect
 
 records.t: CFLAGS += -DRECORDS_T
 records.t: records.o bitvector.o memory.o file.o
+	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
+
+objects.t: CFLAGS += -DOBJECTS_T
+objects.t: objects.o bitvector.o memory.o file.o records.o symbols.o stack.o array.o
 	$(LD) $(LDFLAGS) $^ -o $@ -lefence
 
 %.pdf: %.dot

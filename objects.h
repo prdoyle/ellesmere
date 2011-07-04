@@ -21,6 +21,7 @@ FUNC void   ob_setElement( Object ob, int index, Object value, ObjectHeap heap )
 FUNC CheckList cl_open  ( ObjectHeap heap );
 FUNC void      cl_close ( CheckList cl );
 FUNC void      cl_check     ( CheckList cl, Object ob ); // Beware large int objects.  This may perform very poorly.
+FUNC void      cl_checkAll  ( CheckList target, CheckList source );
 FUNC void      cl_uncheck   ( CheckList cl, Object ob );
 FUNC bool      cl_isChecked ( CheckList cl, Object ob );
 
@@ -103,6 +104,12 @@ static inline int ob_getIfIntField( Object ob, Symbol field, int defaultValue, O
 	else
 		return defaultValue;
 	}
+
+typedef bool ( *EdgePredicate )( Object head, Symbol edgeSymbol, int edgeIndex, Object tail, void *context );
+typedef void ( *VertexProcedure )( Object vertex, void *context );
+
+FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexProcedure processVertex, ObjectHeap heap, void *context );
+bool everyEdge( Object head, Symbol edgeSymbol, int edgeIndex, Object tail, void *context );
 
 #endif
 
