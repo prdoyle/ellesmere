@@ -1020,6 +1020,7 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 	// edges that aren't there, rather than try to avoid them with filtering.
 	}
 
+#if 0
 static int pushNewElements( Object array, Stack sk, CheckList alreadyPushed, ObjectHeap heap, ParserGenerator pg, File traceFile )
 	{
 	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, pg->st );
@@ -1042,7 +1043,8 @@ static int pushNewElements( Object array, Stack sk, CheckList alreadyPushed, Obj
 	return numNodesPushed;
 	}
 
-static ObjectArray postOrder( InheritanceRelation ir, Symbol direction, BitVector rootSet, ParserGenerator pg, File diagnostics ) {
+static ObjectArray postOrder( InheritanceRelation ir, Symbol direction, BitVector rootSet, ParserGenerator pg, File diagnostics )
+	{
 	SymbolTable st = pg->st;
 	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, st );
 	ObjectHeap heap = ir->nodeHeap;
@@ -1085,7 +1087,8 @@ static ObjectArray postOrder( InheritanceRelation ir, Symbol direction, BitVecto
 	cl_close( alreadyPushed );
 	ml_end( worklistTime );
 	return result;
-}
+	}
+#endif
 
 static void bv_propagate( BitVector *target, BitVector source, ParserGenerator pg )
 	{
@@ -1107,6 +1110,7 @@ static void sste_propagate( SymbolSideTableEntry target, SymbolSideTableEntry so
 	trace( diagnostics, "    sste_propagate %s <- %s\n", sy_name( target->sy, pg->st ), sy_name( source->sy, pg->st ) );
 	}
 
+#if 0
 static void propagate( Symbol targetArraySymbol, Object sourceIRNode, ObjectHeap irNodeHeap, ParserGenerator pg, File diagnostics )
 	{
 	SymbolTable st = pg->st;
@@ -1155,56 +1159,203 @@ static void tracePostOrder( File diagnostics, const char *name, ObjectArray oba,
 		}
 	trace( diagnostics, "\n" );
 	}
+#endif
+
+typedef struct aug_struct *Augmenter;
+struct aug_struct {
+	ParserGenerator pg;
+	InheritanceRelation ir;
+	File diagnostics;
+	Stack top;
+	Stack bottom;
+	SymbolSideTable tempSideTable;
+	CheckList related;
+	// State that depends on direction of walk
+	Symbol direction;
+	Stack terminalNodes;
+	SymbolSideTable propagationSource;
+	SymbolSideTable propagationTarget;
+};
+
+static Augmenter aug_begin( ParserGenerator pg, InheritanceRelation ir, MemoryLifetime ml, File diagnostics )
+	{
+	Augmenter result = ml_alloc( ml, sizeof( *result ) );
+	result->pg = pg;
+	result->ir = ir;
+	result->diagnostics = diagnostics;
+	result->top    = NULL;
+	result->bottom = NULL;
+	result->tempSideTable = sst_new( 1+sst_count( pg->sst ), ml );
+	result->related    = cl_open( ir->nodeHeap );
+	return result;
+	}
+
+static void aug_end( Augmenter aug )
+	{
+	cl_close( aug->related );
+	}
+
+static Symbol irNodeSymbol( Object node, InheritanceRelation ir )
+	{
+	return ob_getTokenField( node, sy_byIndex( SYM_SYMBOL, ir->st ), ir->nodeHeap );
+	}
+
+static int irNodeSideTableIndex( Object node, InheritanceRelation ir, ParserGenerator pg )
+	{
+	return pg_symbolSideTableIndex( pg, irNodeSymbol( node, ir ) );
+	}
+
+static void findTerminalNodes( Object node, void *augArg )
+	{
+	Augmenter aug = (Augmenter)augArg;
+	ObjectHeap heap = aug->ir->nodeHeap;
+	if( ob_tag( node, heap ) != aug->ir->nodeTag )
+		return;
+
+	// This is a node "reachable" from the root set, so it's interesting
+	//
+	cl_check( aug->related, node );
+
+	// Some symbols in the IR might not appear in the SST yet, so make sure they do
+	//
+	pg_sideTableEntry( aug->pg, irNodeSymbol( node, aug->ir ), aug->diagnostics );
+
+	// If the node has no successors, it's a terminal node
+	//
+	Object successors = ob_getField( node, aug->direction, aug->ir->nodeHeap );
+	if( !successors || !ob_getElement( successors, IR_START_INDEX, aug->ir->nodeHeap ) )
+		sk_push( aug->terminalNodes, node );
+	}
+
+static bool propagationPredicate( Object head, Symbol edgeSymbol, int edgeIndex, Object tail, void *augArg )
+	{
+	Augmenter aug = (Augmenter)augArg;
+	ObjectHeap heap = aug->ir->nodeHeap;
+	Symbol headTag = ob_tag( head, heap );
+	if( headTag == aug->ir->nodeTag ) // We're looking at an IR node
+		return ob_tag( tail, heap ) == aug->direction; // Proceed only with the successor array that points the right way
+	else if( headTag == aug->direction ) // We're looking at a successor array
+		return cl_isChecked( aug->related, tail ); // Proceed only with related nodes
+	else
+		return false;
+	}
+
+static void propagateToSuccessors( Object node, void *augArg )
+	{
+	Augmenter aug = (Augmenter)augArg;
+	ObjectHeap heap = aug->ir->nodeHeap;
+	if( ob_tag( node, heap ) != aug->ir->nodeTag )
+		return;
+
+	Object successors = ob_getField( node, aug->direction, heap );
+	if( successors )
+		{
+		int nodeSideTableIndex = irNodeSideTableIndex( node, aug->ir, aug->pg );
+		ObjectHeap irNodeHeap = aug->ir->nodeHeap;
+		int i;
+		Object successor;
+		for( i = IR_START_INDEX; ( successor = ob_getElement( successors, i, irNodeHeap ) ) != NULL; i++ )
+			{
+			int succSideTableIndex = irNodeSideTableIndex( successor, aug->ir, aug->pg );
+			sste_propagate(
+				sst_element( aug->propagationTarget, succSideTableIndex ),
+				sst_element( aug->propagationSource, nodeSideTableIndex ),
+				aug->pg, aug->diagnostics );
+			}
+		}
+	}
+
+static void propagateBetweenTables( Object node, void *augArg )
+	{
+	Augmenter aug = (Augmenter)augArg;
+	ObjectHeap heap = aug->ir->nodeHeap;
+	if( ob_tag( node, heap ) != aug->ir->nodeTag )
+		return;
+
+	int index = irNodeSideTableIndex( node, aug->ir, aug->pg );
+	SymbolSideTableEntry sste = sst_element( aug->propagationTarget, index );
+	sste_propagate( sste, sst_element( aug->propagationSource, index ), aug->pg, aug->diagnostics );
+	}
+
+static void clearTempSideTable( Object node, void *augArg )
+	{
+	Augmenter aug = (Augmenter)augArg;
+	ObjectHeap heap = aug->ir->nodeHeap;
+	if( ob_tag( node, heap ) != aug->ir->nodeTag )
+		return;
+
+	int index = irNodeSideTableIndex( node, aug->ir, aug->pg );
+	SymbolSideTableEntry sste = sst_element( aug->tempSideTable, index );
+	memset( sste, 0, sizeof( *sste ) ); // TODO: This causes us to reallocate the bitvectors every time instead of clearing and reusing the existing ones
+	sste->sy = irNodeSymbol( node, aug->ir );
+	}
 
 static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagnostics )
 	{
-	// "Upstream" is the super-tag relation.  "Downstream" is the sub-tag relation.
-	// All start from a "root set" including all symbols from the sst.
-	//
-	// Propagate sst entries in this order:
-	//    1. Upstream   PO  (top-down)
-	//    2. Downstream RPO (top-down)
-	//    3. Downstream PO  (bottom-up)
-	//    4. Upstream   RPO (bottom-up)
-	//
-	// 1&2 propagate from parent to child, and 3&4 propagate from child to parent.
-	// This will cause each sst entry to include info from all ancestors and descendents,
-	// but not from cousins.
-	//
 	SymbolTable st = pg->st;
-	Symbol supertagsSymbol = sy_byIndex( SYM_SUPERTAGS, st );
-	Symbol subtagsSymbol   = sy_byIndex( SYM_SUBTAGS,   st );
-	SymbolVector rootSet = bv_new( sst_count( pg->sst ), pg->generateTime );
-	int i;
-	for( i=1; i < sst_count( pg->sst ); i++ )
-		bv_set( rootSet, sy_index( sst_element( pg->sst, i )->sy, st ) );
+	Symbol superTags = sy_byIndex( SYM_SUPERTAGS, st );
+	Symbol subTags   = sy_byIndex( SYM_SUBTAGS,   st );
+	MemoryLifetime augmentTime = ml_begin( 1000, pg->generateTime );
+	Augmenter aug = aug_begin( pg, ir, augmentTime, diagnostics );
+	ObjectHeap heap = aug->ir->nodeHeap;
+	Stack rootSet = sk_new( augmentTime );
 
 	if( diagnostics )
 		{
 		trace( diagnostics, "Augmenting symbol side table index\n" );
 		trace( diagnostics, "  Inheritance relation: {\n" );
-		ob_sendDeepTo( ir->index, diagnostics, ir->nodeHeap );
+		ob_sendDeepTo( ir->index, diagnostics, heap );
 		trace( diagnostics, "}\n" );
-		traceSymbolVector( diagnostics, "  root set", rootSet, pg );
 		}
 
-	ObjectArray upstreamPO   = postOrder( ir, supertagsSymbol, rootSet, pg, diagnostics );
-	ObjectArray downstreamPO = postOrder( ir, subtagsSymbol,   rootSet, pg, diagnostics );
+	int i;
+	for( i=1; i < sst_count( pg->sst ); i++ )
+		{
+		SymbolSideTableEntry sste = sst_element( pg->sst, i );
+		Object node = ob_getField( ir->index, sste->sy, heap );
+		if( node )
+			sk_push( rootSet, node );
+		}
 
 	if( diagnostics )
 		{
-		tracePostOrder( diagnostics, "  upstream", upstreamPO,   ir->nodeHeap, pg );
-		tracePostOrder( diagnostics, "downstream", downstreamPO, ir->nodeHeap, pg );
+		trace( diagnostics, "  Root set: " );
+		sk_sendTo( rootSet, diagnostics, ir->nodeHeap );
+		trace( diagnostics, "\n" );
 		}
 
-	for( i = 0; i < oba_count( upstreamPO ); i++ )
-		propagate( subtagsSymbol, oba_get( upstreamPO, i ),   ir->nodeHeap, pg, diagnostics );
-	for( i = oba_count( downstreamPO ) - 1; i >= 0; i-- )
-		propagate( subtagsSymbol, oba_get( downstreamPO, i ), ir->nodeHeap, pg, diagnostics );
-	for( i = 0; i < oba_count( downstreamPO ); i++ )
-		propagate( supertagsSymbol,   oba_get( downstreamPO, i ), ir->nodeHeap, pg, diagnostics );
-	for( i = oba_count( upstreamPO ) - 1; i >= 0; i-- )
-		propagate( supertagsSymbol, oba_get( upstreamPO, i ),     ir->nodeHeap, pg, diagnostics );
+	trace( diagnostics, "  Walking upward to find top nodes and related nodes\n" );
+	aug->direction     = superTags;
+	aug->terminalNodes = aug->top;
+	postorderWalk( sk_dup( rootSet, augmentTime ), everyEdge, findTerminalNodes, ir->nodeHeap, aug );
+
+	trace( diagnostics, "  Walking downward to find bottom nodes and related nodes\n" );
+	aug->direction     = subTags;
+	aug->terminalNodes = aug->bottom;
+	postorderWalk( sk_dup( rootSet, augmentTime ), everyEdge, findTerminalNodes, ir->nodeHeap, aug );
+
+	trace( diagnostics, "  Propagating side table info downward into temp table\n" );
+	aug->propagationSource = pg->sst;
+	aug->propagationTarget = aug->tempSideTable;
+	aug->direction = subTags;
+	postorderWalk( sk_dup( aug->top, augmentTime ), propagationPredicate, clearTempSideTable,     ir->nodeHeap, aug );
+	postorderWalk( sk_dup( aug->top, augmentTime ), propagationPredicate, propagateBetweenTables, ir->nodeHeap, aug );
+	postorderWalk( sk_dup( aug->top, augmentTime ), propagationPredicate, propagateToSuccessors,  ir->nodeHeap, aug );
+
+	trace( diagnostics, "  Propagating side table info upward\n" );
+	aug->propagationSource = pg->sst;
+	aug->propagationTarget = pg->sst;
+	aug->direction = superTags;
+	postorderWalk( sk_dup( aug->bottom, augmentTime ), propagationPredicate, propagateToSuccessors, ir->nodeHeap, aug );
+
+	trace( diagnostics, "  Merge temp table into main table\n" );
+	aug->propagationSource = aug->tempSideTable;
+	aug->propagationTarget = pg->sst;
+	aug->direction = superTags;
+	postorderWalk( sk_dup( aug->bottom, augmentTime ), propagationPredicate, propagateBetweenTables, ir->nodeHeap, aug );
+
+	aug_end( aug );
+	ml_end( augmentTime );
 	}
 
 FUNC Automaton au_new( Grammar gr, SymbolTable st, InheritanceRelation ir, MemoryLifetime ml, File conflictLog, File diagnostics )

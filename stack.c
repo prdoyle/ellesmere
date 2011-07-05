@@ -40,6 +40,15 @@ FUNC void sk_popN( Stack sk, int count )
 	ska_incCountBy( sk, -count );
 	}
 
+FUNC Stack sk_dup( Stack other, MemoryLifetime ml )
+	{
+	Stack result = sk_new( ml );
+	int i;
+	for( i = sk_depth( other ) - 1; i >= 0; i-- )
+		sk_push( result, sk_item( other, i ) );
+	return result;
+	}
+
 FUNC int sk_sendNTo( Stack sk, int numElements, File fl, ObjectHeap heap )
 	{
 	if( !fl )
