@@ -105,11 +105,11 @@ static inline int ob_getIfIntField( Object ob, Symbol field, int defaultValue, O
 		return defaultValue;
 	}
 
-typedef bool ( *EdgePredicate )( Object head, Symbol edgeSymbol, int edgeIndex, Object tail, void *context );
-typedef void ( *VertexProcedure )( Object vertex, void *context );
+typedef bool ( *EdgePredicate )( void *context, Object head, Symbol edgeSymbol, int edgeIndex, Object tail );
+typedef void ( *VertexProcedure )( void *context, Object vertex );
 
 FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexProcedure processVertex, ObjectHeap heap, void *context );
-bool everyEdge( Object head, Symbol edgeSymbol, int edgeIndex, Object tail, void *context );
+bool everyEdge( void *context, Object head, Symbol edgeSymbol, int edgeIndex, Object tail );
 
 #endif
 

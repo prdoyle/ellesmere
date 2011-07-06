@@ -419,7 +419,7 @@ static int recurseIntoField( Object head, Symbol edgeSymbol, Object tail, Stack 
 		return 0;
 	if( cl_isChecked( alreadyPushed, tail ) )
 		return 0;
-	if( !ep( head, edgeSymbol, 0, tail, context ) )
+	if( !ep( context, head, edgeSymbol, 0, tail ) )
 		return 0;
 	cl_check( alreadyPushed, tail );
 	sk_push( workList, tail );
@@ -432,7 +432,7 @@ static int recurseIntoArrayElement( Object head, int index, Object tail, Stack w
 		return 0;
 	if( cl_isChecked( alreadyPushed, tail ) )
 		return 0;
-	if( !ep( head, NULL, index, tail, context ) )
+	if( !ep( context, head, NULL, index, tail ) )
 		return 0;
 	cl_check( alreadyPushed, tail );
 	sk_push( workList, tail );
@@ -471,7 +471,7 @@ FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexPr
 			if( numChildrenPushed == 0 )
 				{
 				sk_pop( workList );
-				processVertex( curObject, context );
+				processVertex( context, curObject );
 				}
 			}
 		}
@@ -479,7 +479,7 @@ FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexPr
 	ml_end( walkTime );
 	}
 
-bool everyEdge( Object head, Symbol edgeSymbol, int edgeIndex, Object tail, void *context ){ return true; }
+bool everyEdge( void *context, Object head, Symbol edgeSymbol, int edgeIndex, Object tail ){ return true; }
 
 FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 	{
@@ -699,7 +699,7 @@ static const char *ob2str( Object ob )
 		return "(NULL)";
 	}
 
-static bool printEveryEdge( Object head, Symbol edgeSymbol, int edgeIndex, Object tail, void *fileArg )
+static bool printEveryEdge( void *fileArg, Object head, Symbol edgeSymbol, int edgeIndex, Object tail )
 	{
 	File file = (File)fileArg;
 	if( edgeSymbol )
@@ -709,7 +709,7 @@ static bool printEveryEdge( Object head, Symbol edgeSymbol, int edgeIndex, Objec
 	return true;
 	}
 
-static void printNodeTag( Object node, void *fileArg )
+static void printNodeTag( void *fileArg, Object node )
 	{
 	File file = (File)fileArg;
 	fl_write( file, "%s\n", ob2str( node ) );

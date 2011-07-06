@@ -1205,7 +1205,7 @@ static int irNodeSideTableIndex( Object node, InheritanceRelation ir, ParserGene
 	return pg_symbolSideTableIndex( pg, irNodeSymbol( node, ir ) );
 	}
 
-static void findTerminalNodes( Object node, void *augArg )
+static void findTerminalNodes( void *augArg, Object node )
 	{
 	Augmenter aug = (Augmenter)augArg;
 	ObjectHeap heap = aug->ir->nodeHeap;
@@ -1227,7 +1227,7 @@ static void findTerminalNodes( Object node, void *augArg )
 		sk_push( aug->terminalNodes, node );
 	}
 
-static bool propagationPredicate( Object head, Symbol edgeSymbol, int edgeIndex, Object tail, void *augArg )
+static bool propagationPredicate( void *augArg, Object head, Symbol edgeSymbol, int edgeIndex, Object tail )
 	{
 	Augmenter aug = (Augmenter)augArg;
 	ObjectHeap heap = aug->ir->nodeHeap;
@@ -1240,7 +1240,7 @@ static bool propagationPredicate( Object head, Symbol edgeSymbol, int edgeIndex,
 		return false;
 	}
 
-static void propagateToSuccessors( Object node, void *augArg )
+static void propagateToSuccessors( void *augArg, Object node )
 	{
 	Augmenter aug = (Augmenter)augArg;
 	ObjectHeap heap = aug->ir->nodeHeap;
@@ -1265,7 +1265,7 @@ static void propagateToSuccessors( Object node, void *augArg )
 		}
 	}
 
-static void propagateBetweenTables( Object node, void *augArg )
+static void propagateBetweenTables( void *augArg, Object node )
 	{
 	Augmenter aug = (Augmenter)augArg;
 	ObjectHeap heap = aug->ir->nodeHeap;
@@ -1277,7 +1277,7 @@ static void propagateBetweenTables( Object node, void *augArg )
 	sste_propagate( sste, sst_element( aug->propagationSource, index ), aug->pg, aug->diagnostics );
 	}
 
-static void clearTempSideTable( Object node, void *augArg )
+static void clearTempSideTable( void *augArg, Object node )
 	{
 	Augmenter aug = (Augmenter)augArg;
 	ObjectHeap heap = aug->ir->nodeHeap;

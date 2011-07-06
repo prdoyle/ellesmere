@@ -123,6 +123,6 @@ clean:
 	rm -f ellesmere tags _merged.c $(GEN_C_FILES) $(GEN_H_FILES) $(O_FILES) $(I_FILES) $(D_FILES)
 	rm -f memreport.txt gmon.out *.gcda
 	rm -f memreport.txt gmon.out *.gcda oprof.txt sorted-oprof.txt gprof.txt
-	rm -f bitvector.t parser.t records.t states.dot states.pdf trace.txt
+	rm -f bitvector.t parser.t records.t objects.t states.dot states.pdf trace.txt
 
 .PHONY: all merged memreport.txt
