@@ -468,11 +468,11 @@ FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexPr
 				else
 					numChildrenPushed += recurseIntoField( curObject, sy_byIndex( field->si, heap->st ), field->value, workList, alreadyPushed, heap, recurseIntoEdge, context );
 				}
-			if( numChildrenPushed == 0 )
-				{
-				sk_pop( workList );
-				processVertex( context, curObject );
-				}
+			}
+		if( numChildrenPushed == 0 )
+			{
+			sk_pop( workList );
+			processVertex( context, curObject );
 			}
 		}
 	cl_close( alreadyPushed );
@@ -735,6 +735,7 @@ int main( int argc, char **argv )
 	Object even            = create( "even" );
 	Object odd             = create( "odd" );
 	Object mersenne        = create( "mersenne" );
+	Object three           = create( "three" );
 
 	field( physical,  "is", any );
 	field( furniture, "is", physical );
@@ -758,9 +759,12 @@ int main( int argc, char **argv )
 	field( odd,      "is", number );
 	field( mersenne, "is", prime );
 	field( mersenne, "isAlso", odd );
+	field( three,    "is", mersenne );
+	field( three,    "value", ob_fromInt( 3, theObjectHeap() ) );
 
 	Stack workList = sk_new( ml_indefinite() );
 	sk_push( workList, mobileHome );
+	sk_push( workList, three );
 	postorderWalk( workList, printEveryEdge, printNodeTag, theObjectHeap(), stdout );
 	}
 

@@ -49,6 +49,15 @@ FUNC Stack sk_dup( Stack other, MemoryLifetime ml )
 	return result;
 	}
 
+FUNC Stack sk_mirror( Stack other, MemoryLifetime ml )
+	{
+	Stack result = sk_new( ml );
+	int i;
+	for( i=0; i < sk_depth( other ); i++ )
+		sk_push( result, sk_item( other, i ) );
+	return result;
+	}
+
 FUNC int sk_sendNTo( Stack sk, int numElements, File fl, ObjectHeap heap )
 	{
 	if( !fl )
