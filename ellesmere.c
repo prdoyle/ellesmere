@@ -486,10 +486,8 @@ static struct gl_struct grammar1[] =
 
 	{ { "INT",      "{", "VOIDS", "INT",   "}"                      }, { passThrough, 1 } },
 	{ { "INT",      "{",          "INT",   "}"                      }, { passThrough, 1 } },
-	{ { "TRUE",     "{", "VOIDS", "TRUE",  "}"                      }, { passThrough, 1 } },
-	{ { "TRUE",     "{",          "TRUE",  "}"                      }, { passThrough, 1 } },
-	{ { "FALSE",    "{", "VOIDS", "FALSE", "}"                      }, { passThrough, 1 } },
-	{ { "FALSE",    "{",          "FALSE", "}"                      }, { passThrough, 1 } },
+	{ { "BOOLEAN",  "{", "VOIDS", "BOOLEAN",  "}"                   }, { passThrough, 1 } },
+	{ { "BOOLEAN",  "{",          "BOOLEAN",  "}"                   }, { passThrough, 1 } },
 
 	{ { "VOID",     "{", "VOIDS", "}"                               }, { nopAction } },
 	{ { "VOID",     "{",          "}"                               }, { nopAction } },
@@ -511,10 +509,8 @@ static struct gl_struct grammar1[] =
  	{ { "TOKEN_BLOCK",     "TB_START",          "}"                 }, { stopRecordingTokenBlockAction } },
  	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "INT", "}"          }, { stopRecordingTokenBlockAction } },
  	{ { "TOKEN_BLOCK",     "TB_START", "INT", "}"                   }, { stopRecordingTokenBlockAction } },
- 	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "TRUE", "}"         }, { stopRecordingTokenBlockAction } },
- 	{ { "TOKEN_BLOCK",     "TB_START", "TRUE", "}"                  }, { stopRecordingTokenBlockAction } },
- 	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "FALSE", "}"        }, { stopRecordingTokenBlockAction } },
- 	{ { "TOKEN_BLOCK",     "TB_START", "FALSE", "}"                 }, { stopRecordingTokenBlockAction } },
+ 	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "BOOLEAN", "}"      }, { stopRecordingTokenBlockAction } },
+ 	{ { "TOKEN_BLOCK",     "TB_START", "BOOLEAN", "}"               }, { stopRecordingTokenBlockAction } },
  	{ { "TB_START",        "{",                                     }, { recordTokenBlockAction } },
 	{ { "VOID",            "def", "PRODUCTION", "as", "TOKEN_BLOCK" }, { defAction } },
 
@@ -523,21 +519,13 @@ static struct gl_struct grammar1[] =
 	{ { "INT",             "INT", "INT", "mul!"                     }, { mulAction } },
 	{ { "INT",             "INT", "INT", "div!"                     }, { divAction } },
 
-	{ { "FALSE",           "INT", "nz!"                             }, { nonzeroAction } },
-	{ { "FALSE",           "INT", "INT", "le!"                      }, { leAction } },
+	{ { "BOOLEAN",         "INT", "nz!"                             }, { nonzeroAction } },
+	{ { "BOOLEAN",         "INT", "INT", "le!"                      }, { leAction } },
 
 	{{NULL}},
 	};
 
-static struct gl_struct booleans1[] =
-	{
-	{ { "TRUE",            "INT", "nz!"                             }, { nonzeroAction } },
-	{ { "TRUE",            "INT", "INT", "le!"                      }, { leAction } },
-
-	{{NULL}},
-	};
-
-static GrammarLine initialGrammarNest[] = { grammar1, booleans1 };
+static GrammarLine initialGrammarNest[] = { grammar1 };
 
 static struct gl_struct inheritance[] =
 	{

@@ -1,5 +1,5 @@
 NEXT:
-- Make sure root set doesn't get processed twice
+- How do I deal with token block recording, where I will literally have a super-tag token pushed (instead of one of the subtags it represents)?
 
 Other:
 - Implement tail call elimination
@@ -30,3 +30,10 @@ Ideas
   implementation that provides bodies.  This is still very single-pass-ish but
   I don't see what else I can do if I can't even know to parse a section of
   text looking for the productions used to parse it!
+
+DONE
+- Looks like augmenting the sst and automaton still isn't enough.  I probably need
+  to augment the item sets too.  Need to think of this form first principles as
+  though there were productions of the form SUPER -> SUB everywhere.  (What
+  about SUB->SUPER?  Should I worry about those?)
+  - Solution: I just had to augment it earlier as well as later.  (Can I get rid of some of the sst_augment calls?)

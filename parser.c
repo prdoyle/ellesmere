@@ -320,7 +320,7 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 		ItemVector itemsLeft = bv_new( itemCount, ml );
 
 		bv_copy( itemsLeft, curItemSet->items );
-		trace( traceFile, "  Expanding ItemSet_%d\n    stateNode: %s_%p\n    items left: ",
+		trace( traceFile, "  Expanding ItemSet_%d\n    stateNode: %s_%p\n         items left: ",
 			its_index( curItemSet, pg ), sy_name( ob_tag( curItemSet->stateNode, pg->heap ), st ), curItemSet->stateNode );
 		traceBVX( itemsLeft, traceFile, "i%d", ", i%d" );
 		trace( traceFile, "\n" );
@@ -850,7 +850,7 @@ static int its_LR0StateKind( ItemSet its, ParserGenerator pg )
 static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 	{
 	int charsSent = fl_write( dotFile, "digraph \"G\" { overlap=false \n" );
-	int i,j;
+	int i;
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
 		{
 		ItemSet its = itst_element( pg->itemSets, i );
@@ -858,12 +858,15 @@ static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 #ifdef REDUCE_CONTEXT_LENGTH
 		charsSent += fl_write( dotFile, "(reduce context: %d)\\n", ob_getIntField( its->stateNode, sy_byIndex( SYM_REDUCE_CONTEXT_LENGTH, pg->st ), pg->heap ) );
 #endif
+#if 0
+		int j;
 		for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
 			{
 			Item it = ita_element( pg->items, j );
 			charsSent += pn_sendItemTo( it->pn, it->dot, dotFile, pg->gr, pg->st );
 			charsSent += fl_write( dotFile, "\\n" );
 			}
+#endif
 		charsSent += fl_write( dotFile, "\"]\n" );
 		}
 	Object startNode = itst_element( pg->itemSets, 0 )->stateNode;
@@ -1116,10 +1119,10 @@ static void propagateFromPreds( Symbol sourceArraySymbol, Object targetIRNode, S
 	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, st );
 	Symbol targetSym = ob_getTokenField( targetIRNode, subtagSymbol, irNodeHeap );
 	trace( diagnostics, "    propagateFromPreds( %s, %s )\n", sy_name( sourceArraySymbol, st ), sy_name( targetSym, st ) );
+
 	Object sourceArray = ob_getField( targetIRNode, sourceArraySymbol, irNodeHeap );
 	if( !sourceArray )
 		return;
-
 	Object sourceIRNode; int i;
 	for( i = IR_START_INDEX; NULL != ( sourceIRNode = ob_getElement( sourceArray, i, irNodeHeap ) ); i++ )
 		{
@@ -1344,9 +1347,19 @@ static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagno
 		trace( diagnostics, "\n" );
 		}
 
-	trace( diagnostics, "  Propagating side table info downward into temp table\n" );
+	trace( diagnostics, "  Initializing newly-added side-table entries\n" );
 	for( i=0; i < sk_depth( topDown ); i++ )
-		pg_sideTableEntry( pg, irNodeSymbol( sk_item( topDown, i ), ir ), diagnostics ); // make sure an sst entry exists before creating the temp table
+		{
+		// Make sure every entry exists and contains itself in its first set
+		SymbolSideTableEntry sste = pg_sideTableEntry( pg, irNodeSymbol( sk_item( topDown, i ), ir ), diagnostics );
+		if( !sste->first )
+			{
+			trace( diagnostics, "    %s\n", sy_name( sste->sy, pg->st ) );
+			sste->first = bv_new( sst_count( pg->sst ), aug->ml );
+			bv_set( sste->first, pg_symbolSideTableIndex( pg, sste->sy ) );
+			}
+		}
+	trace( diagnostics, "  Propagating side table info downward into temp table\n" );
 	SymbolSideTable tempTable = sst_new( sst_count( pg->sst ), aug->ml );
 	sst_clear( tempTable, sst_count( pg->sst ) );
 	for( i=0; i < sk_depth( topDown ); i++ )
@@ -1404,10 +1417,12 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, InheritanceRelation ir, Memor
 	ParserGenerator pg = pg_new( gr, st, stateNodeTag, generateTime, ml, theObjectHeap() );
 	pg_populateItemTable( pg, diagnostics );
 	pg_populateSymbolSideTable( pg, diagnostics );
+	sst_augment( ir, pg, diagnostics );
 	Object startState = pg_computeLR0StateNodes( pg, diagnostics );
 	pg_computeFirstSets( pg, diagnostics );
 	sst_augment( ir, pg, diagnostics );
 	pg_computeFollowSets( pg, diagnostics );
+	sst_augment( ir, pg, diagnostics );
 	pg_computeSLRLookaheads( pg, diagnostics );
 	pg_computeReduceActions( pg, conflictLog, diagnostics );
 
@@ -1417,10 +1432,11 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, InheritanceRelation ir, Memor
 	result->parsers    = psa_new( 2, ml );
 	if (diagnostics)
 		{
-		trace( diagnostics, "Finished generating automaton %p:\n", result );
-		//au_sendTo( result, diagnostics, theObjectHeap(), st );
-		pg_sendDotTo( pg, diagnostics );
-		trace( diagnostics, "\n" );
+		trace( diagnostics, "Finished generating automaton %p:\n\n", result );
+		au_sendTo( result, diagnostics, theObjectHeap(), st );
+		if( 0 )
+			pg_sendDotTo( pg, diagnostics );
+		trace( diagnostics, "\n\n" );
 		}
 
 	if( generateTime == ml )
