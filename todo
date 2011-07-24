@@ -1,5 +1,5 @@
 NEXT:
-- How do I deal with token block recording, where I will literally have a super-tag token pushed (instead of one of the subtags it represents)?
+- Test inheritance more thoroughly
 
 Other:
 - Implement tail call elimination
@@ -37,3 +37,5 @@ DONE
   though there were productions of the form SUPER -> SUB everywhere.  (What
   about SUB->SUPER?  Should I worry about those?)
   - Solution: I just had to augment it earlier as well as later.  (Can I get rid of some of the sst_augment calls?)
+- How do I deal with token block recording, where I will literally have a super-tag token pushed (instead of one of the subtags it represents)?
+  - Solution: abstract representative reductions for those.  (I half-implemented this, and it already works.  Not sure how.)

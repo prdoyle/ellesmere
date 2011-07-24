@@ -914,11 +914,11 @@ static void appendToArray( Object ob, int whichArray, Object value, InheritanceR
 FUNC void ir_add( InheritanceRelation ir, Symbol super, Symbol sub )
 	{
 	SymbolTable st = ir->st;
-	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, st );
+	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
 	Object superNode = ob_getOrCreateField( ir->index, super, ir->nodeTag, ir->nodeHeap );
 	Object subNode   = ob_getOrCreateField( ir->index, sub,   ir->nodeTag, ir->nodeHeap );
-	ob_setField( superNode, subtagSymbol, oh_symbolToken( ir->nodeHeap, super ), ir->nodeHeap );
-	ob_setField( subNode,   subtagSymbol, oh_symbolToken( ir->nodeHeap, sub   ), ir->nodeHeap );
+	ob_setField( superNode, symSymbol, oh_symbolToken( ir->nodeHeap, super ), ir->nodeHeap );
+	ob_setField( subNode,   symSymbol, oh_symbolToken( ir->nodeHeap, sub   ), ir->nodeHeap );
 	appendToArray( superNode, SYM_SUBTAGS,   subNode, ir );
 	appendToArray( subNode,   SYM_SUPERTAGS, superNode, ir );
 	}
@@ -926,7 +926,7 @@ FUNC void ir_add( InheritanceRelation ir, Symbol super, Symbol sub )
 static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, File diagnostics )
 	{
 	trace( diagnostics, "Augmenting automaton %p:\n", au );
-	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, st );
+	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
 	MemoryLifetime augmentTime = ml_begin( 10000, ml_undecided() );
 	CheckList pushedStates = cl_open( au->stateHeap );
 	BitVector originalEdges = bv_new( st_count(st), augmentTime );
@@ -954,10 +954,11 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 			Object targetState = ob_getField( state, edgeSymbol, au->stateHeap );
 			if( diagnostics )
 				{
-				trace( diagnostics, "    Edge %d %s targetState: ", edge, sy_name( edgeSymbol, st ) );
+				trace( diagnostics, "    Edge %s -> ", sy_name( edgeSymbol, st ) );
 				ob_sendTo( targetState, diagnostics, au->stateHeap );
 				trace( diagnostics, "\n" );
 				}
+
 			if( !ob_isInt( targetState, au->stateHeap ) && !cl_isChecked( pushedStates, targetState ) )
 				{
 				cl_check( pushedStates, targetState );
@@ -981,28 +982,65 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 						trace( diagnostics, "\n" );
 						}
 					Object subArray = ob_getField( node, sy_byIndex( SYM_SUBTAGS, st ), ir->nodeHeap );
-					if( !subArray )
-						continue;
-					int subtagIndex;
-					Object subnode;
-					for( subtagIndex = IR_START_INDEX; NULL != ( subnode = ob_getElement( subArray, subtagIndex, ir->nodeHeap ) ); subtagIndex++ )
+					if( subArray )
 						{
-						Symbol subtag = ob_getTokenField( subnode, subtagSymbol, ir->nodeHeap );
-						trace( diagnostics, "        Subtag %s ", sy_name( subtag, st ) );
-						if( ob_getField( state, subtag, au->stateHeap ) )
+						int subtagIndex;
+						Object subnode;
+						for( subtagIndex = IR_START_INDEX; NULL != ( subnode = ob_getElement( subArray, subtagIndex, ir->nodeHeap ) ); subtagIndex++ )
 							{
-							trace( diagnostics, "Already present\n" );
-							check( bv_isSet( originalEdges, sy_index( subtag, st ) ) ); // Otherwise it's a conflict
-							}
-						else
-							{
-							trace( diagnostics, "Copying from %s\n", sy_name( edgeSymbol, st ) );
-							ob_setField( state, subtag, targetState, au->stateHeap );
-							if( !cl_isChecked( pushedNodes, subnode ) )
+							Symbol subtag = ob_getTokenField( subnode, symSymbol, ir->nodeHeap );
+							trace( diagnostics, "        Subtag %s ", sy_name( subtag, st ) );
+							if( ob_getField( state, subtag, au->stateHeap ) )
 								{
-								cl_check( pushedNodes, subnode );
-								sk_push( nodes, subnode );
-								trace( diagnostics, "        - Pushed\n" );
+								trace( diagnostics, "Already present\n" );
+								check( bv_isSet( originalEdges, sy_index( subtag, st ) ) ); // Otherwise it's a conflict
+								}
+							else
+								{
+								trace( diagnostics, "Copying from %s\n", sy_name( edgeSymbol, st ) );
+								ob_setField( state, subtag, targetState, au->stateHeap );
+								if( !cl_isChecked( pushedNodes, subnode ) )
+									{
+									cl_check( pushedNodes, subnode );
+									sk_push( nodes, subnode );
+									trace( diagnostics, "        - Pushed\n" );
+									}
+								}
+							}
+						}
+					Object superArray = ob_getField( node, sy_byIndex( SYM_SUPERTAGS, st ), ir->nodeHeap );
+					if( superArray )
+						{
+						Object abstractState = targetState;
+						if( ob_isInt( abstractState, au->stateHeap ) )
+							{
+							// Abstract reduce actions are representative by negative production index.
+							// (Shift actions are just normal edges.)
+							//
+							abstractState = ob_fromInt( -ob_toInt( abstractState, au->stateHeap ), au->stateHeap );
+							}
+						int supertagIndex;
+						Object supernode;
+						for( supertagIndex = IR_START_INDEX; NULL != ( supernode = ob_getElement( superArray, supertagIndex, ir->nodeHeap ) ); supertagIndex++ )
+							{
+							Symbol supertag = ob_getTokenField( supernode, symSymbol, ir->nodeHeap );
+							trace( diagnostics, "        Supertag %s ", sy_name( supertag, st ) );
+							if( ob_getField( state, supertag, au->stateHeap ) )
+								{
+								trace( diagnostics, "Already present\n" );
+								// TODO: CHECK Either supertag must be in originalEdges, or it must be a reduce that's compatible with the existing reduce, or it's a conflict
+								//check( bv_isSet( originalEdges, sy_index( supertag, st ) ) ); // Otherwise it's a conflict
+								}
+							else
+								{
+								trace( diagnostics, "Abstracting from %s\n", sy_name( edgeSymbol, st ) );
+								ob_setField( state, supertag, abstractState, au->stateHeap );
+								if( !cl_isChecked( pushedNodes, supernode ) )
+									{
+									cl_check( pushedNodes, supernode );
+									sk_push( nodes, supernode );
+									trace( diagnostics, "        - Pushed\n" );
+									}
 								}
 							}
 						}
@@ -1026,7 +1064,7 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 #if 0
 static int pushNewElements( Object array, Stack sk, CheckList alreadyPushed, ObjectHeap heap, ParserGenerator pg, File traceFile )
 	{
-	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, pg->st );
+	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, pg->st );
 	int numNodesPushed = 0;
 	if( array )
 		{
@@ -1039,7 +1077,7 @@ static int pushNewElements( Object array, Stack sk, CheckList alreadyPushed, Obj
 				cl_check( alreadyPushed, element );
 				sk_push( sk, element );
 				numNodesPushed++;
-				trace( traceFile, "        - Pushed %s\n", sy_name( ob_getTokenField( element, subtagSymbol, heap ), pg->st ) );
+				trace( traceFile, "        - Pushed %s\n", sy_name( ob_getTokenField( element, symSymbol, heap ), pg->st ) );
 				}
 			}
 		}
@@ -1049,7 +1087,7 @@ static int pushNewElements( Object array, Stack sk, CheckList alreadyPushed, Obj
 static ObjectArray postOrder( InheritanceRelation ir, Symbol direction, BitVector rootSet, ParserGenerator pg, File diagnostics )
 	{
 	SymbolTable st = pg->st;
-	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, st );
+	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
 	ObjectHeap heap = ir->nodeHeap;
 	CheckList alreadyPushed = cl_open( heap );
 	ObjectArray result = oba_new( 10, pg->generateTime );
@@ -1068,7 +1106,7 @@ static ObjectArray postOrder( InheritanceRelation ir, Symbol direction, BitVecto
 			{
 			sk_push( worklist, root );
 			cl_check( alreadyPushed, root );
-			trace( diagnostics, "        - Pushed %s\n", sy_name( ob_getTokenField( root, subtagSymbol, heap ), st ) );
+			trace( diagnostics, "        - Pushed %s\n", sy_name( ob_getTokenField( root, symSymbol, heap ), st ) );
 			}
 		}
 
@@ -1083,7 +1121,7 @@ static ObjectArray postOrder( InheritanceRelation ir, Symbol direction, BitVecto
 			// top's children have already been processed, so append it to the post order
 			oba_append( result, top );
 			sk_pop( worklist );
-			trace( diagnostics, "        - Popped %s\n", sy_name( ob_getTokenField( top, subtagSymbol, heap ), st ) );
+			trace( diagnostics, "        - Popped %s\n", sy_name( ob_getTokenField( top, symSymbol, heap ), st ) );
 			}
 		}
 
@@ -1116,8 +1154,8 @@ static void sste_propagate( SymbolSideTableEntry target, SymbolSideTableEntry so
 static void propagateFromPreds( Symbol sourceArraySymbol, Object targetIRNode, SymbolSideTableEntry targetEntry, ObjectHeap irNodeHeap, ParserGenerator pg, File diagnostics )
 	{
 	SymbolTable st = pg->st;
-	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, st );
-	Symbol targetSym = ob_getTokenField( targetIRNode, subtagSymbol, irNodeHeap );
+	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
+	Symbol targetSym = ob_getTokenField( targetIRNode, symSymbol, irNodeHeap );
 	trace( diagnostics, "    propagateFromPreds( %s, %s )\n", sy_name( sourceArraySymbol, st ), sy_name( targetSym, st ) );
 
 	Object sourceArray = ob_getField( targetIRNode, sourceArraySymbol, irNodeHeap );
@@ -1126,7 +1164,7 @@ static void propagateFromPreds( Symbol sourceArraySymbol, Object targetIRNode, S
 	Object sourceIRNode; int i;
 	for( i = IR_START_INDEX; NULL != ( sourceIRNode = ob_getElement( sourceArray, i, irNodeHeap ) ); i++ )
 		{
-		Symbol sourceSym = ob_getTokenField( sourceIRNode, subtagSymbol, irNodeHeap );
+		Symbol sourceSym = ob_getTokenField( sourceIRNode, symSymbol, irNodeHeap );
 		sste_propagate(
 			targetEntry,
 			pg_sideTableEntry( pg, sourceSym, diagnostics ),
@@ -1151,12 +1189,12 @@ static void traceSymbolVector( File diagnostics, const char *name, SymbolVector 
 static void tracePostOrder( File diagnostics, const char *name, ObjectArray oba, ObjectHeap nodeHeap, ParserGenerator pg )
 	{
 	trace( diagnostics, "  | %s:", name );
-	Symbol subtagSymbol = sy_byIndex( SYM_SYMBOL, pg->st );
+	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, pg->st );
 	int i; char *sep = " ";
 	for( i = 0; i < oba_count( oba ); i++ )
 		{
 		Object node = oba_get( oba, i );
-		Symbol sym = ob_getTokenField( node, subtagSymbol, nodeHeap );
+		Symbol sym = ob_getTokenField( node, symSymbol, nodeHeap );
 		trace( diagnostics, "%s%s", sep, sy_name( sym, pg->st ) );
 		sep = ", ";
 		}
@@ -1626,7 +1664,28 @@ FUNC Production ps_handle( Parser ps, Object lookahead )
 	ObjectHeap oh = ps->au->stateHeap;
 	Object nextState = ps_nextState( ps, lookahead );
 	if( ob_isInt( nextState, oh ) )
-		return gr_production( ps->au->gr, ob_toInt( nextState, oh ) );
+		{
+		int index = ob_toInt( nextState, oh );
+		if (index < 0)
+			return NULL;
+		else
+			return gr_production( ps->au->gr, index );
+		}
+	else
+		return NULL;
+	}
+
+FUNC Production ps_representativeHandle( Parser ps, Object lookahead )
+	{
+	ObjectHeap oh = ps->au->stateHeap;
+	Object nextState = ps_nextState( ps, lookahead );
+	if( ob_isInt( nextState, oh ) )
+		{
+		int index = ob_toInt( nextState, oh );
+		if (index < 0)
+			index = -index;
+		return gr_production( ps->au->gr, index );
+		}
 	else
 		return NULL;
 	}

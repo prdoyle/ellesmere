@@ -621,6 +621,9 @@ static void mainParsingLoop( TokenBlock recording, FunctionArray productionBodie
 	while( 1 )
 		{
 		Production handle;
+		// TODO: At some point we're going to want ps_representativeHandle in here to deal with abstract reductions.
+		// (I'm not certain how we're getting away with this right now...)
+		//
 		for (
 			handle = ps_handle( ps, cx_filter( curContext, ts_current( tokenStream ), endOfInput, heap ) );
 			handle;
