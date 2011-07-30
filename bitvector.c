@@ -301,16 +301,22 @@ FUNC void bv_shrinkWrap( BitVector bv )
 	bv->numWords = newNumWords;
 	}
 
-FUNC int bv_sendFormattedTo( BitVector bv, File fl, const char *firstFormat, const char *subsequentFormat )
+FUNC int bv_sendFormattedTo( BitVector bv, File fl, BitFormat format, void *context )
 	{
-	int i; int charsSent = fl_write( fl, "{ " ); const char *format = firstFormat;
+	int i; int charsSent = fl_write( fl, "{ " ); const char *sep = "";
 	for( i = bv_firstBit( bv ); i != bv_END; i = bv_nextBit( bv, i ) )
 		{
-		charsSent += fl_write( fl, format, i );
-		format = subsequentFormat;
+		charsSent += fl_write( fl, "%s", sep );
+		charsSent += format( context, i, fl );
+		sep = ", ";
 		}
 	charsSent += fl_write( fl, " }" );
 	return charsSent;
+	}
+
+FUNC int sendBitNumber( void *formatStr, int bitIndex, File fl )
+	{
+	return fl_write( fl, (char*)formatStr, bitIndex );
 	}
 
 #ifdef BITVECTOR_T

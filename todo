@@ -1,5 +1,5 @@
 NEXT:
-- Test inheritance more thoroughly
+- PROBLEM: Multiple runs of sst_propagate are infecting sibling classes with each others' bits
 
 Other:
 - Implement tail call elimination

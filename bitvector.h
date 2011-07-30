@@ -37,12 +37,14 @@ FUNC bool      bv_orChanged( BitVector target, BitVector source );
 FUNC void      bv_shift( BitVector bv );
 FUNC void      bv_shrinkWrap( BitVector bv );
 
-FUNC int       bv_sendFormattedTo( BitVector bv, File fl, const char *firstFormat, const char *subsequentFormat );
+typedef int ( *BitFormat )( void *context, int bitIndex, File fl );
+FUNC int       bv_sendFormattedTo( BitVector bv, File fl, BitFormat format, void *context );
+
+FUNC int sendBitNumber( void *formatStr, int bitIndex, File fl );
+static inline int bv_sendTo( BitVector bv, File fl )
+	{ return bv_sendFormattedTo( bv, fl, sendBitNumber, "%d" ); }
 
 static inline bool bv_isUnset( BitVector bv, int bitIndex ){ return !bv_isSet( bv, bitIndex ); }
-
-static inline int bv_sendTo( BitVector bv, File fl )
-	{ return bv_sendFormattedTo( bv, fl, "%d", ", %d" ); }
 
 #if 1
 	#define traceBV bv_sendTo

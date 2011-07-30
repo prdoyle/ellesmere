@@ -101,7 +101,7 @@ static SymbolSideTableEntry pg_sideTableEntry( ParserGenerator pg, Symbol sy, Fi
 	else
 		{
 		sstIndex = sst_count( pg->sst );
-		trace( traceFile, "  -- s%d = %s --\n", sstIndex, sy_name( sy, pg->st ) );
+		trace( traceFile, "  -- s%d = '%s' --\n", sstIndex, sy_name( sy, pg->st ) );
 		pg->sstIndexes[ sy_index( sy, pg->st ) ] = sstIndex;
 		result = sst_nextElement( pg->sst );
 		result->sy = sy;
@@ -322,12 +322,12 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 		bv_copy( itemsLeft, curItemSet->items );
 		trace( traceFile, "  Expanding ItemSet_%d\n    stateNode: %s_%p\n         items left: ",
 			its_index( curItemSet, pg ), sy_name( ob_tag( curItemSet->stateNode, pg->heap ), st ), curItemSet->stateNode );
-		traceBVX( itemsLeft, traceFile, "i%d", ", i%d" );
+		traceBVX( itemsLeft, traceFile, sendBitNumber, "i%d" );
 		trace( traceFile, "\n" );
 
 		bv_minus( itemsLeft, pg->rightmostItems );
 		trace( traceFile, "    minus rightmost: " );
-		traceBVX( itemsLeft, traceFile, "i%d", ", i%d" );
+		traceBVX( itemsLeft, traceFile, sendBitNumber, "i%d" );
 		trace( traceFile, "\n" );
 
 		assert( !its_isExpanded( curItemSet ) );
@@ -338,11 +338,13 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 			{
 			Item it = ita_element( pg->items, i ); ItemSet nextItemSet;
 			Symbol expected = pn_token( it->pn, it->dot, pg->gr );
-			trace( traceFile, "    i%d is expecting %s\n", i, sy_name( expected, st ) );
+			trace( traceFile, "    i%d is expecting '%s':  ", i, sy_name( expected, st ) );
+			pn_sendItemTo( it->pn, it->dot, traceFile, pg->gr, st );
+			trace( traceFile, "\n" );
 
 			pg_computeItemsExpectingToken( pg, nextItems, itemsLeft, expected, traceFile );
 			trace( traceFile, "      similar items: " );
-			traceBVX( nextItems, traceFile, "i%d", ", i%d" );
+			traceBVX( nextItems, traceFile, sendBitNumber, "i%d" );
 			trace( traceFile, "\n" );
 
 			Item shallowestItem = ita_element( pg->items, bv_lastBit( nextItems ) );
@@ -353,24 +355,24 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 
 			bv_minus( itemsLeft, nextItems );
 			trace( traceFile, "          itemsLeft: " );
-			traceBVX( itemsLeft, traceFile, "i%d", ", i%d" );
+			traceBVX( itemsLeft, traceFile, sendBitNumber, "i%d" );
 			trace( traceFile, "\n" );
 
 			bv_shift( nextItems );
 			trace( traceFile, "            shifted: " );
-			traceBVX( nextItems, traceFile, "i%d", ", i%d" );
+			traceBVX( nextItems, traceFile, sendBitNumber, "i%d" );
 			trace( traceFile, "\n" );
 
 			pg_closeItemVector( pg, nextItems, traceFile );
 			trace( traceFile, "             closed: " );
-			traceBVX( nextItems, traceFile, "i%d", ", i%d" );
+			traceBVX( nextItems, traceFile, sendBitNumber, "i%d" );
 			trace( traceFile, "\n" );
 
 			nextItemSet = pg_findItemSet( pg, nextItems );
 			if( nextItemSet )
 				{
 				trace( traceFile, "      Found existing ItemSet_%d with items: ", its_index( nextItemSet, pg ) );
-				traceBVX( nextItems, traceFile, "i%d", ", i%d" );
+				traceBVX( nextItems, traceFile, sendBitNumber, "i%d" );
 				trace( traceFile, "\n" );
 				}
 			else
@@ -424,6 +426,19 @@ static void pg_computeFirstSets( ParserGenerator pg, File traceFile )
 		}
 	}
 
+static int sendSymByNumber( void *symbolTable, int symIndex, File file )
+	{
+	SymbolTable st = (SymbolTable)symbolTable;
+	return fl_write( file, "'%s'", sy_name( sy_byIndex( symIndex, st ), st ) );
+	}
+
+static int sendSymBySSTIndex( void *parserGenerator, int sstIndex, File file )
+	{
+	ParserGenerator pg = (ParserGenerator)parserGenerator;
+	SymbolSideTableEntry sste = sst_element( pg->sst, sstIndex );
+	return fl_write( file, "'%s'", sy_name( sste->sy, pg->st ) );
+	}
+
 static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 	{
 	int pnNum;
@@ -455,7 +470,7 @@ static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 					trace( traceFile, " to " );
 					sy_sendTo( last->sy, traceFile, pg->st );
 					trace( traceFile, ": " );
-					bv_sendFormattedTo( lhs->follow, traceFile, "s%d", ", s%d" );
+					bv_sendFormattedTo( lhs->follow, traceFile, sendSymBySSTIndex, pg );
 					trace( traceFile, "\n" );
 					}
 				}
@@ -474,7 +489,7 @@ static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 					trace( traceFile, " to follow of " );
 					sy_sendTo( cur->sy, traceFile, pg->st );
 					trace( traceFile, ": " );
-					bv_sendFormattedTo( next->first, traceFile, "s%d", ", s%d" );
+					bv_sendFormattedTo( next->first, traceFile, sendSymBySSTIndex, pg );
 					trace( traceFile, "\n" );
 					}
 				if( bv_isSet( pg->nullableSymbols, nextIndex ) )
@@ -487,7 +502,7 @@ static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 						trace( traceFile, " to " );
 						sy_sendTo( cur->sy, traceFile, pg->st );
 						trace( traceFile, ": " );
-						bv_sendFormattedTo( next->follow, traceFile, "s%d", ", s%d" );
+						bv_sendFormattedTo( next->follow, traceFile, sendSymBySSTIndex, pg );
 						trace( traceFile, "\n" );
 						}
 					}
@@ -569,8 +584,8 @@ static void it_getFollow( Item it, SymbolVector result, ParserGenerator pg, File
 		int curIndex = pg_symbolSideTableIndex( pg, pn_token( it->pn, i, pg->gr ) );
 		SymbolVector curFirst = sst_element( pg->sst, curIndex )->first;
 		bv_or( result, curFirst );
-		trace( traceFile, "            Symbol %s at %d adds ", sy_name( sst_element( pg->sst, curIndex )->sy, pg->st ), i );
-		bv_sendFormattedTo( curFirst, traceFile, "s%d", ", s%d" );
+		trace( traceFile, "            Symbol '%s' at %d adds ", sy_name( sst_element( pg->sst, curIndex )->sy, pg->st ), i );
+		bv_sendFormattedTo( curFirst, traceFile, sendSymBySSTIndex, pg );
 		trace( traceFile, "\n" );
 		if( !bv_isSet( pg->nullableSymbols, curIndex ) )
 			break;
@@ -579,7 +594,7 @@ static void it_getFollow( Item it, SymbolVector result, ParserGenerator pg, File
 		{
 		bv_or( result, it->lookahead );
 		trace( traceFile, "            Adding lookahead " );
-		bv_sendFormattedTo( it->lookahead, traceFile, "s%d", ", s%d" );
+		bv_sendFormattedTo( it->lookahead, traceFile, sendSymBySSTIndex, pg );
 		trace( traceFile, "\n" );
 		}
 	}
@@ -596,7 +611,7 @@ static void pg_reportConflict( ParserGenerator pg, ItemSet its, Item winner, Ite
 	trace(  conflictLog, "\n   Loser: " );
 	pn_sendItemTo( loser->pn, loser->dot, conflictLog, pg->gr, pg->st );
 	trace(  conflictLog, "\n Symbols: " );
-	bv_sendFormattedTo( conflictingSymbols, conflictLog, "s%d", ", s%d" );
+	bv_sendFormattedTo( conflictingSymbols, conflictLog, sendSymBySSTIndex, pg );
 	trace(  conflictLog, "\n" );
 	va_end( args );
 	trace( traceFile, "        CONFLICT\n" );
@@ -633,10 +648,10 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 		bv_copy ( reduceItems, pg->rightmostItems );
 		bv_and  ( reduceItems, its->items );
 		trace( traceFile, "    Items: " );
-		bv_sendFormattedTo( its->items, traceFile, "i%d", ", i%d" );
+		bv_sendFormattedTo( its->items, traceFile, sendBitNumber, "i%d" );
 		trace( traceFile, "\n" );
 		trace( traceFile, "    ReduceItems: " );
-		bv_sendFormattedTo( reduceItems, traceFile, "i%d", ", i%d" );
+		bv_sendFormattedTo( reduceItems, traceFile, sendBitNumber, "i%d" );
 		trace( traceFile, "\n" );
 		for( j = bv_firstBit( reduceItems ); j != bv_END; j = bv_nextBit( reduceItems, j ) )
 			{
@@ -647,7 +662,7 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 			trace( traceFile, "\n" );
 			bv_copy( reduceSymbols, it->lookahead );
 			trace( traceFile, "      Original ReduceSymbols: " );
-			bv_sendFormattedTo( reduceSymbols, traceFile, "s%d", ", s%d" );
+			bv_sendFormattedTo( reduceSymbols, traceFile, sendSymBySSTIndex, pg );
 			trace( traceFile, "\n" );
 
 			// Scan down for the last item of lower priority
@@ -676,7 +691,7 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 					pn_sendItemTo( competitor->pn, competitor->dot, traceFile, pg->gr, pg->st );
 					trace( traceFile, "\n        follow: " );
 					it_getFollow( competitor, competitorSymbols, pg, NULL );
-					bv_sendFormattedTo( competitorSymbols, traceFile, "s%d", ", s%d" );
+					bv_sendFormattedTo( competitorSymbols, traceFile, sendSymBySSTIndex, pg );
 					trace( traceFile, "\n" );
 					}
 				else
@@ -686,7 +701,7 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 					trace( traceFile, "\n        first: " );
 					SymbolSideTableEntry expected = pg_sideTableEntry( pg, pn_token( competitor->pn, competitor->dot, pg->gr ), traceFile );
 					bv_or( competitorSymbols, expected->first );
-					bv_sendFormattedTo( competitorSymbols, traceFile, "s%d", ", s%d" );
+					bv_sendFormattedTo( competitorSymbols, traceFile, sendSymBySSTIndex, pg );
 					trace( traceFile, "\n" );
 					}
 				if( !bv_intersects( reduceSymbols, competitorSymbols ) )
@@ -745,11 +760,11 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 
 				bv_minus( reduceSymbols, competitorSymbols );
 				trace( traceFile, "        Competitor has higher priority; removing lookaheads: " );
-				bv_sendFormattedTo( competitorSymbols, traceFile, "s%d", ", s%d" );
+				bv_sendFormattedTo( competitorSymbols, traceFile, sendSymBySSTIndex, pg );
 				trace( traceFile, "\n" );
 				}
 			trace( traceFile, "      Filtered ReduceSymbols: " );
-			bv_sendFormattedTo( reduceSymbols, traceFile, "s%d", ", s%d" );
+			bv_sendFormattedTo( reduceSymbols, traceFile, sendSymBySSTIndex, pg );
 			trace( traceFile, "\n" );
 
 			// Add reduce edges
@@ -944,7 +959,7 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 			trace( diagnostics, "  State: " );
 			ob_sendTo( state, diagnostics, au->stateHeap );
 			trace( diagnostics, " originalEdges: " );
-			bv_sendTo( originalEdges, diagnostics );
+			bv_sendFormattedTo( originalEdges, diagnostics, sendSymByNumber, st );
 			trace( diagnostics, "\n" );
 			}
 		int edge;
@@ -954,7 +969,7 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 			Object targetState = ob_getField( state, edgeSymbol, au->stateHeap );
 			if( diagnostics )
 				{
-				trace( diagnostics, "    Edge %s -> ", sy_name( edgeSymbol, st ) );
+				trace( diagnostics, "    Edge '%s' -> ", sy_name( edgeSymbol, st ) );
 				ob_sendTo( targetState, diagnostics, au->stateHeap );
 				trace( diagnostics, "\n" );
 				}
@@ -989,7 +1004,7 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 						for( subtagIndex = IR_START_INDEX; NULL != ( subnode = ob_getElement( subArray, subtagIndex, ir->nodeHeap ) ); subtagIndex++ )
 							{
 							Symbol subtag = ob_getTokenField( subnode, symSymbol, ir->nodeHeap );
-							trace( diagnostics, "        Subtag %s ", sy_name( subtag, st ) );
+							trace( diagnostics, "        Subtag '%s' ", sy_name( subtag, st ) );
 							if( ob_getField( state, subtag, au->stateHeap ) )
 								{
 								trace( diagnostics, "Already present\n" );
@@ -997,7 +1012,7 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 								}
 							else
 								{
-								trace( diagnostics, "Copying from %s\n", sy_name( edgeSymbol, st ) );
+								trace( diagnostics, "Copying from '%s'\n", sy_name( edgeSymbol, st ) );
 								ob_setField( state, subtag, targetState, au->stateHeap );
 								if( !cl_isChecked( pushedNodes, subnode ) )
 									{
@@ -1024,7 +1039,7 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 						for( supertagIndex = IR_START_INDEX; NULL != ( supernode = ob_getElement( superArray, supertagIndex, ir->nodeHeap ) ); supertagIndex++ )
 							{
 							Symbol supertag = ob_getTokenField( supernode, symSymbol, ir->nodeHeap );
-							trace( diagnostics, "        Supertag %s ", sy_name( supertag, st ) );
+							trace( diagnostics, "        Supertag '%s' ", sy_name( supertag, st ) );
 							if( ob_getField( state, supertag, au->stateHeap ) )
 								{
 								trace( diagnostics, "Already present\n" );
@@ -1033,7 +1048,7 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 								}
 							else
 								{
-								trace( diagnostics, "Abstracting from %s\n", sy_name( edgeSymbol, st ) );
+								trace( diagnostics, "Abstracting from '%s'\n", sy_name( edgeSymbol, st ) );
 								ob_setField( state, supertag, abstractState, au->stateHeap );
 								if( !cl_isChecked( pushedNodes, supernode ) )
 									{
@@ -1077,7 +1092,7 @@ static int pushNewElements( Object array, Stack sk, CheckList alreadyPushed, Obj
 				cl_check( alreadyPushed, element );
 				sk_push( sk, element );
 				numNodesPushed++;
-				trace( traceFile, "        - Pushed %s\n", sy_name( ob_getTokenField( element, symSymbol, heap ), pg->st ) );
+				trace( traceFile, "        - Pushed '%s'\n", sy_name( ob_getTokenField( element, symSymbol, heap ), pg->st ) );
 				}
 			}
 		}
@@ -1092,7 +1107,7 @@ static ObjectArray postOrder( InheritanceRelation ir, Symbol direction, BitVecto
 	CheckList alreadyPushed = cl_open( heap );
 	ObjectArray result = oba_new( 10, pg->generateTime );
 
-	trace( diagnostics, "    Computing postorder %s\n", sy_name( direction, pg->st ) );
+	trace( diagnostics, "    Computing postorder '%s'\n", sy_name( direction, pg->st ) );
 
 	// Initialize worklist to contain ir nodes indicated by rootSet
 	trace( diagnostics, "      Pushing root set\n" );
@@ -1106,7 +1121,7 @@ static ObjectArray postOrder( InheritanceRelation ir, Symbol direction, BitVecto
 			{
 			sk_push( worklist, root );
 			cl_check( alreadyPushed, root );
-			trace( diagnostics, "        - Pushed %s\n", sy_name( ob_getTokenField( root, symSymbol, heap ), st ) );
+			trace( diagnostics, "        - Pushed '%s'\n", sy_name( ob_getTokenField( root, symSymbol, heap ), st ) );
 			}
 		}
 
@@ -1121,7 +1136,7 @@ static ObjectArray postOrder( InheritanceRelation ir, Symbol direction, BitVecto
 			// top's children have already been processed, so append it to the post order
 			oba_append( result, top );
 			sk_pop( worklist );
-			trace( diagnostics, "        - Popped %s\n", sy_name( ob_getTokenField( top, symSymbol, heap ), st ) );
+			trace( diagnostics, "        - Popped '%s'\n", sy_name( ob_getTokenField( top, symSymbol, heap ), st ) );
 			}
 		}
 
@@ -1148,7 +1163,7 @@ static void sste_propagate( SymbolSideTableEntry target, SymbolSideTableEntry so
 	bv_propagate( &target->expectingItems, source->expectingItems, pg );
 	bv_propagate( &target->first,          source->first,          pg );
 	bv_propagate( &target->follow,         source->follow,         pg );
-	trace( diagnostics, "      sste_propagate %s <- %s\n", sy_name( target->sy, pg->st ), sy_name( source->sy, pg->st ) );
+	trace( diagnostics, "      sste_propagate '%s' <- '%s'\n", sy_name( target->sy, pg->st ), sy_name( source->sy, pg->st ) );
 	}
 
 static void propagateFromPreds( Symbol sourceArraySymbol, Object targetIRNode, SymbolSideTableEntry targetEntry, ObjectHeap irNodeHeap, ParserGenerator pg, File diagnostics )
@@ -1156,7 +1171,7 @@ static void propagateFromPreds( Symbol sourceArraySymbol, Object targetIRNode, S
 	SymbolTable st = pg->st;
 	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
 	Symbol targetSym = ob_getTokenField( targetIRNode, symSymbol, irNodeHeap );
-	trace( diagnostics, "    propagateFromPreds( %s, %s )\n", sy_name( sourceArraySymbol, st ), sy_name( targetSym, st ) );
+	trace( diagnostics, "    propagateFromPreds( '%s', '%s' )\n", sy_name( sourceArraySymbol, st ), sy_name( targetSym, st ) );
 
 	Object sourceArray = ob_getField( targetIRNode, sourceArraySymbol, irNodeHeap );
 	if( !sourceArray )
@@ -1180,7 +1195,7 @@ static void traceSymbolVector( File diagnostics, const char *name, SymbolVector 
 	for( i = bv_firstBit( syv ); i != bv_END; i = bv_nextBit( syv, i ) )
 		{
 		Symbol sy = sy_byIndex( i, pg->st );
-		trace( diagnostics, "%s%s", sep, sy_name( sy, pg->st ) );
+		trace( diagnostics, "%s'%s'", sep, sy_name( sy, pg->st ) );
 		sep = ", ";
 		}
 	trace( diagnostics, "\n" );
@@ -1195,7 +1210,7 @@ static void tracePostOrder( File diagnostics, const char *name, ObjectArray oba,
 		{
 		Object node = oba_get( oba, i );
 		Symbol sym = ob_getTokenField( node, symSymbol, nodeHeap );
-		trace( diagnostics, "%s%s", sep, sy_name( sym, pg->st ) );
+		trace( diagnostics, "%s'%s'", sep, sy_name( sym, pg->st ) );
 		sep = ", ";
 		}
 	trace( diagnostics, "\n" );
@@ -1298,7 +1313,7 @@ static bool propagationPredicate( void *augArg, Object head, Symbol edgeSymbol, 
 		{
 		trace( diagnostics, "      propagationPredicate( " );
 		ob_sendTo( head, diagnostics, heap );
-		trace( diagnostics, ", %s, %d, ", edgeSymbol?( sy_name( edgeSymbol, aug->pg->st ) ): "(null)", edgeIndex );
+		trace( diagnostics, ", '%s', %d, ", edgeSymbol?( sy_name( edgeSymbol, aug->pg->st ) ): "(null)", edgeIndex );
 		ob_sendTo( tail, diagnostics, heap );
 		trace( diagnostics, " ) = %s %s\n", result? "is":"is not", reason );
 		}
@@ -1392,7 +1407,7 @@ static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagno
 		SymbolSideTableEntry sste = pg_sideTableEntry( pg, irNodeSymbol( sk_item( topDown, i ), ir ), diagnostics );
 		if( !sste->first )
 			{
-			trace( diagnostics, "    %s\n", sy_name( sste->sy, pg->st ) );
+			trace( diagnostics, "    '%s'\n", sy_name( sste->sy, pg->st ) );
 			sste->first = bv_new( sst_count( pg->sst ), aug->ml );
 			bv_set( sste->first, pg_symbolSideTableIndex( pg, sste->sy ) );
 			}
@@ -1455,12 +1470,12 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, InheritanceRelation ir, Memor
 	ParserGenerator pg = pg_new( gr, st, stateNodeTag, generateTime, ml, theObjectHeap() );
 	pg_populateItemTable( pg, diagnostics );
 	pg_populateSymbolSideTable( pg, diagnostics );
-	sst_augment( ir, pg, diagnostics );
+	if(0) sst_augment( ir, pg, diagnostics );
 	Object startState = pg_computeLR0StateNodes( pg, diagnostics );
 	pg_computeFirstSets( pg, diagnostics );
-	sst_augment( ir, pg, diagnostics );
+	if(0) sst_augment( ir, pg, diagnostics );
 	pg_computeFollowSets( pg, diagnostics );
-	sst_augment( ir, pg, diagnostics );
+	if(0) sst_augment( ir, pg, diagnostics );
 	pg_computeSLRLookaheads( pg, diagnostics );
 	pg_computeReduceActions( pg, conflictLog, diagnostics );
 
@@ -1636,7 +1651,7 @@ FUNC void ps_push( Parser ps, Object ob )
 					for( k = bv_firstBit( follow ); k != bv_END; k = bv_nextBit( follow, k ) )
 						{
 						SymbolSideTableEntry sste = sst_element( pg->sst, k );
-						charsSent += fl_write( stderr, "%s%s", sep, sy_name( sste->sy, pg->st ) );
+						charsSent += fl_write( stderr, "%s'%s'", sep, sy_name( sste->sy, pg->st ) );
 						sep = " ";
 						}
 					charsSent += fl_write( stderr, " ]\n" );
@@ -1646,7 +1661,7 @@ FUNC void ps_push( Parser ps, Object ob )
 				bv_copy( curItems, nextItems );
 				}
 			}
-		fl_write( stderr, "Unexpected %s: ", sy_name( ob_tag( ob, oh ), pg->st ) );
+		fl_write( stderr, "Unexpected '%s': ", sy_name( ob_tag( ob, oh ), pg->st ) );
 		ob_sendTo( ob, stderr, oh );
 		fl_write( stderr, "\n" );
 		}
@@ -1919,7 +1934,7 @@ static void dumpItemLookaheads( ParserGenerator pg, File traceFile )
 		fl_write( traceFile, "  %3d: ", i );
 		pn_sendItemTo( it->pn, it->dot, traceFile, pg->gr, pg->st );
 		fl_write( traceFile, "\n    lookahead: " );
-		bv_sendFormattedTo( it->lookahead, traceFile, "s%d", ", s%d" );
+		bv_sendFormattedTo( it->lookahead, traceFile, sendSymBySSTIndex, pg );
 		fl_write( traceFile, "\n" );
 		}
 	}
@@ -1986,7 +2001,7 @@ int main( int argc, char *argv[] )
 			fl_write( traceFile, "\n" );
 			}
 		fl_write( traceFile, "  rightmostItems: " );
-		bv_sendFormattedTo( pg->rightmostItems, traceFile, "i%d", ", i%d" );
+		bv_sendFormattedTo( pg->rightmostItems, traceFile, sendBitNumber, "i%d" );
 		fl_write( traceFile, "\n" );
 
 		pg_populateSymbolSideTable( pg, traceFile );
@@ -1997,17 +2012,17 @@ int main( int argc, char *argv[] )
 			int symbolIndex = sy_index( sste->sy, st );
 			if( pg->sstIndexes[ symbolIndex ] == i )
 				{
-				fl_write( traceFile, "  %3d: %s\n", i, sy_name( sste->sy, st ) );
+				fl_write( traceFile, "  %3d: '%s'\n", i, sy_name( sste->sy, st ) );
 				if( sste->leftmostItems )
 					{
 					fl_write( traceFile, "     leftmostItems: " );
-					bv_sendFormattedTo( sste->leftmostItems, traceFile, "i%d", ", i%d" );
+					bv_sendFormattedTo( sste->leftmostItems, traceFile, sendBitNumber, "i%d" );
 					fl_write( traceFile, "\n" );
 					}
 				if( sste->expectingItems )
 					{
 					fl_write( traceFile, "    expectingItems: " );
-					bv_sendFormattedTo( sste->expectingItems, traceFile, "i%d", ", i%d" );
+					bv_sendFormattedTo( sste->expectingItems, traceFile, sendBitNumber, "i%d" );
 					fl_write( traceFile, "\n" );
 					}
 				}
@@ -2026,12 +2041,12 @@ int main( int argc, char *argv[] )
 		for( i=1; i < sst_count( pg->sst ); i++ )
 			{
 			SymbolSideTableEntry sste = sst_element( pg->sst, i );
-			fl_write( traceFile, "  %3d: %s\n", i, sy_name( sste->sy, st ) );
+			fl_write( traceFile, "  %3d: '%s'\n", i, sy_name( sste->sy, st ) );
 			fl_write( traceFile, "     first: " );
-			bv_sendFormattedTo( sste->first, traceFile, "s%d", ", s%d" );
+			bv_sendFormattedTo( sste->first, traceFile, sendSymBySSTIndex, pg );
 			fl_write( traceFile, "\n" );
 			fl_write( traceFile, "     follow: " );
-			bv_sendFormattedTo( sste->follow, traceFile, "s%d", ", s%d" );
+			bv_sendFormattedTo( sste->follow, traceFile, sendSymBySSTIndex, pg );
 			fl_write( traceFile, "\n" );
 			}
 
