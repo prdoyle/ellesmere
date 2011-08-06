@@ -40,6 +40,11 @@ FUNC ObjectHeap theObjectHeap()
 	return &_theObjectHeap;
 	}
 
+FUNC SymbolTable oh_tagSymbolTable( ObjectHeap heap )
+	{
+	return heap->st;
+	}
+
 typedef struct fl_struct
 	{
 	SymbolIndex       si;

@@ -8,6 +8,8 @@
 
 FUNC ObjectHeap theObjectHeap();
 
+FUNC SymbolTable oh_tagSymbolTable( ObjectHeap heap );
+
 FUNC Object ob_create( Symbol tag, ObjectHeap heap );
 FUNC Symbol ob_tag( Object ob, ObjectHeap heap );
 

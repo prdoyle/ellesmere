@@ -4,14 +4,16 @@
 
 #include "symbols.h"
 
-FUNC Grammar    gr_new    ( Symbol  goal,  int numProductionsEstimate, MemoryLifetime ml );
-FUNC Grammar    gr_nested ( Grammar outer, int numProductionsEstimate, MemoryLifetime ml );
+FUNC Grammar    gr_new       ( Symbol  goal,  int numProductionsEstimate, MemoryLifetime ml );
+FUNC Grammar    gr_nested    ( Grammar outer, int numProductionsEstimate, MemoryLifetime ml );
+FUNC Grammar    gr_augmented ( Grammar original, InheritanceRelation ir,  MemoryLifetime ml, File diagnostics );
 
 FUNC void       gr_stopAdding     ( Grammar gr );
 FUNC Symbol     gr_goal           ( Grammar gr );
 FUNC Grammar    gr_outer          ( Grammar gr );
 FUNC Grammar    gr_outerNth       ( Grammar gr, int depth );
 FUNC int        gr_numProductions ( Grammar gr );
+FUNC int        gr_numOuterProductions ( Grammar gr );
 FUNC int        gr_numItems       ( Grammar gr );
 FUNC Production gr_production     ( Grammar gr, int index );
 FUNC int        gr_nestDepth      ( Grammar gr );

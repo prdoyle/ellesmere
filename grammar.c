@@ -201,6 +201,12 @@ FUNC int gr_numProductions( Grammar gr )
 	return pra_count( gr->pra ) + gr->numInheritedProductions;
 	}
 
+FUNC int gr_numOuterProductions( Grammar gr )
+	{
+	assert( gr->numInheritedProductions == gr_countNumInheritedProductions( gr ) );
+	return gr->numInheritedProductions;
+	}
+
 static int gr_countItems( Grammar gr )
 	{
 	int result = 0; int i;

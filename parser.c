@@ -1235,7 +1235,7 @@ struct aug_struct {
 
 static Augmenter aug_begin( ParserGenerator pg, InheritanceRelation ir, File diagnostics )
 	{
-	MemoryLifetime ml = ml_begin( 1000, pg->generateTime );
+	MemoryLifetime ml = ml_begin( 1000, ml_undecided(/*cheat!*/) );
 	Augmenter result = ml_alloc( ml, sizeof( *result ) );
 	result->ml = ml;
 	result->pg = pg;
@@ -1313,7 +1313,7 @@ static bool propagationPredicate( void *augArg, Object head, Symbol edgeSymbol, 
 		{
 		trace( diagnostics, "      propagationPredicate( " );
 		ob_sendTo( head, diagnostics, heap );
-		trace( diagnostics, ", '%s', %d, ", edgeSymbol?( sy_name( edgeSymbol, aug->pg->st ) ): "(null)", edgeIndex );
+		trace( diagnostics, ", '%s', %d, ", edgeSymbol?( sy_name( edgeSymbol, theSymbolTable(/*cheat!*/) ) ): "(null)", edgeIndex );
 		ob_sendTo( tail, diagnostics, heap );
 		trace( diagnostics, " ) = %s %s\n", result? "is":"is not", reason );
 		}
@@ -1451,6 +1451,149 @@ static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagno
 	aug_end( aug );
 	}
 
+static Stack getSubTags( Augmenter aug, Symbol tag, InheritanceRelation ir )
+	{
+	SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
+	Stack worklist = sk_new( aug->ml );
+	Object curIRNode = ob_getField( ir->index, tag, ir->nodeHeap );
+	if( curIRNode )
+		{
+		sk_push( worklist, curIRNode );
+		aug->direction = sy_byIndex( SYM_SUBTAGS, st );
+		postorderWalk( worklist, propagationPredicate, pushOntoTopDownStack, ir->nodeHeap, aug );
+		}
+	return aug->topDownStack;
+	}
+
+static void addAllProductionCombos( Grammar newGrammar, Production newProduction, Grammar oldGrammar, Production oldProduction, int tokenIndex, InheritanceRelation ir, File diagnostics, int recursionDepth )
+	{
+	SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
+	if( tokenIndex >= pn_length( oldProduction, oldGrammar ) )
+		{
+		// We're done with this production
+		pn_setConflictResolution( newProduction, pn_conflictResolution( oldProduction, oldGrammar ), newGrammar );
+		pn_stopAppending( newProduction, newGrammar );
+		if( diagnostics )
+			{
+			trace( diagnostics, "      %.*s%d done: ", recursionDepth, "", pn_index( newProduction, newGrammar ) );
+			pn_sendTo( newProduction, diagnostics, newGrammar, st );
+			trace( diagnostics, "\n" );
+			}
+		}
+	else
+		{
+		Symbol curToken = pn_token( oldProduction, tokenIndex, oldGrammar );
+		trace( diagnostics, "      %.*s%d:%d is '%s'\n", recursionDepth, "", pn_index( newProduction, newGrammar ), tokenIndex, sy_name( curToken, st ) );
+		pn_appendWithName( newProduction,
+			pn_name( oldProduction, tokenIndex, oldGrammar ),
+			curToken,
+			newGrammar );
+		addAllProductionCombos( newGrammar, newProduction, oldGrammar, oldProduction, tokenIndex+1, ir, diagnostics, recursionDepth+1 );
+
+		// 2. Duplicate newProduction and recurse to finish with new token as each subtag in turn
+		//
+		SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
+		Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
+		Augmenter aug = aug_begin( NULL, ir, diagnostics );
+		Stack subTags = getSubTags( aug, curToken, ir );
+		while( sk_depth( subTags ) )
+			{
+			Object subTagNode = sk_pop( subTags );
+			Symbol subTag = ob_getTokenField( subTagNode, symSymbol, ir->nodeHeap );
+			if( subTag != curToken )
+				{
+				Production dup = pn_new( newGrammar, pn_lhs( newProduction, newGrammar ), pn_length( newProduction, newGrammar ) );
+				for( int j=0; j < tokenIndex; j++ )
+					{
+					// tokens up to tokenIndex (exclusive) are copied from oldProduction
+					pn_appendWithName( dup,
+						pn_name  ( newProduction, j, newGrammar ),
+						pn_token ( newProduction, j, newGrammar ),
+						newGrammar );
+					}
+				trace( diagnostics, "      %.*s| %d dup %d:%d is '%s'\n", recursionDepth, "", pn_index( newProduction, newGrammar ), pn_index( dup, newGrammar ), tokenIndex, sy_name( subTag, st ) );
+				pn_appendWithName( dup,
+					pn_name  ( oldProduction, tokenIndex, oldGrammar ),
+					subTag,
+					newGrammar );
+				addAllProductionCombos( newGrammar, dup, oldGrammar, oldProduction, tokenIndex+1, ir, diagnostics, recursionDepth+1 );
+				}
+			}
+		aug_end( aug );
+		}
+	}
+
+FUNC Grammar gr_augmented( Grammar original, InheritanceRelation ir, MemoryLifetime ml, File diagnostics )
+	{
+	// Note: This is an insanely inefficient way to implement inheritance.  It uses exponential space and time.
+	// TODO: Improve these # production estimates
+	// TODO: Move to grammar.c
+
+	Grammar result = NULL;
+	if( gr_nestDepth( original ) > 0 )
+		{
+		Grammar outer = gr_outer( original );
+		result = gr_nested( gr_augmented( outer, ir, ml, diagnostics ), gr_numProductions( outer ), ml );
+		}
+	else
+		{
+		result = gr_new( gr_goal( original ), gr_numProductions( original ), ml );
+		}
+
+	trace( diagnostics, "  Adding implied productions at nest depth %d\n", gr_nestDepth( result ) );
+	SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
+	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
+	int productionIndex, tokenIndex;
+	for( productionIndex = gr_numOuterProductions( original ); productionIndex < gr_numProductions( original ); productionIndex++ )
+		{
+		Production pn = gr_production( original, productionIndex );
+		if( diagnostics )
+			{
+			trace( diagnostics, "    Processing " );
+			pn_sendTo( pn, diagnostics, original, st );
+			trace( diagnostics, "\n" );
+			}
+		Production newProduction = pn_new( result, pn_lhs( pn, original ), pn_length( pn, original ) );
+		addAllProductionCombos( result, newProduction, original, pn, 0, ir, diagnostics, 0 );
+
+		// Subtags of the lhs
+		Augmenter aug = aug_begin( NULL, ir, diagnostics );
+		Stack subTags = getSubTags( aug, pn_lhs( pn, original ), ir );
+		while( sk_depth( subTags ) )
+			{
+			Object subTagNode = sk_pop( subTags );
+			Symbol subTag = ob_getTokenField( subTagNode, symSymbol, ir->nodeHeap );
+			if( subTag != pn_lhs( pn, original ) )
+				{
+				newProduction = pn_new( result, subTag, pn_length( pn, original ) );
+				trace( diagnostics, "    Now with lhs=%s\n", sy_name( pn_lhs( newProduction, result ), st ) );
+				addAllProductionCombos( result, newProduction, original, pn, 0, ir, diagnostics, 0 );
+				}
+			}
+		aug_end( aug );
+		}
+
+	result = gr_nested( result, gr_numProductions( original ), ml );
+	trace( diagnostics, "  Adding original productions at nest depth %d\n", gr_nestDepth( result ) );
+	for( productionIndex = gr_numOuterProductions( original ); productionIndex < gr_numProductions( original ); productionIndex++ )
+		{
+		Production pn = gr_production( original, productionIndex );
+		Production newProduction = pn_new( result, pn_lhs( pn, original ), pn_length( pn, original ) );
+		for( tokenIndex=0; tokenIndex < pn_length( pn, original ); tokenIndex++ )
+			{
+			pn_appendWithName( newProduction,
+				pn_name  ( pn, tokenIndex, original ),
+				pn_token ( pn, tokenIndex, original ),
+				result );
+			}
+		pn_setConflictResolution( newProduction, pn_conflictResolution( pn, original ), result );
+		pn_stopAppending( newProduction, result );
+		}
+
+	gr_stopAdding( result );
+	return result;
+	}
+
 FUNC Automaton au_new( Grammar gr, SymbolTable st, InheritanceRelation ir, MemoryLifetime ml, File conflictLog, File diagnostics )
 	{
 	trace( diagnostics, "Generating automaton for {\n" );
@@ -1500,7 +1643,7 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, InheritanceRelation ir, Memor
 		result->pg = NULL;
 		}
 
-	au_augment( result, ir, st, diagnostics );
+	if(0) au_augment( result, ir, st, diagnostics );
 	return result;
 	}
 
@@ -1955,6 +2098,7 @@ int main( int argc, char *argv[] )
 		for( j=1; grammar[i][j]; j++ )
 			pn_append( pn, sy_byName( grammar[i][j], st ), gr );
 		pn_stopAppending( pn, gr );
+		pn_setConflictResolution( pn, CR_REDUCE_BEATS_SHIFT, gr );
 		}
 	gr_stopAdding( gr );
 	gr = gr_nested( gr, asizeof( grammar2 ), ml_indefinite() );
@@ -1964,6 +2108,7 @@ int main( int argc, char *argv[] )
 		for( j=1; grammar2[i][j]; j++ )
 			pn_append( pn, sy_byName( grammar2[i][j], st ), gr );
 		pn_stopAppending( pn, gr );
+		pn_setConflictResolution( pn, CR_REDUCE_BEATS_SHIFT, gr );
 		}
 	gr_stopAdding( gr );
 	//gr_sendTo( gr, traceFile, st );
@@ -2058,8 +2203,15 @@ int main( int argc, char *argv[] )
 		pg_sendDotTo( pg, dotFile );
 		}
 
+	if(0)
+		{
+		gr = gr_augmented( gr, ir, ml_indefinite(), traceFile );
+		fl_write( traceFile, "Augmented grammar:\n" );
+		gr_sendTo( gr, traceFile, st );
+		}
+
 	Automaton au = au_new( gr, st, ir, ml_indefinite(), traceFile, traceFile );
-	fl_write( traceFile, "Augmented automaton:\n" );
+	fl_write( traceFile, "Automaton:\n" );
 	au_sendTo( au, traceFile, heap, st );
 
 #if 0
