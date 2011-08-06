@@ -1451,7 +1451,10 @@ static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagno
 	aug_end( aug );
 	}
 
-static Stack getSubTags( Augmenter aug, Symbol tag, InheritanceRelation ir )
+#define INHERIT_DIRECTION SYM_SUPERTAGS
+#define INHERIT_ON_RHS 0
+
+static Stack getInheritingTags( Augmenter aug, Symbol tag, InheritanceRelation ir )
 	{
 	SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
 	Stack worklist = sk_new( aug->ml );
@@ -1459,7 +1462,7 @@ static Stack getSubTags( Augmenter aug, Symbol tag, InheritanceRelation ir )
 	if( curIRNode )
 		{
 		sk_push( worklist, curIRNode );
-		aug->direction = sy_byIndex( SYM_SUBTAGS, st );
+		aug->direction = sy_byIndex( INHERIT_DIRECTION, st );
 		postorderWalk( worklist, propagationPredicate, pushOntoTopDownStack, ir->nodeHeap, aug );
 		}
 	return aug->topDownStack;
@@ -1490,42 +1493,42 @@ static void addAllProductionCombos( Grammar newGrammar, Production newProduction
 			newGrammar );
 		addAllProductionCombos( newGrammar, newProduction, oldGrammar, oldProduction, tokenIndex+1, ir, diagnostics, recursionDepth+1 );
 
-		// 2. Duplicate newProduction and recurse to finish with new token as each subtag in turn
-		//
-		SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
-		Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
-		Augmenter aug = aug_begin( NULL, ir, diagnostics );
-		Stack subTags = getSubTags( aug, curToken, ir );
-		while( sk_depth( subTags ) )
+		if( INHERIT_ON_RHS )
 			{
-			Object subTagNode = sk_pop( subTags );
-			Symbol subTag = ob_getTokenField( subTagNode, symSymbol, ir->nodeHeap );
-			if( subTag != curToken )
+			SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
+			Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
+			Augmenter aug = aug_begin( NULL, ir, diagnostics );
+			Stack tags = getInheritingTags( aug, curToken, ir );
+			while( sk_depth( tags ) )
 				{
-				Production dup = pn_new( newGrammar, pn_lhs( newProduction, newGrammar ), pn_length( newProduction, newGrammar ) );
-				for( int j=0; j < tokenIndex; j++ )
+				Object tagNode = sk_pop( tags );
+				Symbol tag = ob_getTokenField( tagNode, symSymbol, ir->nodeHeap );
+				if( tag != curToken )
 					{
-					// tokens up to tokenIndex (exclusive) are copied from oldProduction
+					Production dup = pn_new( newGrammar, pn_lhs( newProduction, newGrammar ), pn_length( newProduction, newGrammar ) );
+					for( int j=0; j < tokenIndex; j++ )
+						{
+						// tokens up to tokenIndex (exclusive) are copied from oldProduction
+						pn_appendWithName( dup,
+							pn_name  ( newProduction, j, newGrammar ),
+							pn_token ( newProduction, j, newGrammar ),
+							newGrammar );
+						}
+					trace( diagnostics, "      %.*s| %d dup %d:%d is '%s'\n", recursionDepth, "", pn_index( newProduction, newGrammar ), pn_index( dup, newGrammar ), tokenIndex, sy_name( tag, st ) );
 					pn_appendWithName( dup,
-						pn_name  ( newProduction, j, newGrammar ),
-						pn_token ( newProduction, j, newGrammar ),
+						pn_name  ( oldProduction, tokenIndex, oldGrammar ),
+						tag,
 						newGrammar );
+					addAllProductionCombos( newGrammar, dup, oldGrammar, oldProduction, tokenIndex+1, ir, diagnostics, recursionDepth+1 );
 					}
-				trace( diagnostics, "      %.*s| %d dup %d:%d is '%s'\n", recursionDepth, "", pn_index( newProduction, newGrammar ), pn_index( dup, newGrammar ), tokenIndex, sy_name( subTag, st ) );
-				pn_appendWithName( dup,
-					pn_name  ( oldProduction, tokenIndex, oldGrammar ),
-					subTag,
-					newGrammar );
-				addAllProductionCombos( newGrammar, dup, oldGrammar, oldProduction, tokenIndex+1, ir, diagnostics, recursionDepth+1 );
 				}
+			aug_end( aug );
 			}
-		aug_end( aug );
 		}
 	}
 
 FUNC Grammar gr_augmented( Grammar original, InheritanceRelation ir, MemoryLifetime ml, File diagnostics )
 	{
-	// Note: This is an insanely inefficient way to implement inheritance.  It uses exponential space and time.
 	// TODO: Improve these # production estimates
 	// TODO: Move to grammar.c
 
@@ -1558,14 +1561,14 @@ FUNC Grammar gr_augmented( Grammar original, InheritanceRelation ir, MemoryLifet
 
 		// Subtags of the lhs
 		Augmenter aug = aug_begin( NULL, ir, diagnostics );
-		Stack subTags = getSubTags( aug, pn_lhs( pn, original ), ir );
-		while( sk_depth( subTags ) )
+		Stack tags = getInheritingTags( aug, pn_lhs( pn, original ), ir );
+		while( sk_depth( tags ) )
 			{
-			Object subTagNode = sk_pop( subTags );
-			Symbol subTag = ob_getTokenField( subTagNode, symSymbol, ir->nodeHeap );
-			if( subTag != pn_lhs( pn, original ) )
+			Object tagNode = sk_pop( tags );
+			Symbol tag = ob_getTokenField( tagNode, symSymbol, ir->nodeHeap );
+			if( tag != pn_lhs( pn, original ) )
 				{
-				newProduction = pn_new( result, subTag, pn_length( pn, original ) );
+				newProduction = pn_new( result, tag, pn_length( pn, original ) );
 				trace( diagnostics, "    Now with lhs=%s\n", sy_name( pn_lhs( newProduction, result ), st ) );
 				addAllProductionCombos( result, newProduction, original, pn, 0, ir, diagnostics, 0 );
 				}
@@ -2203,7 +2206,7 @@ int main( int argc, char *argv[] )
 		pg_sendDotTo( pg, dotFile );
 		}
 
-	if(0)
+	if(1)
 		{
 		gr = gr_augmented( gr, ir, ml_indefinite(), traceFile );
 		fl_write( traceFile, "Augmented grammar:\n" );
