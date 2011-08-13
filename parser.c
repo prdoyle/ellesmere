@@ -938,6 +938,11 @@ FUNC void ir_add( InheritanceRelation ir, Symbol super, Symbol sub )
 	appendToArray( subNode,   SYM_SUPERTAGS, superNode, ir );
 	}
 
+FUNC int ir_sendTo( InheritanceRelation ir, File fl )
+	{
+	return ob_sendDeepTo( ir->index, fl, ir->nodeHeap );
+	}
+
 static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, File diagnostics )
 	{
 	trace( diagnostics, "Augmenting automaton %p:\n", au );
@@ -1451,18 +1456,18 @@ static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagno
 	aug_end( aug );
 	}
 
-#define INHERIT_DIRECTION SYM_SUPERTAGS
-#define INHERIT_ON_RHS 0
+#define INHERIT_DIRECTION SYM_SUBTAGS
 
-static Stack getInheritingTags( Augmenter aug, Symbol tag, InheritanceRelation ir )
+static Stack getInheritingTags( Augmenter aug, Symbol tag, InheritanceRelation ir, int direction )
 	{
 	SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
 	Stack worklist = sk_new( aug->ml );
+	aug->topDownStack = sk_new( aug->ml );
 	Object curIRNode = ob_getField( ir->index, tag, ir->nodeHeap );
 	if( curIRNode )
 		{
 		sk_push( worklist, curIRNode );
-		aug->direction = sy_byIndex( INHERIT_DIRECTION, st );
+		aug->direction = sy_byIndex( direction, st );
 		postorderWalk( worklist, propagationPredicate, pushOntoTopDownStack, ir->nodeHeap, aug );
 		}
 	return aug->topDownStack;
@@ -1474,11 +1479,11 @@ static void addAllProductionCombos( Grammar newGrammar, Production newProduction
 	if( tokenIndex >= pn_length( oldProduction, oldGrammar ) )
 		{
 		// We're done with this production
-		pn_setConflictResolution( newProduction, pn_conflictResolution( oldProduction, oldGrammar ), newGrammar );
+		pn_setConflictResolution( newProduction, CR_ARBITRARY_REDUCE, newGrammar );
 		pn_stopAppending( newProduction, newGrammar );
 		if( diagnostics )
 			{
-			trace( diagnostics, "      %.*s%d done: ", recursionDepth, "", pn_index( newProduction, newGrammar ) );
+			trace( diagnostics, "      %*s%d done: ", recursionDepth, "", pn_index( newProduction, newGrammar ) );
 			pn_sendTo( newProduction, diagnostics, newGrammar, st );
 			trace( diagnostics, "\n" );
 			}
@@ -1486,48 +1491,38 @@ static void addAllProductionCombos( Grammar newGrammar, Production newProduction
 	else
 		{
 		Symbol curToken = pn_token( oldProduction, tokenIndex, oldGrammar );
-		trace( diagnostics, "      %.*s%d:%d is '%s'\n", recursionDepth, "", pn_index( newProduction, newGrammar ), tokenIndex, sy_name( curToken, st ) );
+		trace( diagnostics, "      %*s%d:%d is '%s'\n", recursionDepth, "", pn_index( newProduction, newGrammar ), tokenIndex, sy_name( curToken, st ) );
 		pn_appendWithName( newProduction,
 			pn_name( oldProduction, tokenIndex, oldGrammar ),
 			curToken,
 			newGrammar );
 		addAllProductionCombos( newGrammar, newProduction, oldGrammar, oldProduction, tokenIndex+1, ir, diagnostics, recursionDepth+1 );
 
-		if( INHERIT_ON_RHS )
+		SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
+		Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
+		Augmenter aug = aug_begin( NULL, ir, diagnostics );
+		Stack tags = getInheritingTags( aug, curToken, ir, INHERIT_DIRECTION );
+		while( sk_depth( tags ) )
 			{
-			SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
-			Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
-			Augmenter aug = aug_begin( NULL, ir, diagnostics );
-			Stack tags = getInheritingTags( aug, curToken, ir );
-			while( sk_depth( tags ) )
+			Object tagNode = sk_pop( tags );
+			Symbol tag = ob_getTokenField( tagNode, symSymbol, ir->nodeHeap );
+			if( tag != curToken )
 				{
-				Object tagNode = sk_pop( tags );
-				Symbol tag = ob_getTokenField( tagNode, symSymbol, ir->nodeHeap );
-				if( tag != curToken )
-					{
-					Production dup = pn_new( newGrammar, pn_lhs( newProduction, newGrammar ), pn_length( newProduction, newGrammar ) );
-					for( int j=0; j < tokenIndex; j++ )
-						{
-						// tokens up to tokenIndex (exclusive) are copied from oldProduction
-						pn_appendWithName( dup,
-							pn_name  ( newProduction, j, newGrammar ),
-							pn_token ( newProduction, j, newGrammar ),
-							newGrammar );
-						}
-					trace( diagnostics, "      %.*s| %d dup %d:%d is '%s'\n", recursionDepth, "", pn_index( newProduction, newGrammar ), pn_index( dup, newGrammar ), tokenIndex, sy_name( tag, st ) );
-					pn_appendWithName( dup,
-						pn_name  ( oldProduction, tokenIndex, oldGrammar ),
-						tag,
-						newGrammar );
-					addAllProductionCombos( newGrammar, dup, oldGrammar, oldProduction, tokenIndex+1, ir, diagnostics, recursionDepth+1 );
-					}
+				Production dup = //pn_new( newGrammar, pn_lhs( newProduction, newGrammar ), pn_length( newProduction, newGrammar ) );
+				pn_copy( newGrammar, newProduction, newGrammar, pn_lhs( newProduction, newGrammar ), tokenIndex );
+				trace( diagnostics, "     %*s|%d dup %d:%d is '%s'\n", recursionDepth, "", pn_index( newProduction, newGrammar ), pn_index( dup, newGrammar ), tokenIndex, sy_name( tag, st ) );
+				pn_appendWithName( dup,
+					pn_name  ( oldProduction, tokenIndex, oldGrammar ),
+					tag,
+					newGrammar );
+				addAllProductionCombos( newGrammar, dup, oldGrammar, oldProduction, tokenIndex+1, ir, diagnostics, recursionDepth+1 );
 				}
-			aug_end( aug );
 			}
+		aug_end( aug );
 		}
 	}
 
-FUNC Grammar gr_augmented( Grammar original, InheritanceRelation ir, MemoryLifetime ml, File diagnostics )
+FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, MemoryLifetime ml, File diagnostics, bool recursive )
 	{
 	// TODO: Improve these # production estimates
 	// TODO: Move to grammar.c
@@ -1536,17 +1531,26 @@ FUNC Grammar gr_augmented( Grammar original, InheritanceRelation ir, MemoryLifet
 	if( gr_nestDepth( original ) > 0 )
 		{
 		Grammar outer = gr_outer( original );
-		result = gr_nested( gr_augmented( outer, ir, ml, diagnostics ), gr_numProductions( outer ), ml );
+		if( recursive )
+			outer = gr_augmentedRecursive( outer, ir, ml, diagnostics, true );
+		result = gr_nested( outer, gr_numProductions( outer ), ml );
 		}
 	else
 		{
 		result = gr_new( gr_goal( original ), gr_numProductions( original ), ml );
 		}
 
-	trace( diagnostics, "  Adding implied productions at nest depth %d\n", gr_nestDepth( result ) );
 	SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
+	if( diagnostics )
+		{
+		trace( diagnostics, "Augmenting grammar {\n", original );
+		gr_sendTo( original, diagnostics, st );
+		trace( diagnostics, "}\n" );
+		}
+
+	trace( diagnostics, "  Adding implied productions at nest depth %d\n", gr_nestDepth( result ) );
 	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
-	int productionIndex, tokenIndex;
+	int productionIndex;
 	for( productionIndex = gr_numOuterProductions( original ); productionIndex < gr_numProductions( original ); productionIndex++ )
 		{
 		Production pn = gr_production( original, productionIndex );
@@ -1556,44 +1560,46 @@ FUNC Grammar gr_augmented( Grammar original, InheritanceRelation ir, MemoryLifet
 			pn_sendTo( pn, diagnostics, original, st );
 			trace( diagnostics, "\n" );
 			}
-		Production newProduction = pn_new( result, pn_lhs( pn, original ), pn_length( pn, original ) );
+		Production newProduction = pn_copy( original, pn, result, pn_lhs( pn, original ), 0 );
 		addAllProductionCombos( result, newProduction, original, pn, 0, ir, diagnostics, 0 );
 
-		// Subtags of the lhs
+		// Super+Subtags of the lhs
 		Augmenter aug = aug_begin( NULL, ir, diagnostics );
-		Stack tags = getInheritingTags( aug, pn_lhs( pn, original ), ir );
+		Stack tags = getInheritingTags( aug, pn_lhs( pn, original ), ir, SYM_SUBTAGS );
+#if 0
+		Stack moreTags = getInheritingTags( aug, pn_lhs( pn, original ), ir, SYM_SUPERTAGS );
+		while( sk_depth( moreTags ) )
+			sk_push( tags, sk_pop( moreTags ) );
+#endif
 		while( sk_depth( tags ) )
 			{
 			Object tagNode = sk_pop( tags );
 			Symbol tag = ob_getTokenField( tagNode, symSymbol, ir->nodeHeap );
 			if( tag != pn_lhs( pn, original ) )
 				{
-				newProduction = pn_new( result, tag, pn_length( pn, original ) );
-				trace( diagnostics, "    Now with lhs=%s\n", sy_name( pn_lhs( newProduction, result ), st ) );
+				trace( diagnostics, "    Now with lhs=%s\n", sy_name( tag, st ) );
+				newProduction = pn_copy( original, pn, result, tag, 0 );
 				addAllProductionCombos( result, newProduction, original, pn, 0, ir, diagnostics, 0 );
 				}
 			}
 		aug_end( aug );
 		}
 
-	result = gr_nested( result, gr_numProductions( original ), ml );
-	trace( diagnostics, "  Adding original productions at nest depth %d\n", gr_nestDepth( result ) );
-	for( productionIndex = gr_numOuterProductions( original ); productionIndex < gr_numProductions( original ); productionIndex++ )
+	if( gr_numProductions( result ) == 0 )
 		{
-		Production pn = gr_production( original, productionIndex );
-		Production newProduction = pn_new( result, pn_lhs( pn, original ), pn_length( pn, original ) );
-		for( tokenIndex=0; tokenIndex < pn_length( pn, original ); tokenIndex++ )
-			{
-			pn_appendWithName( newProduction,
-				pn_name  ( pn, tokenIndex, original ),
-				pn_token ( pn, tokenIndex, original ),
-				result );
-			}
-		pn_setConflictResolution( newProduction, pn_conflictResolution( pn, original ), result );
-		pn_stopAppending( newProduction, result );
+		trace( diagnostics, "  No implied productions -- returning original grammar\n" );
+		result = original;
 		}
+	else
+		{
+		gr_stopAdding( result );
+		result = gr_nested( result, gr_numProductions( original ), ml );
+		trace( diagnostics, "  Adding original productions at nest depth %d\n", gr_nestDepth( result ) );
+		for( productionIndex = gr_numOuterProductions( original ); productionIndex < gr_numProductions( original ); productionIndex++ )
+			pn_dup( original, gr_production( original, productionIndex ), result );
 
-	gr_stopAdding( result );
+		gr_stopAdding( result );
+		}
 	return result;
 	}
 
@@ -1891,10 +1897,10 @@ FUNC int ps_reduceContextLength( Parser ps, ObjectHeap heap, SymbolTable st )
 
 #ifdef PARSER_T
 
-typedef char *GrammarLine[10];
+typedef char *TestGrammarLine[10];
 
 #if 0
-static GrammarLine grammar[] =
+static TestGrammarLine grammar[] =
 	{
 	{ "S",  "E", ":END_OF_INPUT" },
 	{ "E",  "E", "*", "B" },
@@ -1906,7 +1912,7 @@ static GrammarLine grammar[] =
 #endif
 
 #if 0
-static GrammarLine grammar[] =
+static TestGrammarLine grammar[] =
 	{
 	{ "S",  "E", ":END_OF_INPUT" },
 	{ "E",  "E", "+", "T" },
@@ -1924,7 +1930,7 @@ static GrammarLine grammar[] =
 #endif
 
 #if 0
-static GrammarLine grammar[] =
+static TestGrammarLine grammar[] =
 	{
 	{ "PROGRAM",      "STATEMENTS", ":END_OF_INPUT" },
 
@@ -1951,7 +1957,7 @@ static GrammarLine grammar[] =
 #endif
 
 #if 0
-static GrammarLine grammar[] =
+static TestGrammarLine grammar[] =
 	{
 	{ "PROGRAM",      "STATEMENTS", ":END_OF_INPUT" },
 
@@ -1970,7 +1976,7 @@ static GrammarLine grammar[] =
 	{ ":INT",  "3" },
 	};
 
-static GrammarLine grammar2[] =
+static TestGrammarLine grammar2[] =
 	{
 	{ ":INT",    ":INT", "*", ":INT" },
 	{ ":INT",    ":INT", "/", ":INT" },
@@ -1978,7 +1984,7 @@ static GrammarLine grammar2[] =
 #endif
 
 #if 1
-static GrammarLine grammar[] =
+static TestGrammarLine grammar[] =
 	{
 	{ ":PROGRAM", ":VOIDS", ":END_OF_INPUT"              },
 	{ ":VOIDS",   ":VOID"                                },
@@ -1998,14 +2004,14 @@ static GrammarLine grammar[] =
 	{ ":INT",         ":INT", "-", ":INT" },
 	};
 
-static GrammarLine grammar2[] =
+static TestGrammarLine grammar2[] =
 	{
 	{ ":INT",         ":INT", "*", ":INT" },
 	{ ":INT",         ":INT", "/", ":INT" },
 	{ ":INT",         "(", ":INT", ")" },
 	};
 
-static GrammarLine subtags[] =
+static TestGrammarLine subtags[] =
 	{
 	{ ":NUMBER",      ":INT" },
 	{ ":INT",         ":NATURAL" },
@@ -2013,7 +2019,7 @@ static GrammarLine subtags[] =
 #endif
 
 #if 0
-static GrammarLine grammar[] =
+static TestGrammarLine grammar[] =
 	{
 	{ "S",  "E", ":END_OF_INPUT" },
 	{ "E",  "E", "*", "B" },
@@ -2025,7 +2031,7 @@ static GrammarLine grammar[] =
 #endif
 
 #if 0
-static GrammarLine grammar[] =
+static TestGrammarLine grammar[] =
 	{
 	{ "program",    "statements", ":END_OF_INPUT" },
 	{ "statements", "statements", "statement" },
@@ -2050,7 +2056,7 @@ static GrammarLine grammar[] =
 #endif
 
 #if 0
-static GrammarLine grammar[] = // http://www.scribd.com/doc/7185137/First-and-Follow-Set
+static TestGrammarLine grammar[] = // http://www.scribd.com/doc/7185137/First-and-Follow-Set
 	{
 	{ "S", "a", "A", "B", "e" },
 	{ "A", "A", "b", "c" },
@@ -2060,7 +2066,7 @@ static GrammarLine grammar[] = // http://www.scribd.com/doc/7185137/First-and-Fo
 #endif
 
 #if 0
-static GrammarLine grammar[] = // LR0
+static TestGrammarLine grammar[] = // LR0
 	{
 	{ "S", "E", "#" },
 	{ "E", "E", "-", "T" },

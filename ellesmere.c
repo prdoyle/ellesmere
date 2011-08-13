@@ -78,33 +78,22 @@ static void cf_pop()
 #endif
 	}
 
-typedef struct gl_struct *GrammarLine;
 typedef void (*NativeAction)( Production handle, GrammarLine gl );
 
 struct fn_struct
 	{
-	Production production;
 	enum {
 		FN_NATIVE,
 		FN_TOKEN_BLOCK,
 	} kind;
 	union {
-		TokenBlock   tb;
-		NativeAction na;
+		GrammarLine gl;
+		TokenBlock  tb;
 	} body;
 	};
 
-typedef struct fna_struct *FunctionArray;
-#define AR_PREFIX  fna
-#define AR_TYPE    FunctionArray
-#define AR_ELEMENT Function
-#define AR_BYVALUE
-#include "array_template.h"
-#ifndef NDEBUG
-	#define fna_new( size, ml ) fna_newAnnotated( size, ml, __FILE__, __LINE__ )
-#endif
-
-static FunctionArray productionBodiesDuringExecution;
+static Object executionBindings;
+static Object recordingBindings;
 
 static void dumpStack0( File fl ) __attribute__((noinline));
 static void dumpStack0( File fl )
@@ -364,6 +353,9 @@ static void addProductionAction( Production handle, GrammarLine gl )
 	Grammar gr = gr_nested( ps_grammar(ps), 1, ml_indefinite() );
 	Production pn = pn_new( gr, ob_getTokenField( production, sym_result, heap ), 3 );
 	pn_setConflictResolution( pn, gl->response.parm1, gr );
+	Symbol pnSymbol = pn_autoSymbol( pn, st, gr );
+	ob_setTokenField( production, sy_byName( "productionSymbol", st ), pnSymbol, heap );
+
 	Object parm;
 	for(
 		parm = ob_getField( production, sym_parms, heap);
@@ -378,6 +370,7 @@ static void addProductionAction( Production handle, GrammarLine gl )
 		}
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
+	gr = gr_augmentedShallow( gr, ir, ml_indefinite(), parserGenTrace );
 	ps_close( ps );
 	Automaton au = au_new( gr, st, ir, ml_indefinite(), conflictLog, parserGenTrace );
 	ps = ps_new( au, ml_indefinite(), parserGenTrace );
@@ -402,12 +395,12 @@ static void addProductionAction( Production handle, GrammarLine gl )
 			}
 		}
 
-	// Stuff the production index into the PRODUCTION object so caller can get it
-	ob_setIntField(
-		production,
-		sy_byName( "index", st ),
-		pn_index( pn, gr ),
-		heap );
+	if( interpreterTrace )
+		{
+		trace( interpreterTrace, "  New production " );
+		pn_sendTo( pn, interpreterTrace, gr, st );
+		trace( interpreterTrace, "\n" );
+		}
 	}
 
 static void defAction( Production handle, GrammarLine gl )
@@ -422,13 +415,12 @@ static void defAction( Production handle, GrammarLine gl )
 	cx_restore( curContext );
 
 	// Store the body from the definition
-	int pnIndex = ob_getIfIntField( production, sy_byName( "index", st ), -123, heap );
+	Symbol pnSymbol = ob_getTokenField( production, sy_byName( "productionSymbol", st ), heap );
+	trace( programTrace, "  Defining production %s\n", sy_name( pnSymbol, st ) );
 	Function fn = (Function)ml_alloc( ml_indefinite(), sizeof(*fn) );
-	fn->production = gr_production( ps_grammar(ps), pnIndex );
 	fn->kind       = FN_TOKEN_BLOCK;
 	fn->body.tb    = block;
-	fna_setCount( productionBodiesDuringExecution, pnIndex+1 );
-	fna_set( productionBodiesDuringExecution, pnIndex, fn );
+	ob_setFunctionField( executionBindings, pnSymbol, fn, heap );
 	}
 
 static void returnAction( Production handle, GrammarLine gl )
@@ -547,11 +539,13 @@ static Grammar populateGrammar( SymbolTable st )
 			gr = gr_new( sy_byName( (*curArray)[0].tokens[0], st ), 20, ml_indefinite() );
 		for( j=0; (*curArray)[j].response.action; j++ )
 			{
-			Production pn = pn_new( gr, sy_byName( (*curArray)[j].tokens[0], st ), asizeof( (*curArray)[j].tokens ) );
-			pn_setConflictResolution( pn, (*curArray)[j].cr, gr );
-			for( k=1; k < asizeof( (*curArray)[j].tokens ) && (*curArray)[j].tokens[k]; k++ )
+			GrammarLine line = (*curArray) + j;
+			Production pn = pn_new( gr, sy_byName( line->tokens[0], st ), asizeof( line->tokens ) );
+			pn_setConflictResolution( pn, line->cr, gr );
+			Symbol pnSymbol = pn_autoSymbol( pn, st, gr );
+			for( k=1; k < asizeof( line->tokens ) && line->tokens[k]; k++ )
 				{
-				char *token = (*curArray)[j].tokens[k];
+				char *token = line->tokens[k];
 				char *at = strchr( token, '@' );
 				if( at != NULL && at != token )
 					{
@@ -566,9 +560,16 @@ static Grammar populateGrammar( SymbolTable st )
 					}
 				}
 			pn_stopAppending( pn, gr );
+			Function fn = (Function)ml_alloc( ml_indefinite(), sizeof(*fn) );
+			fn->kind       = FN_NATIVE;
+			fn->body.gl    = line;
+			ob_setFunctionField( executionBindings, pnSymbol, fn, heap );
+			if( line->response.action == stopRecordingTokenBlockAction )
+				ob_setFunctionField( recordingBindings, pnSymbol, fn, heap );
 			}
 		}
 	gr_stopAdding( gr );
+	gr = gr_augmented( gr, ir, ml_indefinite(), parserGenTrace );
 	return gr;
 	}
 
@@ -586,9 +587,19 @@ static InheritanceRelation initialIR( ObjectHeap heap, SymbolTable st, MemoryLif
 			ir_add( result, super, sub );
 			}
 		}
+
+	if( interpreterTrace )
+		{
+		trace( interpreterTrace, "Initial inheritance relation:\n" );
+		ir_sendTo( result, interpreterTrace );
+		}
+
 	return result;
 	}
 
+#if 0
+// This no longer works because augmenting a grammar can add extra nesting levels that will cause
+// misalignment with the grammar lines
 static GrammarLine lookupGrammarLine( Production pn, Grammar gr )
 	{
 	int depth = pn_nestDepth( pn, gr );
@@ -602,8 +613,9 @@ static GrammarLine lookupGrammarLine( Production pn, Grammar gr )
 		index -= gr_numProductions( gr_outer( definingGrammar ) );
 	return array + index;
 	}
+#endif
 
-static void mainParsingLoop( TokenBlock recording, FunctionArray productionBodies )
+static void mainParsingLoop( TokenBlock recording, Object bindings )
 	{
 	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
 	int startingDepth = ps_depth( ps );
@@ -615,7 +627,7 @@ static void mainParsingLoop( TokenBlock recording, FunctionArray productionBodie
 			tb_sendTo( recording, interpreterTrace, heap );
 		else
 			trace( interpreterTrace, "NULL" );
-		trace( interpreterTrace, ", %p ) startingDepth=%d\n", productionBodies, startingDepth );
+		trace( interpreterTrace, ", %p ) startingDepth=%d\n", bindings, startingDepth );
 		}
 
 	while( 1 )
@@ -652,47 +664,77 @@ static void mainParsingLoop( TokenBlock recording, FunctionArray productionBodie
 				trace( programTrace, "\n" );
 				}
 			Function functionToCall = NULL;
-			if(   productionBodies
-				&& pn_index( handle, gr ) < fna_count( productionBodies ) // recursive calls won't yet have a body defined
-				){
-				functionToCall = fna_get( productionBodies, pn_index( handle, gr ) );
-				}
-			if( functionToCall )
+			if( bindings )
 				{
-				assert( handle );
-				closeTokenStreamsAsNecessary(); // tail call optimization?
-				cx_save( curContext );
-				int i;
-				for( i = pn_length( handle, gr ) - 1; i >= 0; i-- )
+				Symbol pnSymbol = pn_symbol( handle, gr );
+				if( pnSymbol )
 					{
-					Symbol nameSymbol = pn_name( handle, i, gr );
-					Object value = pop();
-					if( nameSymbol )
-						sy_setValue( nameSymbol, value, curContext );
-					}
-				ts_push( tokenStream, functionToCall->body.tb );
-				cf_push();
-				trace( programTrace, "    Calling body %p for production %d\n", tokenStream, pn_index( handle, gr ) );
-				}
-			else
-				{
-				GrammarLine line = lookupGrammarLine( handle, gr );
-				if( recording )
-					{
-					int depthWithoutHandle = ps_depth( ps ) - pn_length( handle, gr );
-					nopAction( handle, NULL );
-					if( line && line->response.action == stopRecordingTokenBlockAction && depthWithoutHandle < startingDepth )
+					Object ob = ob_getField( bindings, pnSymbol, heap );
+					if( ob )
 						{
-						closeTokenStreamsAsNecessary();
-						goto done;
+						functionToCall = ob_toFunction( ob, heap );
+						}
+					else
+						{
+						// abstract!
+						assert( recording );
 						}
 					}
 				else
 					{
-					assert( line );
-					trace( interpreterTrace, "   Calling native action %p\n", line );
-					line->response.action( handle, line );
-					trace( interpreterTrace, "   Done native action %p\n", line );
+					// huh??  No production symbol??
+					assert(0);
+					}
+				}
+			if( recording )
+				{
+				int depthWithoutHandle = ps_depth( ps ) - pn_length( handle, gr );
+				nopAction( handle, NULL );
+				Object ob = ob_getField( bindings, pn_symbol( handle, gr ), heap );
+				if( ob )
+					{
+					assert( functionToCall->body.gl->response.action == stopRecordingTokenBlockAction );
+					if( depthWithoutHandle < startingDepth )
+						{
+						closeTokenStreamsAsNecessary();
+						trace( interpreterTrace, "   Done recording\n" );
+						goto done;
+						}
+					else
+						trace( interpreterTrace, "     Too deep to stop recording yet\n" );
+					}
+				}
+			else if( functionToCall )
+				{
+				switch( functionToCall->kind )
+					{
+					case FN_TOKEN_BLOCK:
+						{
+						assert( handle );
+						closeTokenStreamsAsNecessary(); // tail call optimization?
+						cx_save( curContext );
+						int i;
+						for( i = pn_length( handle, gr ) - 1; i >= 0; i-- )
+							{
+							Symbol nameSymbol = pn_name( handle, i, gr );
+							Object value = pop();
+							if( nameSymbol )
+								sy_setValue( nameSymbol, value, curContext );
+							}
+						ts_push( tokenStream, functionToCall->body.tb );
+						cf_push();
+						trace( programTrace, "    Calling body %p for production %d\n", tokenStream, pn_index( handle, gr ) );
+						}
+						break;
+					case FN_NATIVE:
+						{
+						GrammarLine line = functionToCall->body.gl;
+						assert( line );
+						trace( interpreterTrace, "   Calling native action %p\n", line );
+						line->response.action( handle, line );
+						trace( interpreterTrace, "   Done native action %p\n", line );
+						}
+						break;
 					}
 				}
 			}
@@ -705,15 +747,15 @@ static void mainParsingLoop( TokenBlock recording, FunctionArray productionBodie
 			}
 		if( recording )
 			{
+			tb_append( recording, raw );
 			if( interpreterTrace )
 				{
-				trace( interpreterTrace, "   Appending " );
+				trace( interpreterTrace, "   Appended " );
 				ob_sendTo( raw, interpreterTrace, heap );
 				trace( interpreterTrace, " to ");
 				tb_sendTo( recording, interpreterTrace, heap );
 				trace( interpreterTrace, "\n");
 				}
-			tb_append( recording, raw );
 			}
 		Object toPush = cx_filter( curContext, raw, endOfInput, heap );
 		if( interpreterTrace )
@@ -752,7 +794,7 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 		tb_append( tb, oh_symbolToken( heap, sy_byName( "{", st ) ) );
 		nopAction( handle, gl );
 
-		mainParsingLoop( tb, NULL );
+		mainParsingLoop( tb, recordingBindings );
 
 		// Wonder why I don't need this: tb_append( tb, oh_symbolToken( heap, sy_byName( "}", st ) ) );
 		tb_stopAppending( tb );
@@ -783,28 +825,28 @@ static File openTrace( int fd, char *name )
 int main( int argc, char **argv )
 	{
 	conflictLog = stderr;
-	programTrace           = openTrace( 3, "Ellesmere program trace" );
-	interpreterDiagnostics = openTrace( 4, "Ellesmere interpreter diagnostics" );
-	interpreterTrace       = openTrace( 5, "Ellesmere interpreter trace" );
-	parserGenTrace = openTrace( 6, "Ellesmere parserGenTrace" );
+	programTrace           = openTrace( 3, "3: Ellesmere program trace" );
+	interpreterDiagnostics = openTrace( 4, "4: Ellesmere interpreter diagnostics" );
+	interpreterTrace       = openTrace( 5, "5: Ellesmere interpreter trace" );
+	parserGenTrace = openTrace( 6, "6: Ellesmere parserGenTrace" );
 	st = theSymbolTable();
 	heap = theObjectHeap();
 	curContext = cx_new( st );
 	callStack = cs_new( 30, ml_indefinite() );
 	cs_setCount( callStack, 1 );
 	ir = initialIR( heap, st, ml_indefinite() );
+	executionBindings = ob_create( sy_byIndex( SYM_BINDINGS, st ), heap );
+	recordingBindings = ob_create( sy_byIndex( SYM_BINDINGS, st ), heap );
 	Grammar initialGrammar = populateGrammar( st );
-	productionBodiesDuringExecution = fna_new( 20 + gr_numProductions( initialGrammar ), ml_indefinite() );
-	fna_setCount( productionBodiesDuringExecution, gr_numProductions( initialGrammar ) );
 	Automaton au = au_new( initialGrammar, st, ir, ml_indefinite(), conflictLog, parserGenTrace );
 	ps = ps_new( au, ml_indefinite(), parserGenTrace );
 	stack = sk_new( ml_indefinite() );
 	tokenStream = theLexTokenStream( heap, st );
 
-	mainParsingLoop( NULL, productionBodiesDuringExecution );
+	mainParsingLoop( NULL, executionBindings );
 
 #ifndef NDEBUG
-	File memreport = fdopen( 6, "wt" );
+	File memreport = fdopen( 7, "wt" );
 	ml_sendReportTo( memreport );
 #endif
 	return 0;

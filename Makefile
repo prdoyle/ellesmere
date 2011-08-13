@@ -80,7 +80,7 @@ lex.l.c: lex.l
 	flex -o $@ --header-file=lex.l.h $<
 
 memreport.txt: ellesmere
-	./ellesmere < fib.el 6>&1 1>&2 | sort -k2 -nk3 | uniq -c | sort -rn > $@
+	./ellesmere < fib.el 7>&1 1>&2 | sort -k2 -nk3 | uniq -c | sort -rn > $@
 
 gprof.txt: gmon.out
 	gprof ellesmere > gprof.txt

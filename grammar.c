@@ -2,6 +2,8 @@
 #include "grammar.h"
 #include "memory.h"
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 typedef struct pe_struct
 	{
@@ -21,6 +23,7 @@ typedef struct rhs_struct *RightHandSide;
 
 typedef struct pns_struct
 	{
+	Symbol symbol;
 	Symbol lhs;
 	RightHandSide rhs;
 	ConflictResolutions cr;
@@ -122,6 +125,28 @@ FUNC void pn_appendWithName( Production pn, Symbol name, Symbol token, Grammar g
 FUNC ConflictResolutions pn_conflictResolution( Production pn, Grammar gr )
 	{
 	return pn2pns(pn,gr)->cr;
+	}
+
+FUNC void pn_setSymbol( Production pn, Symbol symbol, Grammar gr )
+	{
+	pn2pns(pn,gr)->symbol = symbol;
+	}
+
+FUNC Symbol pn_autoSymbol( Production pn, SymbolTable st, Grammar gr )
+	{
+	if( pn_symbol( pn, gr ) )
+		fl_write( stderr, "ERROR: Tried to autoSymbol production %s\n", sy_name( pn_symbol( pn, gr ), st ) );
+	assert( !pn_symbol( pn, gr ) );
+	char *buf = alloca( 40 );
+	sprintf(buf, "PN_%p_%d", gr, pn_index( pn, gr ) );
+	Symbol result = sy_byName( buf, st );
+	pn_setSymbol( pn, result, gr );
+	return result;
+	}
+
+FUNC Symbol pn_symbol( Production pn, Grammar gr )
+	{
+	return pn2pns(pn,gr)->symbol;
 	}
 
 FUNC void pn_setConflictResolution( Production pn, ConflictResolutions cr, Grammar gr )
@@ -270,11 +295,29 @@ FUNC Production pn_new( Grammar gr, Symbol lhs, int lengthEstimate )
 	{
 	ProductionStorage result;
 	result = pra_nextElement( gr->pra );
+	result->symbol = NULL;
 	result->lhs = lhs;
 	result->rhs = rhs_new( lengthEstimate, gr->ml );
 	result->cr  = CR_NONE;
 	gr->numItems++;
 	return pns2pn( result, gr );
+	}
+
+FUNC Production pn_copy( Grammar oldGrammar, Production oldProduction, Grammar gr, Symbol lhs, int numTokensToCopy )
+	{
+	ProductionStorage storage;
+	ProductionStorage old = pn2pns( oldProduction, oldGrammar );
+	int length = pn_length( oldProduction, oldGrammar );
+	storage = pra_nextElement( gr->pra );
+	*storage = *old;
+	storage->lhs = lhs;
+	storage->rhs = rhs_new( length, gr->ml );
+	int i;
+	for( i=0; i < numTokensToCopy; i++ )
+		*rhs_nextElement( storage->rhs ) = *rhs_element( old->rhs, i );
+	Production result = pns2pn( storage, gr );
+	gr->numItems += 1 + numTokensToCopy;
+	return result;
 	}
 
 FUNC int pn_sendItemTo( Production pn, int dotPosition, File fl, Grammar gr, SymbolTable st )
@@ -294,13 +337,17 @@ FUNC int pn_sendItemTo( Production pn, int dotPosition, File fl, Grammar gr, Sym
 
 FUNC int pn_sendTo( Production pn, File fl, Grammar gr, SymbolTable st )
 	{
-	return pn_sendItemTo( pn, -1, fl, gr, st );
+	int charsSent = pn_sendItemTo( pn, -1, fl, gr, st );
+	Symbol sy = pn2pns( pn, gr )->symbol;
+	if( sy )
+		charsSent += fl_write( fl, "  << %s >>", sy_name( sy, st ) );
+	return charsSent;
 	}
 
 static int sendTo( Grammar gr, File fl, SymbolTable st, int indent )
 	{
 	int i;
-	int charsSent = fl_write( fl, "%*sGrammar( %s )\n  %*s{\n", indent, "", sy_name( gr_goal(gr), st ), indent, "" );
+	int charsSent = fl_write( fl, "%*sGrammar %p( %s )\n  %*s{\n", indent, "", gr, sy_name( gr_goal(gr), st ), indent, "" );
 	if( gr->kind == NESTED )
 		charsSent += sendTo( gr->data.outer, fl, st, indent+2 );
 	for( i=gr->numInheritedProductions; i < gr_numProductions(gr); i++ )

@@ -27,6 +27,7 @@ FUNC int        ps_sendTo  ( Parser ps,    File fl, ObjectHeap heap, SymbolTable
 
 FUNC InheritanceRelation ir_new( ObjectHeap heap, SymbolTable st, MemoryLifetime ml );
 FUNC void                ir_add( InheritanceRelation ir, Symbol super, Symbol sub );
+FUNC int                 ir_sendTo( InheritanceRelation ir, File fl );
 
 #ifdef REDUCE_CONTEXT_LENGTH
 FUNC          int ps_reduceContextLength( Parser ps, ObjectHeap heap, SymbolTable st );

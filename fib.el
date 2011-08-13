@@ -23,11 +23,7 @@ def INT
 	( value:INT )
 as { value }
 
-def TRUE
-	left:INT <= right:INT
-as { left right le! }
-
-def FALSE
+def BOOLEAN
 	left:INT <= right:INT
 as { left right le! }
 

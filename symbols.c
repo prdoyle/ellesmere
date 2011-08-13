@@ -37,6 +37,7 @@ static struct sy_struct predefinedSymbols[] =
 	{ "ELEMENT_COUNT" },
 	{ "SUPERTAGS" },
 	{ "SUBTAGS" },
+	{ "BINDINGS" },
 	};
 
 FUNC SymbolTable theSymbolTable()
@@ -44,7 +45,7 @@ FUNC SymbolTable theSymbolTable()
 	static SymbolTable result = NULL;
 	if( !result )
 		{
-		result = sta_new( 100 + NUM_PREDEFINED_SYMBOLS, ml_singleton() );
+		result = sta_new( 1000 + NUM_PREDEFINED_SYMBOLS, ml_singleton() );
 		sta_setCount( result, NUM_PREDEFINED_SYMBOLS );
 		memcpy( sta_element( result, 0 ), predefinedSymbols, sizeof(predefinedSymbols) );
 		}
@@ -58,6 +59,7 @@ FUNC SymbolIndex st_count( SymbolTable st )
 
 FUNC Symbol sy_byIndex( SymbolIndex index, SymbolTable st )
 	{
+	// TODO: BAH!  This doesn't work if the array resizes itself
 	assert( index < st_count(st) );
 	return sta_element( st, index );
 	}

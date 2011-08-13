@@ -1,5 +1,16 @@
 NEXT:
-- Instead of doing subtags on the right-hand side, try supertags on the left-hand side
+- Gotta add production symbol for "abstract" productions
+- Hmm, the LHS trick may not work.  What happens at run time when I'm expecting a BOOLEAN,
+  and a production that claims to return a BOOLEAN actually returns TRUE?  Then I get a parse error.
+- I may need to do subtags on the LHS too, to capture the case of:
+    BOOLEAN <- foo
+	 VOID <- if FALSE then ...
+	 VOID <- if TRUE  then ...
+
+	 This is that dynamic typing thing all over again I think.  In a statically-typed language,
+	 I'd have to declare VOID <- if BOOLEAN then ... just to declare that BOOLEAN supports this
+	 interface.
+- Need better error message when an implied production's action is called
 
 Other:
 - Implement tail call elimination
@@ -41,3 +52,7 @@ DONE
   - Solution: abstract representative reductions for those.  (I half-implemented this, and it already works.  Not sure how.)
 - PROBLEM: Multiple runs of sst_propagate are infecting sibling classes with each others' bits
   - Solution: sst_propagate isn't going to work
+- Instead of doing subtags on the right-hand side, try supertags on the left-hand side
+- The production symbols don't seem to be copied properly when augmenting a grammar
+  - Fixed
+- I was editing an outer grammer.  Whoopsie
