@@ -5,6 +5,8 @@
 #include "parser.h"
 #include "tokens.h"
 #include "memory.h"
+#include "bitvector.h"
+#include "records.h"
 #include <stdarg.h>
 #include <string.h>
 
@@ -467,6 +469,44 @@ static void setAction( Production handle, GrammarLine gl )
 	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
 	}
 
+static Object recordified( Object ob )
+	{
+	MemoryLifetime ml = ml_begin( 1000, ml_indefinite() );
+	BitVector fieldIDs = bv_new( st_count(st), ml );
+	ob_getFieldSymbols( ob, fieldIDs, heap );
+
+	Record rd = rd_new( fieldIDs, ml_indefinite() );
+
+	char buf[40];
+	sprintf( buf, "BINDINGS_%d", st_count( st ) );
+	Symbol tag = sy_byName( buf, st );
+	sy_setInstanceShape( tag, rd, st );
+
+	Object result = ob_create( tag, heap );
+	int fieldID;
+	for( fieldID = bv_firstBit( fieldIDs ); fieldID != bv_END; fieldID = bv_nextBit( fieldIDs, fieldID ) )
+		{
+		Symbol field = sy_byIndex( fieldID, st );
+		ob_setField( result, field, ob_getField( ob, field, heap ), heap );
+		}
+
+	ml_end( ml );
+	return result;
+	}
+
+static void optimizeAction( Production handle, GrammarLine gl )
+	{
+	executionBindings = recordified( executionBindings );
+	if( 0 )
+		{
+		Symbol tag = ob_tag( executionBindings, heap );
+		printf( "optimized executionBindings tag is %s, shape %p\n", sy_name( tag, st ), sy_instanceShape( tag, st ) );
+		rd_sendTo( sy_instanceShape( tag, st ), stdout, st );
+		}
+	recordingBindings = recordified( recordingBindings );
+	nopAction( handle, gl );
+	}
+
 static struct gl_struct grammar1[] =
 	{
 	{ { "PROGRAM",   "VOIDS", "END_OF_INPUT"                                        }, { nopAction } },
@@ -506,6 +546,8 @@ static struct gl_struct grammar1[] =
 
 	{ { "BOOLEAN",   "INT", "nz!"                                                   }, { nonzeroAction } },
 	{ { "BOOLEAN",   "INT", "INT", "le!"                                            }, { leAction } },
+
+	{ { "VOID",     "optimize!"                                                     }, { optimizeAction, 1 } },
 
 	{{NULL}},
 	};

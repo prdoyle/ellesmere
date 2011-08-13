@@ -77,5 +77,7 @@ as
 	print( fib(n) )
 	}
 
+optimize!
+
 #fibs( 12 )
 fibs( 24 )

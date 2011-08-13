@@ -13,5 +13,7 @@ FUNC int rd_indexOf  ( Record rd, int fieldID ); // numbering starts from 1.  0 
 FUNC int rd_firstField ( Record rd );
 FUNC int rd_nextField  ( Record rd, int prevField ); // returns rd_NONE when finished
 
+FUNC int rd_sendTo( Record rd, File fl, SymbolTable st );
+
 #endif
 

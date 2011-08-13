@@ -1622,7 +1622,7 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, InheritanceRelation ir, Memor
 	Automaton result = (Automaton)ml_alloc( ml, sizeof(*result) );
 	char stateTagName[50];
 	sprintf( stateTagName, "SN%d", st_count( st ) );
-	Symbol stateNodeTag = sy_byName( stateTagName, st );
+	Symbol stateNodeTag = sy_byName( stateTagName, st ); // TODO: Use some smart instance shape
 
 	ParserGenerator pg = pg_new( gr, st, stateNodeTag, generateTime, ml, theObjectHeap() );
 	pg_populateItemTable( pg, diagnostics );

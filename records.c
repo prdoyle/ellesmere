@@ -1,6 +1,7 @@
 
 #include "records.h"
 #include "memory.h"
+#include "symbols.h"
 #include <stdlib.h>
 #include <stdint.h>
 #include <limits.h>
@@ -61,7 +62,7 @@ static int rd_hash( Record rd, int key )
 	int result = 0;
 	const int8_t log2numBuckets = rd->log2numBuckets;
 	const int chunkMask = ( 1 << log2numBuckets ) - 1;
-	while( key )
+	while( key ) // TODO: It's likely we don't need to exhaust all bits in the key to achieve perfect hashing.  Exit early if possible.
 		{
 		result ^= key & chunkMask;
 		key = (int)( ((unsigned)key) >> log2numBuckets );
@@ -91,7 +92,7 @@ FUNC Record rd_new( BitVector fieldIDs, MemoryLifetime ml )
 	bv_copy( result->fieldIDs, fieldIDs );
 
 	// Try pseudorandom (ok not all that random) hash parameters until one is perfect.
-	// Shouldn't take many tries. random
+	// Shouldn't take many tries.
 	int8_t log2numBuckets = computeLog2numBuckets( numFields );
 	result->log2numBuckets = log2numBuckets;
 	int numBuckets = 1 << log2numBuckets;
@@ -160,6 +161,20 @@ FUNC int rd_nextField( Record rd, int prevField )
 		return rd_NONE;
 	else
 		return result;
+	}
+
+FUNC int rd_sendTo( Record rd, File fl, SymbolTable st )
+	{
+	int charsSent = fl_write( fl, "Record %p {\n" );
+	int fieldID;
+	for( fieldID = rd_firstField( rd ); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
+		{
+		Symbol field = sy_byIndex( fieldID, st );
+		// TODO: Sort by index
+		charsSent += fl_write( fl, "  %4d: %s\n", rd_indexOf( rd, fieldID ), sy_name( field, st ) );
+		}
+	charsSent += fl_write( fl, "}\n" );
+	return charsSent;
 	}
 
 #ifdef RECORDS_T

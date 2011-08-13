@@ -45,14 +45,14 @@ FUNC SymbolTable oh_tagSymbolTable( ObjectHeap heap )
 	return heap->st;
 	}
 
-typedef struct fl_struct
+typedef struct fdl_struct
 	{
 	SymbolIndex       si;
 	Object            value;
-	struct fl_struct *tail;
+	struct fdl_struct *tail;
 	} *FieldList;
 
-static FieldList fl_new( SymbolIndex si, Object value, FieldList tail, ObjectHeap heap )
+static FieldList fdl_new( SymbolIndex si, Object value, FieldList tail, ObjectHeap heap )
 	{
 	FieldList result = (FieldList)ml_alloc( heap->ml, sizeof(*result) );
 	assert(( (intptr_t)result & OB_KIND_MASK ) == 0);
@@ -62,12 +62,12 @@ static FieldList fl_new( SymbolIndex si, Object value, FieldList tail, ObjectHea
 	return result;
 	}
 
-static FieldList fl_bySymbol( SymbolIndex si, FieldList fl )
+static FieldList fdl_bySymbol( SymbolIndex si, FieldList fdl )
 	{
-	if( fl && fl->si != si )
-		return fl_bySymbol( si, fl->tail );
+	if( fdl && fdl->si != si )
+		return fdl_bySymbol( si, fdl->tail );
 	else
-		return fl;
+		return fdl;
 	}
 
 #undef WRAP_TOKEN_BLOCKS
@@ -272,9 +272,9 @@ static Object ob_getItem( Object ob, SymbolIndex si, ObjectHeap heap )
 		return ob->recordFields[ index-1 ];
 	else
 		{
-		FieldList fl = fl_bySymbol( si, ob->data.listFields );
-		if( fl )
-			return fl->value;
+		FieldList fdl = fdl_bySymbol( si, ob->data.listFields );
+		if( fdl )
+			return fdl->value;
 		}
 	return NULL;
 	}
@@ -287,11 +287,11 @@ static void ob_setItem( Object ob, SymbolIndex si, Object value, ObjectHeap heap
 		ob->recordFields[ index-1 ] = value;
 	else
 		{
-		FieldList fl = fl_bySymbol( si, ob->data.listFields );
-		if( fl )
-			fl->value = value;
+		FieldList fdl = fdl_bySymbol( si, ob->data.listFields );
+		if( fdl )
+			fdl->value = value;
 		else
-			ob->data.listFields = fl_new( si, value, ob->data.listFields, heap );
+			ob->data.listFields = fdl_new( si, value, ob->data.listFields, heap );
 		}
 	assert( ob_getItem( ob, si, heap ) == value );
 	}
