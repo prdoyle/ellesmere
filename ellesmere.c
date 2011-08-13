@@ -507,6 +507,30 @@ static void optimizeAction( Production handle, GrammarLine gl )
 	nopAction( handle, gl );
 	}
 
+static void createAction( Production handle, GrammarLine gl )
+	{
+	popToken();
+	Symbol tag = popToken();
+	push( ob_create( tag, heap ) );
+	}
+
+static void getFieldAction( Production handle, GrammarLine gl )
+	{
+	popToken();
+	Symbol field = popToken();
+	Object receiver = pop();
+	push( ob_getField( receiver, field, heap ) );
+	}
+
+static void setFieldAction( Production handle, GrammarLine gl )
+	{
+	Object value = sk_item( stack, 1 );
+	Symbol field = ob_toSymbol( sk_item( stack, 2 ), heap );
+	Object receiver = sk_item( stack, 3 );
+	ob_setField( receiver, field, value, heap );
+	nopAction( handle, gl );
+	}
+
 static struct gl_struct grammar1[] =
 	{
 	{ { "PROGRAM",   "VOIDS", "END_OF_INPUT"                                        }, { nopAction } },
@@ -519,7 +543,7 @@ static struct gl_struct grammar1[] =
 	{ { "VOID",     "{", "VOIDS", "}"                                               }, { nopAction } },
 	{ { "VOID",     "{",          "}"                                               }, { nopAction } },
 
-	{ { "VOID",     "INT", "print!"                                                 }, { printAction, 1 } },
+	{ { "VOID",     "ANY", "print!"                                                 }, { printAction, 1 } },
 
 	{ { "VOID",     "ANY",  "return!",                                              }, { returnAction, 1 } },
 	{ { "VOID",     "VOID", "return!",                                              }, { returnAction, 1 } },
@@ -539,6 +563,12 @@ static struct gl_struct grammar1[] =
 	{ { "TB_START",        "{",                                                     }, { recordTokenBlockAction } },
 	{ { "VOID",            "def", "PRODUCTION", "as", "TOKEN_BLOCK"                 }, { defAction } },
 
+	{ { "VOID",     "optimize!"                                                     }, { optimizeAction, 1 } },
+
+	{ { "OBJECT",   "TOKEN@tag", "create!"                                          }, { createAction } },
+	{ { "ANY",      "OBJECT@receiver", "TOKEN@field", "getfield!"                   }, { getFieldAction } },
+	{ { "VOID",     "OBJECT@receiver", "TOKEN@field", "ANY@value", "setfield!"      }, { setFieldAction } },
+
 	{ { "INT",   "INT", "INT", "add!"                                               }, { addAction } },
 	{ { "INT",   "INT", "INT", "sub!"                                               }, { subAction, 2 } },
 	{ { "INT",   "INT", "INT", "mul!"                                               }, { mulAction } },
@@ -547,8 +577,6 @@ static struct gl_struct grammar1[] =
 	{ { "BOOLEAN",   "INT", "nz!"                                                   }, { nonzeroAction } },
 	{ { "BOOLEAN",   "INT", "INT", "le!"                                            }, { leAction } },
 
-	{ { "VOID",     "optimize!"                                                     }, { optimizeAction, 1 } },
-
 	{{NULL}},
 	};
 
@@ -556,7 +584,7 @@ static GrammarLine initialGrammarNest[] = { grammar1 };
 
 static struct gl_struct inheritance[] =
 	{
-	{{ "ANY",        "INT", "BOOLEAN" }},
+	{{ "ANY",        "INT", "BOOLEAN", "OBJECT" }},
 	{{ "BOOLEAN",    "FALSE", "TRUE" }},
 
 	{{NULL}},

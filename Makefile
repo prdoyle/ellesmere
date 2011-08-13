@@ -14,6 +14,8 @@ LD := gcc
 LDFLAGS += -g
 
 small: CFLAGS    += -Os -DNDEBUG -g0
+#http://gcc.gnu.org/ml/gcc-help/2003-08/msg00128.html    -- doesn't seem to help
+#small: CFLAGS    += -Wl,-static -fdata-sections -ffunction-sections -Wl,--gc-sections
 small: LEXFLAGS  += -Cem
 fast:  CFLAGS    += -O3 -DNDEBUG -Winline
 fast:  LEXFLAGS  += --Fast
