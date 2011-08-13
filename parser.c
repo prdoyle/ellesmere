@@ -709,6 +709,11 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 					trace( traceFile, "        No conflict\n" );
 					continue;
 					}
+				if( pn_conflictResolution( it->pn, pg->gr ) == CR_ABSTRACT )
+					{
+					trace( traceFile, "        Reduce production is abstract -- favouring competitor\n" );
+					continue;
+					}
 				int winningMargin = pn_nestDepth( competitor->pn, pg->gr ) - pn_nestDepth( it->pn, pg->gr );
 				if( winningMargin > 0 )
 					{
@@ -1479,7 +1484,7 @@ static void addAllProductionCombos( Grammar newGrammar, Production newProduction
 	if( tokenIndex >= pn_length( oldProduction, oldGrammar ) )
 		{
 		// We're done with this production
-		pn_setConflictResolution( newProduction, CR_ARBITRARY_REDUCE, newGrammar );
+		pn_setConflictResolution( newProduction, CR_ABSTRACT, newGrammar );
 		pn_stopAppending( newProduction, newGrammar );
 		if( diagnostics )
 			{
