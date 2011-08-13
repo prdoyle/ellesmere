@@ -713,7 +713,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings )
 					else
 						{
 						// abstract!
-						assert( recording );
+						check( recording );
 						}
 					}
 				else

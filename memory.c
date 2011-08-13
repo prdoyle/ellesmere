@@ -41,12 +41,15 @@ struct ml_struct
 	MemoryHunk     curHunk;
 	};
 
-#ifndef NDEBUG
-
 // These macros are for users of memory.h, not the implementation
 #undef ml_alloc
 #undef ml_allocZeros
 #undef ml_realloc
+#undef ml_allocAnnotated
+#undef ml_allocZerosAnnotated
+#undef ml_reallocAnnotated
+
+#ifndef NDEBUG
 
 static Header lastHeader = NULL;
 

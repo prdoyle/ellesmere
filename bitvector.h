@@ -54,5 +54,12 @@ static inline bool bv_isUnset( BitVector bv, int bitIndex ){ return !bv_isSet( b
 	#define traceBVX(...)
 #endif
 
+#ifdef NDEBUG
+	#define bv_newAnnotated( numBits, ml, f, l )  bv_new( numBits, ml )
+#else
+	FUNC BitVector bv_newAnnotated( int numBits, MemoryLifetime ml, const char *file, int line );
+	#define bv_new( numBits, ml )  bv_newAnnotated( numBits, ml, __FILE__, __LINE__ )
+#endif
+
 #endif
 

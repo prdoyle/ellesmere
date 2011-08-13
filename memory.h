@@ -16,9 +16,11 @@ FUNC void *ml_alloc      ( MemoryLifetime ml, int numBytes );
 FUNC void *ml_allocZeros ( MemoryLifetime ml, int numBytes );
 FUNC void *ml_realloc    ( MemoryLifetime ml, void *oldStorage, int oldNumBytes, int newNumBytes );
 
-#ifndef NDEBUG
-	// These are inside #ifndef NDEBUG to make sure we never call them in optimized builds
-
+#ifdef NDEBUG
+	#define ml_allocAnnotated(ml,s,f,l)       ml_alloc      ((ml),(s))
+	#define ml_allocZerosAnnotated(ml,s,f,l)  ml_allocZeros ((ml),(s))
+	#define ml_reallocAnnotated(ml,p,o,n,f,l) ml_realloc    ((ml),(p),(o),(n))
+#else
 	FUNC void *ml_allocAnnotated      ( MemoryLifetime ml, int numBytes, const char *file, int line );
 	FUNC void *ml_allocZerosAnnotated ( MemoryLifetime ml, int numBytes, const char *file, int line );
 	FUNC void *ml_reallocAnnotated    ( MemoryLifetime ml, void *oldStorage, int oldNumBytes, int newNumBytes, const char *file, int line );

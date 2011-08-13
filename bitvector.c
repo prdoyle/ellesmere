@@ -33,6 +33,10 @@ static Word bit2mask( int bitNum )
 	return ((Word)1) << bit2shift( bitNum );
 	}
 
+// These macros are for users of bitvector.h, not the implementation
+#undef bv_new
+#undef bv_newAnnotated
+
 FUNC BitVector bv_new( int numBits, MemoryLifetime ml )
 	{
 	int numWords = bit2word( numBits-1 ) + 1;
@@ -44,6 +48,20 @@ FUNC BitVector bv_new( int numBits, MemoryLifetime ml )
 	result->ml       = ml;
 	return result;
 	}
+
+#ifndef NDEBUG
+FUNC BitVector bv_newAnnotated( int numBits, MemoryLifetime ml, const char *file, int line )
+	{
+	int numWords = bit2word( numBits-1 ) + 1;
+	int numBytes = numWords * sizeof( Word );
+	BitVector result;
+	result    = (BitVector)ml_allocAnnotated( ml, sizeof(*result), file, line );
+	result->words = (Word*)ml_allocZerosAnnotated( ml, numBytes, file, line );
+	result->numWords = numWords;
+	result->ml       = ml;
+	return result;
+	}
+#endif
 
 static void bv_reallocWords( BitVector bv, int newNumWords )
 	{
