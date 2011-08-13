@@ -1,3 +1,4 @@
+#! /usr/local/bin/ellesmere
 
 # Conditional statements
 
@@ -38,19 +39,33 @@ as { left right sub! }
 # Fib implementation
 
 def INT
-	fib( n:INT )
+	n:INT fib!
 as
 	{
 	# Perfornance-critical so we use postfix form
 	if n 1 le! then
 		{ 1 }
 	else
-		{ fib( n 1 sub! ) fib( n 2 sub! ) add! }
+		{
+		n 1 sub! fib!
+		n 2 sub! fib!
+		add!
+		}
 	end
 	}
 
+def INT
+	fib( n:INT )
+as
+	{ n fib! }
+
 def VOID
-	fibs ( n:INT )
+	print( n:INT )
+as
+	{ n print! }
+
+def VOID
+	fibs( n:INT )
 as
 	{
 	if 1 <= n then
@@ -58,8 +73,8 @@ as
 	else
 		{ }
 	end
-	n print!
-	fib(n) print!
+	print( n )
+	print( fib(n) )
 	}
 
 #fibs( 12 )
