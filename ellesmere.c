@@ -476,20 +476,18 @@ static struct gl_struct grammar1[] =
 	{ { "STATEMENT_BLOCK", "{", "VOIDS", "}"                        }, { nopAction } },
 	{ { "STATEMENT_BLOCK", "{",          "}"                        }, { nopAction } },
 
-	{ { "INT",      "{", "VOIDS", "INT",   "}"                      }, { passThrough, 1 } },
-	{ { "INT",      "{",          "INT",   "}"                      }, { passThrough, 1 } },
-	{ { "BOOLEAN",  "{", "VOIDS", "BOOLEAN",  "}"                   }, { passThrough, 1 } },
-	{ { "BOOLEAN",  "{",          "BOOLEAN",  "}"                   }, { passThrough, 1 } },
+	{ { "ANY",      "{", "VOIDS", "ANY",   "}"                      }, { passThrough, 1 } },
+	{ { "INT",      "{",          "ANY",   "}"                      }, { passThrough, 1 } },
 
 	{ { "VOID",     "{", "VOIDS", "}"                               }, { nopAction } },
 	{ { "VOID",     "{",          "}"                               }, { nopAction } },
 
 	{ { "VOID",     "INT", "print!"                                 }, { printAction, 1 } },
 
-	{ { "VOID",     "INT",  "return!",                              }, { returnAction, 1 } },
+	{ { "VOID",     "ANY",  "return!",                              }, { returnAction, 1 } },
 	{ { "VOID",     "VOID", "return!",                              }, { returnAction, 1 } },
 
-	{ { "VOID",     "INT@value", "TOKEN@name", "set!"               }, { setAction } },
+	{ { "VOID",     "ANY@value", "TOKEN@name", "set!"               }, { setAction } },
 
 	{ { "PARAMETER_LIST"                                            }, { parseTreeAction } },
 	{ { "PARAMETER_LIST",  "TOKEN@tag",      "PARAMETER_LIST@next"  }, { parseTreeAction } },
@@ -499,10 +497,8 @@ static struct gl_struct grammar1[] =
 	{ { "PRODUCTION",      "l2r", "TOKEN@result", "PARAMETER_LIST@parms"   }, { addProductionAction, CR_REDUCE_BEATS_SHIFT } },
  	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "}"                 }, { stopRecordingTokenBlockAction } },
  	{ { "TOKEN_BLOCK",     "TB_START",          "}"                 }, { stopRecordingTokenBlockAction } },
- 	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "INT", "}"          }, { stopRecordingTokenBlockAction } },
- 	{ { "TOKEN_BLOCK",     "TB_START", "INT", "}"                   }, { stopRecordingTokenBlockAction } },
- 	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "BOOLEAN", "}"      }, { stopRecordingTokenBlockAction } },
- 	{ { "TOKEN_BLOCK",     "TB_START", "BOOLEAN", "}"               }, { stopRecordingTokenBlockAction } },
+ 	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "ANY", "}"          }, { stopRecordingTokenBlockAction } },
+ 	{ { "TOKEN_BLOCK",     "TB_START", "ANY", "}"                   }, { stopRecordingTokenBlockAction } },
  	{ { "TB_START",        "{",                                     }, { recordTokenBlockAction } },
 	{ { "VOID",            "def", "PRODUCTION", "as", "TOKEN_BLOCK" }, { defAction } },
 
@@ -521,6 +517,7 @@ static GrammarLine initialGrammarNest[] = { grammar1 };
 
 static struct gl_struct inheritance[] =
 	{
+	{{ "ANY",        "INT", "BOOLEAN" }},
 	{{ "BOOLEAN",    "FALSE", "TRUE" }},
 
 	{{NULL}},
