@@ -469,46 +469,43 @@ static void setAction( Production handle, GrammarLine gl )
 
 static struct gl_struct grammar1[] =
 	{
-	{ { "PROGRAM",         "VOIDS", "END_OF_INPUT"                  }, { nopAction } },
-	{ { "VOIDS",           "VOID",                                  }, { nopAction } },
-	{ { "VOIDS",           "VOIDS", "VOID"                          }, { nopAction } },
+	{ { "PROGRAM",   "VOIDS", "END_OF_INPUT"                                        }, { nopAction } },
+	{ { "VOIDS",     "VOID",                                                        }, { nopAction } },
+	{ { "VOIDS",     "VOIDS", "VOID"                                                }, { nopAction } },
 
-	{ { "STATEMENT_BLOCK", "{", "VOIDS", "}"                        }, { nopAction } },
-	{ { "STATEMENT_BLOCK", "{",          "}"                        }, { nopAction } },
+	{ { "ANY",      "{", "VOIDS", "ANY",   "}"                                      }, { passThrough, 1 } },
+	{ { "ANY",      "{",          "ANY",   "}"                                      }, { passThrough, 1 } },
 
-	{ { "ANY",      "{", "VOIDS", "ANY",   "}"                      }, { passThrough, 1 } },
-	{ { "INT",      "{",          "ANY",   "}"                      }, { passThrough, 1 } },
+	{ { "VOID",     "{", "VOIDS", "}"                                               }, { nopAction } },
+	{ { "VOID",     "{",          "}"                                               }, { nopAction } },
 
-	{ { "VOID",     "{", "VOIDS", "}"                               }, { nopAction } },
-	{ { "VOID",     "{",          "}"                               }, { nopAction } },
+	{ { "VOID",     "INT", "print!"                                                 }, { printAction, 1 } },
 
-	{ { "VOID",     "INT", "print!"                                 }, { printAction, 1 } },
+	{ { "VOID",     "ANY",  "return!",                                              }, { returnAction, 1 } },
+	{ { "VOID",     "VOID", "return!",                                              }, { returnAction, 1 } },
 
-	{ { "VOID",     "ANY",  "return!",                              }, { returnAction, 1 } },
-	{ { "VOID",     "VOID", "return!",                              }, { returnAction, 1 } },
+	{ { "VOID",     "ANY@value", "TOKEN@name", "set!"                               }, { setAction } },
 
-	{ { "VOID",     "ANY@value", "TOKEN@name", "set!"               }, { setAction } },
+	{ { "PARAMETER_LIST"                                                            }, { parseTreeAction } },
+	{ { "PARAMETER_LIST",  "TOKEN@tag",      "PARAMETER_LIST@next"                  }, { parseTreeAction } },
+	{ { "PARAMETER_LIST",  "TOKEN@tag",  "@", "TOKEN@name", "PARAMETER_LIST@next"   }, { parseTreeAction } },
+	{ { "PARAMETER_LIST",  "TOKEN@name", ":", "TOKEN@tag",  "PARAMETER_LIST@next"   }, { parseTreeAction } },
+	{ { "PRODUCTION",      "TOKEN@result", "PARAMETER_LIST@parms"                   }, { addProductionAction } },
+	{ { "PRODUCTION",      "l2r", "TOKEN@result", "PARAMETER_LIST@parms"            }, { addProductionAction, CR_REDUCE_BEATS_SHIFT } },
+	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "}"                                 }, { stopRecordingTokenBlockAction } },
+	{ { "TOKEN_BLOCK",     "TB_START",          "}"                                 }, { stopRecordingTokenBlockAction } },
+	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "ANY", "}"                          }, { stopRecordingTokenBlockAction } },
+	{ { "TOKEN_BLOCK",     "TB_START", "ANY", "}"                                   }, { stopRecordingTokenBlockAction } },
+	{ { "TB_START",        "{",                                                     }, { recordTokenBlockAction } },
+	{ { "VOID",            "def", "PRODUCTION", "as", "TOKEN_BLOCK"                 }, { defAction } },
 
-	{ { "PARAMETER_LIST"                                            }, { parseTreeAction } },
-	{ { "PARAMETER_LIST",  "TOKEN@tag",      "PARAMETER_LIST@next"  }, { parseTreeAction } },
-	{ { "PARAMETER_LIST",  "TOKEN@tag",  "@", "TOKEN@name", "PARAMETER_LIST@next"  }, { parseTreeAction } },
-	{ { "PARAMETER_LIST",  "TOKEN@name", ":", "TOKEN@tag",  "PARAMETER_LIST@next"  }, { parseTreeAction } },
-	{ { "PRODUCTION",      "TOKEN@result", "PARAMETER_LIST@parms"   }, { addProductionAction } },
-	{ { "PRODUCTION",      "l2r", "TOKEN@result", "PARAMETER_LIST@parms"   }, { addProductionAction, CR_REDUCE_BEATS_SHIFT } },
- 	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "}"                 }, { stopRecordingTokenBlockAction } },
- 	{ { "TOKEN_BLOCK",     "TB_START",          "}"                 }, { stopRecordingTokenBlockAction } },
- 	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "ANY", "}"          }, { stopRecordingTokenBlockAction } },
- 	{ { "TOKEN_BLOCK",     "TB_START", "ANY", "}"                   }, { stopRecordingTokenBlockAction } },
- 	{ { "TB_START",        "{",                                     }, { recordTokenBlockAction } },
-	{ { "VOID",            "def", "PRODUCTION", "as", "TOKEN_BLOCK" }, { defAction } },
+	{ { "INT",   "INT", "INT", "add!"                                               }, { addAction } },
+	{ { "INT",   "INT", "INT", "sub!"                                               }, { subAction, 2 } },
+	{ { "INT",   "INT", "INT", "mul!"                                               }, { mulAction } },
+	{ { "INT",   "INT", "INT", "div!"                                               }, { divAction } },
 
-	{ { "INT",             "INT", "INT", "add!"                     }, { addAction } },
-	{ { "INT",             "INT", "INT", "sub!"                     }, { subAction, 2 } },
-	{ { "INT",             "INT", "INT", "mul!"                     }, { mulAction } },
-	{ { "INT",             "INT", "INT", "div!"                     }, { divAction } },
-
-	{ { "BOOLEAN",         "INT", "nz!"                             }, { nonzeroAction } },
-	{ { "BOOLEAN",         "INT", "INT", "le!"                      }, { leAction } },
+	{ { "BOOLEAN",   "INT", "nz!"                                                   }, { nonzeroAction } },
+	{ { "BOOLEAN",   "INT", "INT", "le!"                                            }, { leAction } },
 
 	{{NULL}},
 	};

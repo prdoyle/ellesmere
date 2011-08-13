@@ -1,0 +1,4 @@
+#! /bin/bash
+
+#./ellesmere < fib.el 2>stderr.out 3>program.out 4>interpreter.out 5>&4 6>parserGenTrace.out
+./ellesmere < fib.el 2>combined.out 3>&2 4>&2 5>&2 6>&2
