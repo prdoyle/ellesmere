@@ -18,13 +18,13 @@ FUNC Production gr_production     ( Grammar gr, int index );
 FUNC int        gr_nestDepth      ( Grammar gr );
 FUNC int        gr_sendTo         ( Grammar gr, File fl, SymbolTable st );
 
-FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir,  MemoryLifetime ml, File diagnostics, bool recursive );
+FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir,  Symbol abstractSymbol, MemoryLifetime ml, File diagnostics, bool recursive );
 
-static inline Grammar gr_augmented( Grammar original, InheritanceRelation ir,  MemoryLifetime ml, File diagnostics )
-	{ return gr_augmentedRecursive( original, ir, ml, diagnostics, true ); }
+static inline Grammar gr_augmented( Grammar original, InheritanceRelation ir,  Symbol abstractSymbol, MemoryLifetime ml, File diagnostics )
+	{ return gr_augmentedRecursive( original, ir, abstractSymbol, ml, diagnostics, true ); }
 
-static inline Grammar gr_augmentedShallow( Grammar original, InheritanceRelation ir,  MemoryLifetime ml, File diagnostics )
-	{ return gr_augmentedRecursive( original, ir, ml, diagnostics, false ); }
+static inline Grammar gr_augmentedShallow( Grammar original, InheritanceRelation ir,  Symbol abstractSymbol, MemoryLifetime ml, File diagnostics )
+	{ return gr_augmentedRecursive( original, ir, abstractSymbol, ml, diagnostics, false ); }
 
 typedef enum
 	{

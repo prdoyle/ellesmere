@@ -17,8 +17,8 @@ FUNC Automaton  ps_automaton ( Parser ps );
 FUNC bool       ps_expects ( Parser ps, Object ob ); // False if pushing ob would cause a parse error
 FUNC void       ps_push    ( Parser ps, Object ob );
 FUNC int        ps_depth   ( Parser ps );
-FUNC Production ps_handle  ( Parser ps, Object lookahead ); // OK, the "handle" is actually the symbols, not the production.  So sue me.
-FUNC Production ps_representativeHandle  ( Parser ps, Object lookahead ); // Inheritance sometimes makes it impossible to tell the handle until runtime.  This will return a production suitable for parsing, but not necessarily the actual one that will be used to reduce at runtime.
+FUNC Symbol     ps_handle  ( Parser ps, Object lookahead ); // OK, the "handle" is actually the tokens, not the production.  So sue me.
+FUNC Symbol     ps_representativeHandle  ( Parser ps, Object lookahead ); // Inheritance sometimes makes it impossible to tell the handle until runtime.  This will return a production suitable for parsing, but not necessarily the actual one that will be used to reduce at runtime.
 FUNC void       ps_popN    ( Parser ps, int count );
 FUNC void       ps_close   ( Parser ps ); // Can't use ps anymore after this
 

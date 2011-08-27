@@ -233,7 +233,7 @@ FUNC int cx_sendTo( Context cx, File fl )
 			sep = ", ";
 			}
 		}
-	charsSent += fl_write( fl, "}", cx );
+	charsSent += fl_write( fl, "}" );
 	return charsSent;
 	}
 

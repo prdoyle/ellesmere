@@ -107,6 +107,15 @@ static inline int ob_getIfIntField( Object ob, Symbol field, int defaultValue, O
 		return defaultValue;
 	}
 
+static inline Object ob_getFieldIfPresent( Object ob, Symbol field, Object defaultValue, ObjectHeap heap )
+	{
+	Object result = ob_getField( ob, field, heap );
+	if( result )
+		return result;
+	else
+		return defaultValue;
+	}
+
 typedef bool ( *EdgePredicate )( void *context, Object head, Symbol edgeSymbol, int edgeIndex, Object tail );
 typedef void ( *VertexProcedure )( void *context, Object vertex );
 

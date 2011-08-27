@@ -115,7 +115,7 @@ static int di_sendNTo( Digression di, int tokenLimit, File fl, ObjectHeap heap )
 		charsSent += ob_sendTo( oba_get( tb->tokens, i ), fl, heap );
 		}
 	if( ending )
-		charsSent += fl_write( fl, ending );
+		charsSent += fl_write( fl, "%s", ending );
 	return charsSent;
 	}
 
@@ -200,7 +200,7 @@ FUNC TokenBlock ts_skipBlock( TokenStream ts )
 	{
 	TokenBlock result = NULL;
 	Digression di = ts_digression( ts );
-	if( di )
+	if( 0 && di ) // TODO: Re-enable this
 		{
 		int i;
 		for( i = 0; !result && i < tba_count( di->tb->subBlocks ); i++ )

@@ -508,7 +508,7 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 			case SYM_TOKEN:
 				{
 				Symbol sy = ob_toSymbol( ob, heap );
-				fl_write( fl, "%s", sy_name( sy, heap->st ), sy_index( sy, heap->st ) );
+				fl_write( fl, "%s", sy_name( sy, heap->st ) ); //, sy_index( sy, heap->st ) );
 				break;
 				}
 			case SYM_FUNCTION:

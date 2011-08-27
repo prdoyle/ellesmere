@@ -40,8 +40,4 @@ typedef struct sy_struct *Symbol;
 typedef struct tb_struct *TokenBlock;
 typedef struct ts_struct *TokenStream;
 
-// Mark optimizations with this
-static inline int optional(char *format, ...)
-	{ return true; }
-
 #endif

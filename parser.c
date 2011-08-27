@@ -9,6 +9,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define ITEM_STATE_PREFIX "is"
+
 typedef BitVector ItemVector;   // BitVectors of item indexes
 typedef BitVector SymbolVector; // BitVectors of symbol side-table indexes
 
@@ -320,7 +322,7 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 		ItemVector itemsLeft = bv_new( itemCount, ml );
 
 		bv_copy( itemsLeft, curItemSet->items );
-		trace( traceFile, "  Expanding ItemSet_%d\n    stateNode: %s_%p\n         items left: ",
+		trace( traceFile, "  Expanding " ITEM_STATE_PREFIX "%d\n    stateNode: %s_%p\n         items left: ",
 			its_index( curItemSet, pg ), sy_name( ob_tag( curItemSet->stateNode, pg->heap ), st ), curItemSet->stateNode );
 		traceBVX( itemsLeft, traceFile, sendBitNumber, "i%d" );
 		trace( traceFile, "\n" );
@@ -371,7 +373,7 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 			nextItemSet = pg_findItemSet( pg, nextItems );
 			if( nextItemSet )
 				{
-				trace( traceFile, "      Found existing ItemSet_%d with items: ", its_index( nextItemSet, pg ) );
+				trace( traceFile, "      Found existing " ITEM_STATE_PREFIX "%d with items: ", its_index( nextItemSet, pg ) );
 				traceBVX( nextItems, traceFile, sendBitNumber, "i%d" );
 				trace( traceFile, "\n" );
 				}
@@ -380,7 +382,7 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 				// Use the nextItems bitvector we created, and allocate a new one for the next guy
 				nextItemSet = pg_createItemSet( pg, nextItems );
 				nextItems = bv_new( itemCount, ml );
-				trace( traceFile, "      Created ItemSet_%d\n", its_index( nextItemSet, pg ) );
+				trace( traceFile, "      Created " ITEM_STATE_PREFIX "%d\n", its_index( nextItemSet, pg ) );
 				}
 			ob_setField( curItemSet->stateNode, expected, nextItemSet->stateNode, pg->heap );
 			}
@@ -388,7 +390,7 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 			{
 			curItemSet = itst_element( pg->itemSets, i );
 			if( its_isExpanded( curItemSet ) )
-				trace( traceFile, "    ItemSet_%d already expanded\n", its_index( curItemSet, pg ) );
+				trace( traceFile, "    " ITEM_STATE_PREFIX "%d already expanded\n", its_index( curItemSet, pg ) );
 			else
 				break;
 			}
@@ -604,7 +606,7 @@ static void pg_reportConflict( ParserGenerator pg, ItemSet its, Item winner, Ite
 	// TODO: Report the symbol
 	va_list args;
 	va_start( args, format );
-	trace(  conflictLog, "Conflict in ItemSet_%d: ", its_index( its, pg ) );
+	trace(  conflictLog, "Conflict in " ITEM_STATE_PREFIX "%d: ", its_index( its, pg ) );
 	fl_vwrite( conflictLog, format, args );
 	trace(  conflictLog, "\n  Winner: " );
 	pn_sendItemTo( winner->pn, winner->dot, conflictLog, pg->gr, pg->st );
@@ -642,7 +644,7 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 	SymbolVector conflictingSymbols = bv_new( sst_count(pg->sst),   pg->generateTime );
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
 		{
-		trace( traceFile, "  ItemSet_%d:\n", i );
+		trace( traceFile, "  " ITEM_STATE_PREFIX "%d:\n", i );
 		ItemSet its = itst_element( pg->itemSets, i );
 		Object stateNode = its->stateNode;
 		bv_copy ( reduceItems, pg->rightmostItems );
@@ -677,6 +679,7 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 
 			// Filter out reduceSymbols covered by higher-priority items,
 			// and equal-priority items that override this reduce.
+			// In this loop, "continue" means to ignore the competitor.
 			//
 			int startItem = ( lastLowerItem == bv_END )? bv_firstBit( its->items ) : bv_nextBit( its->items, lastLowerItem );
 			for( k = startItem; k != bv_END; k = bv_nextBit( its->items, k ) )
@@ -709,9 +712,9 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 					trace( traceFile, "        No conflict\n" );
 					continue;
 					}
-				if( pn_conflictResolution( it->pn, pg->gr ) == CR_ABSTRACT )
+				if( pn_conflictResolution( competitor->pn, pg->gr ) == CR_ABSTRACT )
 					{
-					trace( traceFile, "        Reduce production is abstract -- favouring competitor\n" );
+					trace( traceFile, "        Competitor is abstract\n" );
 					continue;
 					}
 				int winningMargin = pn_nestDepth( competitor->pn, pg->gr ) - pn_nestDepth( it->pn, pg->gr );
@@ -728,7 +731,7 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 						{
 						if( both( it, competitor, CR_ARBITRARY_REDUCE, pg ) )
 							{
-							trace( traceFile, "        CR_ARBITRARY_REDUCE -- favouring competitor\n" );
+							trace( traceFile, "        CR_ARBITRARY_REDUCE -- ignoring competitor\n" );
 							}
 						else
 							{
@@ -762,9 +765,13 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 							}
 						}
 					}
+				else
+					{
+					trace( traceFile, "        Competitor has higher priority; removing lookaheads: " );
+					}
 
 				bv_minus( reduceSymbols, competitorSymbols );
-				trace( traceFile, "        Competitor has higher priority; removing lookaheads: " );
+				trace( traceFile, "        Removed lookaheads for i%d: ", j );
 				bv_sendFormattedTo( competitorSymbols, traceFile, sendSymBySSTIndex, pg );
 				trace( traceFile, "\n" );
 				}
@@ -777,7 +784,9 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 			for( k = bv_firstBit( reduceSymbols ); k != bv_END; k = bv_nextBit( reduceSymbols, k ) )
 				{
 				SymbolSideTableEntry reduceOn = sst_element( pg->sst, k );
-				ob_setField( stateNode, reduceOn->sy, ob_fromInt( pn_index( pn, gr ), heap ), heap );
+				Symbol pnSymbol = pn_symbol( pn, gr );
+				check( pnSymbol ); // TODO: Null symbol = abstract?  Perhaps I should have some default abstract production symbol?
+				ob_setField( stateNode, reduceOn->sy, oh_symbolToken( heap, pnSymbol ), heap );
 				}
 			}
 		}
@@ -1478,7 +1487,7 @@ static Stack getInheritingTags( Augmenter aug, Symbol tag, InheritanceRelation i
 	return aug->topDownStack;
 	}
 
-static void addAllProductionCombos( Grammar newGrammar, Production newProduction, Grammar oldGrammar, Production oldProduction, int tokenIndex, InheritanceRelation ir, File diagnostics, int recursionDepth )
+static void addAllProductionCombos( Grammar newGrammar, Production newProduction, Grammar oldGrammar, Production oldProduction, int tokenIndex, InheritanceRelation ir, Symbol abstractSymbol, File diagnostics, int recursionDepth )
 	{
 	SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
 	if( tokenIndex >= pn_length( oldProduction, oldGrammar ) )
@@ -1501,33 +1510,54 @@ static void addAllProductionCombos( Grammar newGrammar, Production newProduction
 			pn_name( oldProduction, tokenIndex, oldGrammar ),
 			curToken,
 			newGrammar );
-		addAllProductionCombos( newGrammar, newProduction, oldGrammar, oldProduction, tokenIndex+1, ir, diagnostics, recursionDepth+1 );
+		addAllProductionCombos( newGrammar, newProduction, oldGrammar, oldProduction, tokenIndex+1, ir, abstractSymbol, diagnostics, recursionDepth+1 );
 
 		SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
 		Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
 		Augmenter aug = aug_begin( NULL, ir, diagnostics );
-		Stack tags = getInheritingTags( aug, curToken, ir, INHERIT_DIRECTION );
+
+		Stack tags = getInheritingTags( aug, curToken, ir, SYM_SUBTAGS );
 		while( sk_depth( tags ) )
 			{
 			Object tagNode = sk_pop( tags );
 			Symbol tag = ob_getTokenField( tagNode, symSymbol, ir->nodeHeap );
 			if( tag != curToken )
 				{
-				Production dup = //pn_new( newGrammar, pn_lhs( newProduction, newGrammar ), pn_length( newProduction, newGrammar ) );
-				pn_copy( newGrammar, newProduction, newGrammar, pn_lhs( newProduction, newGrammar ), tokenIndex );
-				trace( diagnostics, "     %*s|%d dup %d:%d is '%s'\n", recursionDepth, "", pn_index( newProduction, newGrammar ), pn_index( dup, newGrammar ), tokenIndex, sy_name( tag, st ) );
+				Production dup = pn_copy( newGrammar, newProduction, newGrammar, pn_lhs( newProduction, newGrammar ), tokenIndex );
+				trace( diagnostics, "     %*s|%d dup %d:%d is subtag '%s'\n", recursionDepth, "", pn_index( newProduction, newGrammar ), pn_index( dup, newGrammar ), tokenIndex, sy_name( tag, st ) );
 				pn_appendWithName( dup,
 					pn_name  ( oldProduction, tokenIndex, oldGrammar ),
 					tag,
 					newGrammar );
-				addAllProductionCombos( newGrammar, dup, oldGrammar, oldProduction, tokenIndex+1, ir, diagnostics, recursionDepth+1 );
+				addAllProductionCombos( newGrammar, dup, oldGrammar, oldProduction, tokenIndex+1, ir, abstractSymbol, diagnostics, recursionDepth+1 );
 				}
 			}
+
+#if 0
+		tags = getInheritingTags( aug, curToken, ir, SYM_SUPERTAGS );
+		while( sk_depth( tags ) )
+			{
+			Object tagNode = sk_pop( tags );
+			Symbol tag = ob_getTokenField( tagNode, symSymbol, ir->nodeHeap );
+			if( tag != curToken )
+				{
+				Production dup = pn_copy( newGrammar, newProduction, newGrammar, pn_lhs( newProduction, newGrammar ), tokenIndex );
+				pn_setSymbol( dup, abstractSymbol, newGrammar );
+				trace( diagnostics, "     %*s|%d dup %d:%d is super '%s'\n", recursionDepth, "", pn_index( newProduction, newGrammar ), pn_index( dup, newGrammar ), tokenIndex, sy_name( tag, st ) );
+				pn_appendWithName( dup,
+					pn_name  ( oldProduction, tokenIndex, oldGrammar ),
+					tag,
+					newGrammar );
+				addAllProductionCombos( newGrammar, dup, oldGrammar, oldProduction, tokenIndex+1, ir, abstractSymbol, diagnostics, recursionDepth+1 );
+				}
+			}
+#endif
+
 		aug_end( aug );
 		}
 	}
 
-FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, MemoryLifetime ml, File diagnostics, bool recursive )
+FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Symbol abstractSymbol, MemoryLifetime ml, File diagnostics, bool recursive )
 	{
 	// TODO: Improve these # production estimates
 	// TODO: Move to grammar.c
@@ -1537,7 +1567,7 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Me
 		{
 		Grammar outer = gr_outer( original );
 		if( recursive )
-			outer = gr_augmentedRecursive( outer, ir, ml, diagnostics, true );
+			outer = gr_augmentedRecursive( outer, ir, abstractSymbol, ml, diagnostics, true );
 		result = gr_nested( outer, gr_numProductions( outer ), ml );
 		}
 	else
@@ -1548,7 +1578,7 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Me
 	SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
 	if( diagnostics )
 		{
-		trace( diagnostics, "Augmenting grammar {\n", original );
+		trace( diagnostics, "Augmenting grammar %p {\n", original );
 		gr_sendTo( original, diagnostics, st );
 		trace( diagnostics, "}\n" );
 		}
@@ -1566,16 +1596,12 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Me
 			trace( diagnostics, "\n" );
 			}
 		Production newProduction = pn_copy( original, pn, result, pn_lhs( pn, original ), 0 );
-		addAllProductionCombos( result, newProduction, original, pn, 0, ir, diagnostics, 0 );
+		addAllProductionCombos( result, newProduction, original, pn, 0, ir, abstractSymbol, diagnostics, 0 );
 
-		// Super+Subtags of the lhs
+		// Subtags of the lhs
 		Augmenter aug = aug_begin( NULL, ir, diagnostics );
+
 		Stack tags = getInheritingTags( aug, pn_lhs( pn, original ), ir, SYM_SUBTAGS );
-#if 0
-		Stack moreTags = getInheritingTags( aug, pn_lhs( pn, original ), ir, SYM_SUPERTAGS );
-		while( sk_depth( moreTags ) )
-			sk_push( tags, sk_pop( moreTags ) );
-#endif
 		while( sk_depth( tags ) )
 			{
 			Object tagNode = sk_pop( tags );
@@ -1584,9 +1610,10 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Me
 				{
 				trace( diagnostics, "    Now with lhs=%s\n", sy_name( tag, st ) );
 				newProduction = pn_copy( original, pn, result, tag, 0 );
-				addAllProductionCombos( result, newProduction, original, pn, 0, ir, diagnostics, 0 );
+				addAllProductionCombos( result, newProduction, original, pn, 0, ir, abstractSymbol, diagnostics, 0 );
 				}
 			}
+
 		aug_end( aug );
 		}
 
@@ -1762,7 +1789,7 @@ FUNC void ps_push( Parser ps, Object ob )
 			// Extended debug info
 			int i,j,k;
 			int charsSent = 0;
-			fl_write( stderr, "State:\n" );
+			fl_write( stderr, "\nState:\n" );
 			Symbol isn = sy_byIndex( SYM_ITEM_SET_NUM, pg->st );
 			SymbolVector  follow = bv_new( sst_count(pg->sst),  ml_undecided() );
 			ItemVector curItems  = bv_new( gr_numItems(pg->gr), ml_undecided() );
@@ -1778,8 +1805,10 @@ FUNC void ps_push( Parser ps, Object ob )
 					{
 					Item it = ita_element( pg->items, j );
 					// Figure out what stuff to print
+#if 0
 					if( !bv_isSet( curItems, j ) && !firstIteration )
 						continue;
+#endif
 					switch( it->dot )
 						{
 						case 0:
@@ -1831,35 +1860,20 @@ FUNC int ps_depth( Parser ps )
 	return sk_depth( ps->stateStack );
 	}
 
-FUNC Production ps_handle( Parser ps, Object lookahead )
+FUNC Symbol ps_handle( Parser ps, Object lookahead )
 	{
 	ObjectHeap oh = ps->au->stateHeap;
 	Object nextState = ps_nextState( ps, lookahead );
-	if( ob_isInt( nextState, oh ) )
-		{
-		int index = ob_toInt( nextState, oh );
-		if (index < 0)
-			return NULL;
-		else
-			return gr_production( ps->au->gr, index );
-		}
+	if( nextState && ob_isToken( nextState, oh ) )
+		return ob_toSymbol( nextState, oh );
 	else
 		return NULL;
 	}
 
-FUNC Production ps_representativeHandle( Parser ps, Object lookahead )
+FUNC Symbol ps_representativeHandle( Parser ps, Object lookahead )
 	{
-	ObjectHeap oh = ps->au->stateHeap;
-	Object nextState = ps_nextState( ps, lookahead );
-	if( ob_isInt( nextState, oh ) )
-		{
-		int index = ob_toInt( nextState, oh );
-		if (index < 0)
-			index = -index;
-		return gr_production( ps->au->gr, index );
-		}
-	else
-		return NULL;
+	// TODO: Implement this properly or delete it
+	return ps_handle( ps, lookahead );
 	}
 
 FUNC void ps_popN( Parser ps, int count )
@@ -1882,12 +1896,12 @@ FUNC int ps_sendTo( Parser ps, File fl, ObjectHeap heap, SymbolTable st )
 	//sk_sendTo( ps->stateStack, fl, heap );
 #ifdef ITEM_SET_NUMS
 	int i;
-	char *sep = "";
+	char *sep = ITEM_STATE_PREFIX;
 	Symbol isn = sy_byIndex( SYM_ITEM_SET_NUM, st );
 	for( i=0; i < sk_depth( ps->stateStack ); i++ )
 		{
 		charsSent += fl_write( fl, "%s%d", sep, ps_itemSetNum(ps, i, isn) );
-		sep = " ";
+		sep = " " ITEM_STATE_PREFIX;
 		}
 #endif
 	return charsSent;

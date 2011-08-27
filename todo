@@ -1,5 +1,5 @@
 NEXT:
-- Gotta add production symbol for "abstract" productions
+- I think I want to do "def foo as bar" as a digression, and "def foo as { bar }" as a call
 - Hmm, the LHS trick may not work.  What happens at run time when I'm expecting a BOOLEAN,
   and a production that claims to return a BOOLEAN actually returns TRUE?  Then I get a parse error.
 - I may need to do subtags on the LHS too, to capture the case of:
@@ -56,3 +56,7 @@ DONE
 - The production symbols don't seem to be copied properly when augmenting a grammar
   - Fixed
 - I was editing an outer grammer.  Whoopsie
+- It's confusing (but not fatal) that "1 <= 24" could be reduced by "Handle 187: FALSE <- INT@left <= INT@right  << PN_0xae80b8_185 >>".
+  This production inherited its symbol from BOOLEAN <- INT <= INT, which should be reported as the handle, but at least we always run the right action.
+  Likewise, INT <- { TRUE } is a confusing production to report when the real one is ANY <- { ANY }.  (This one also has other problems.  It should be covariant, ie. X <- {X} for any X.)
+- Gotta add production symbol for "abstract" productions
