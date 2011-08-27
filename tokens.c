@@ -198,9 +198,11 @@ enum { DEFAULT_TOKEN_BLOCK_LENGTH=29 };
 
 FUNC TokenBlock ts_skipBlock( TokenStream ts )
 	{
+	return NULL;  // I think I need to treat this more formally, rather than as just a handy caching operation
+#if 0
 	TokenBlock result = NULL;
 	Digression di = ts_digression( ts );
-	if( 0 && di ) // TODO: Re-enable this
+	if( di )
 		{
 		int i;
 		for( i = 0; !result && i < tba_count( di->tb->subBlocks ); i++ )
@@ -209,12 +211,13 @@ FUNC TokenBlock ts_skipBlock( TokenStream ts )
 			if( candidate->startIndex == di->index )
 				result = candidate;
 			}
-		if( result && optional( "Use existing TokenBlock %p of length %d", result, tb_length( result ) ) )
+		if( result && optional( "Use existing TOKEN_BLOCK_%p of length %d", result, tb_length( result ) ) )
 			di->index += tb_length( result ) - 1; // why -1?  Not sure.  Seems gross but it works out better
 		else
 			result = NULL;
 		}
 	return result;
+#endif
 	}
 
 FUNC TokenBlock ts_beginBlock( TokenStream ts )

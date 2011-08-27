@@ -80,4 +80,4 @@ as
 optimize!
 
 #fibs( 12 )
-fibs( 24 )
+fibs( 2 )

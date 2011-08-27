@@ -891,8 +891,13 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl )
 	TokenBlock tb = ts_skipBlock( tokenStream );
 	if( !tb )
 		{
-		trace( programTrace, "  Begin recording token block\n" );
 		tb = ts_beginBlock( tokenStream );
+		if( interpreterTrace )
+			{
+			trace( programTrace, "  Begin recording token block\n" );
+			tb_sendTo( tb, interpreterTrace, heap );
+			trace( interpreterTrace, "\n" );
+			}
 		nopAction( handle, gl );
 
 		mainParsingLoop( tb, recordingBindings );

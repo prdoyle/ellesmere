@@ -43,7 +43,7 @@ FUNC int optional(char *format, ...)
 		}
 	if( !optLimitStr )
 		return true;
-	if( optCount > optLimit )
+	if( optCount >= optLimit ) // haven't incremented it yet, so this is actually checking the previous opt's number
 		return false;
 	optCount++;
 	va_list args;
