@@ -10,32 +10,6 @@
 #include <stdarg.h>
 #include <string.h>
 
-static SymbolTable st;
-static TokenStream tokenStream;
-static Stack       stack;
-static Context     curContext;
-static ObjectHeap  heap;
-static Parser      ps;
-static InheritanceRelation ir;
-FILE *programTrace;            // Follow user program step-by-step
-FILE *interpreterDiagnostics;  // High-level messages describing unusual events in the interpreter
-FILE *interpreterTrace;        // Follow interpreter step-by-step
-FILE *conflictLog;
-FILE *parserGenTrace;
-
-static Object productionMap;
-
-static void addNewestProductionsToMap( Grammar gr )
-	{
-	int i;
-	for( i = gr_numOuterProductions( gr ); i < gr_numProductions( gr ); i++ )
-		{
-		Production pn = gr_production( gr, i );
-		if( pn_symbol( pn, gr ) )
-			ob_setIntField( productionMap, pn_symbol( pn, gr ), i, heap );
-		}
-	}
-
 typedef struct cf_struct *CallFrame;
 struct cf_struct
 	{
@@ -53,28 +27,61 @@ typedef struct cs_struct *CallStack;
 	#define cs_new( size, ml ) cs_newAnnotated( size, ml, __FILE__, __LINE__ )
 #endif
 
-static CallStack callStack;
-static int callStackDepth = 0;
-
 #undef CALL_STACK
+
+typedef struct th_struct *Thread;
+
+struct th_struct
+	{
+	SymbolTable          st;
+	TokenStream          tokenStream;
+	Stack                stack;
+	Context              curContext;
+	ObjectHeap           heap;
+	Parser               ps;
+	InheritanceRelation  ir;
+	Object               productionMap;
+	Object               executionBindings;
+	Object               recordingBindings;
+	Object               concretifications;
+	CallStack            callStack;
+	int                  callStackDepth;
+
+	FILE                *programTrace;            // Follow user program step-by-step
+	FILE                *interpreterDiagnostics;  // High-level messages describing unusual events in the interpreter
+	FILE                *interpreterTrace;        // Follow interpreter step-by-step
+	FILE                *conflictLog;
+	FILE                *parserGenTrace;
+	} theThread = {0};
+
+static void addNewestProductionsToMap( Grammar gr, Thread th )
+	{
+	int i;
+	for( i = gr_numOuterProductions( gr ); i < gr_numProductions( gr ); i++ )
+		{
+		Production pn = gr_production( gr, i );
+		if( pn_symbol( pn, gr ) )
+			ob_setIntField( th->productionMap, pn_symbol( pn, gr ), i, th->heap );
+		}
+	}
 
 static void cf_push()
 	{
 #ifdef CALL_STACK
-	assert( cs_count( callStack ) >= 1 );
-	CallFrame cf = cs_element( callStack, callStackDepth );
+	assert( cs_count( th->callStack ) >= 1 );
+	CallFrame cf = cs_element( th->callStack, th->callStackDepth );
 	cf->ps = ps;
 	cf->stack = stack;
-	callStackDepth += 1;
-	if( callStackDepth >= cs_count(callStack) )
+	th->callStackDepth += 1;
+	if( th->callStackDepth >= cs_count(th->callStack) )
 		{
-		trace( interpreterTrace, "Growing call stack to depth=%d\n", callStackDepth );
-		cf = cs_nextElement( callStack );
+		trace( interpreterTrace, "Growing call stack to depth=%d\n", th->callStackDepth );
+		cf = cs_nextElement( th->callStack );
 		cf->stack = sk_new( ml_indefinite() );
 		}
 	else
 		{
-		cf = cs_element( callStack, callStackDepth );
+		cf = cs_element( th->callStack, th->callStackDepth );
 		sk_popN( cf->stack, sk_depth( cf->stack ) );
 		}
 	ps = cf->ps = ps_new( ps_automaton(ps), ml_indefinite(), parserGenTrace );
@@ -85,15 +92,15 @@ static void cf_push()
 static void cf_pop()
 	{
 #ifdef CALL_STACK
-	assert( callStackDepth >= 1 );
-	CallFrame cf = cs_element( callStack, --callStackDepth );
+	assert( th->callStackDepth >= 1 );
+	CallFrame cf = cs_element( th->callStack, --th->callStackDepth );
 	ps_close( ps );
 	ps    = cf->ps;
 	stack = cf->stack;
 #endif
 	}
 
-typedef void (*NativeAction)( Production handle, GrammarLine gl );
+typedef void (*NativeAction)( Production handle, GrammarLine gl, Thread th );
 
 struct fn_struct
 	{
@@ -107,124 +114,120 @@ struct fn_struct
 	} body;
 	};
 
-static Object executionBindings;
-static Object recordingBindings;
-static Object concretifications;
-
-static void dumpStack0( File fl ) __attribute__((noinline));
-static void dumpStack0( File fl )
+static void dumpStack0( File fl, Thread th ) __attribute__((noinline));
+static void dumpStack0( File fl, Thread th )
 	{
 	trace( fl, "    -- Stack: " );
-	sk_sendNTo( stack, 5+ps_reduceContextLength( ps, heap, st ), fl, heap );
+	sk_sendNTo( th->stack, 5+ps_reduceContextLength( th->ps, th->heap, th->st ), fl, th->heap );
 	int i;
-	for( i = callStackDepth-1; i >= 0; i-- )
+	for( i = th->callStackDepth-1; i >= 0; i-- )
 		{
-		CallFrame cf = cs_element( callStack, i );
+		CallFrame cf = cs_element( th->callStack, i );
 		trace( fl, "\n%*s", 14, "" );
-		sk_sendNTo( cf->stack, 5+ps_reduceContextLength( cf->ps, heap, st ), fl, heap );
+		sk_sendNTo( cf->stack, 5+ps_reduceContextLength( cf->ps, th->heap, th->st ), fl, th->heap );
 		}
 	trace( fl, "\n" );
 	}
 
-static inline void dumpStack( File fl )
+static inline void dumpStack( File fl, Thread th )
 	{
 	if( fl )
-		dumpStack0( fl );
+		dumpStack0( fl, th );
 	}
 
-static void dumpParserState0( File fl ) __attribute__((noinline));
-static void dumpParserState0( File fl )
+static void dumpParserState0( File fl, Thread th ) __attribute__((noinline));
+static void dumpParserState0( File fl, Thread th )
 	{
 	trace( fl, "    -- Parser state: " );
-	ps_sendTo( ps, fl, heap, st );
+	ps_sendTo( th->ps, fl, th->heap, th->st );
 	int i;
-	for( i = callStackDepth-1; i >= 0; i-- )
+	for( i = th->callStackDepth-1; i >= 0; i-- )
 		{
-		CallFrame cf = cs_element( callStack, i );
+		CallFrame cf = cs_element( th->callStack, i );
 		trace( fl, "\n%*s", 21, "" );
-		ps_sendTo( cf->ps, fl, heap, st );
+		ps_sendTo( cf->ps, fl, th->heap, th->st );
 		}
 	trace( fl, "\n" );
 	}
 
-static inline void dumpParserState( File fl )
+static inline void dumpParserState( File fl, Thread th )
 	{
 	if( fl )
-		dumpParserState0( fl );
+		dumpParserState0( fl, th );
 	}
 
-static void dumpTokenStream0( File fl ) __attribute__((noinline));
-static void dumpTokenStream0( File fl )
+static void dumpTokenStream0( File fl, Thread th ) __attribute__((noinline));
+static void dumpTokenStream0( File fl, Thread th )
 	{
 	trace( fl, "    -- Token stream: " );
-	ts_sendTo( tokenStream, fl );
+	ts_sendTo( th->tokenStream, fl );
 	trace( fl, "\n" );
 	}
 
-static inline void dumpTokenStream( File fl )
+static inline void dumpTokenStream( File fl, Thread th )
 	{
 	if( fl )
-		dumpTokenStream0( fl );
+		dumpTokenStream0( fl, th );
 	}
 
-static void dumpStuff( File fl )
+static void dumpStuff( File fl, Thread th )
 	{
-	dumpStack( fl );
-	dumpParserState( fl );
-	dumpTokenStream( fl );
+	dumpStack( fl, th );
+	dumpParserState( fl, th );
+	dumpTokenStream( fl, th );
 	}
 
-static void push( Object ob )
+static void push( Object ob, Thread th )
 	{
-	trace( interpreterTrace, "push(" );
-	ob_sendTo( ob, interpreterTrace, heap );
-	trace( interpreterTrace, ")\n" );
-	sk_push( stack, ob );
-	ps_push( ps, ob );
-	dumpStuff( interpreterTrace );
+	trace( th->interpreterTrace, "push(" );
+	ob_sendTo( ob, th->interpreterTrace, th->heap );
+	trace( th->interpreterTrace, ")\n" );
+	sk_push( th->stack, ob );
+	ps_push( th->ps, ob );
+	dumpStuff( th->interpreterTrace, th );
 	}
 
-static Object pop()
+static Object pop( Thread th )
 	{
-	Object result = sk_pop( stack );
-	ps_popN( ps, 1 );
-	dumpStuff( interpreterTrace );
+	Object result = sk_pop( th->stack );
+	ps_popN( th->ps, 1 );
+	dumpStuff( th->interpreterTrace, th );
 	return result;
 	}
 
-static void popN( int n )
+static void popN( int n, Thread th )
 	{
-	sk_popN( stack, n );
-	ps_popN( ps, n );
-	dumpStuff( interpreterTrace );
+	sk_popN( th->stack, n );
+	ps_popN( th->ps, n );
+	dumpStuff( th->interpreterTrace, th );
 	}
 
-static int popInt()
+static int popInt( Thread th )
 	{
-	Object popped = pop();
-	assert( ob_isInt( popped, heap ) );
-	return ob_toInt( popped, heap );
+	Object popped = pop( th );
+	assert( ob_isInt( popped, th->heap ) );
+	return ob_toInt( popped, th->heap );
 	}
 
-static void pushToken( int symbolIndex )
+static void pushToken( int symbolIndex, Thread th )
 	{
-	push( oh_symbolToken( heap, sy_byIndex( symbolIndex, st ) ) );
+	push( oh_symbolToken( th->heap, sy_byIndex( symbolIndex, th->st ) ), th );
 	}
 
-static Symbol popToken()
+static Symbol popToken( Thread th )
 	{
-	Object popped = pop();
-	assert( ob_isToken( popped, heap ) );
-	return ob_toSymbol( popped, heap );
+	Object popped = pop( th );
+	assert( ob_isToken( popped, th->heap ) );
+	return ob_toSymbol( popped, th->heap );
 	}
 
-static void closeTokenStreamsAsNecessary()
+static void closeTokenStreamsAsNecessary( Thread th )
 	{
-	while( !ts_current( tokenStream ) && ts_curBlock( tokenStream ) )
+	while( !ts_current( th->tokenStream ) && ts_curBlock( th->tokenStream ) )
 		{
-		ts_pop( tokenStream );
-		cx_restore( curContext );
-		trace( programTrace, "  Returned to TokenBlock %p\n", ts_curBlock( tokenStream ) );
+		ts_pop( th->tokenStream );
+		cx_restore( th->curContext );
+		trace( th->programTrace, "  Returned to TokenBlock %p\n", ts_curBlock( th->tokenStream ) );
 		}
 	}
 
@@ -239,312 +242,280 @@ struct gl_struct
 	ConflictResolutions cr;
 	};
 	 
-static void nopAction( Production handle, GrammarLine gl )
+static void nopAction( Production handle, GrammarLine gl, Thread th )
 	{
-	Grammar gr = ps_grammar( ps );
-	popN( pn_length( handle, gr ) );
-	push( oh_symbolToken( heap, pn_lhs( handle, gr ) ) );
+	Grammar gr = ps_grammar( th->ps );
+	popN( pn_length( handle, gr ), th );
+	push( oh_symbolToken( th->heap, pn_lhs( handle, gr ) ), th );
 	}
 
-static void passThrough( Production handle, GrammarLine gl )
+static void passThrough( Production handle, GrammarLine gl, Thread th )
 	{
-	Grammar gr = ps_grammar( ps );
+	Grammar gr = ps_grammar( th->ps );
 	int depth = gl->response.parm1;
-	Object result = sk_item( stack, depth );
-	popN( pn_length( handle, gr ) );
-	push( result );
+	Object result = sk_item( th->stack, depth );
+	popN( pn_length( handle, gr ), th );
+	push( result, th );
 	}
 
-static void addAction( Production handle, GrammarLine gl )
+static void addAction( Production handle, GrammarLine gl, Thread th )
 	{
-	popToken();
-	int right = popInt();
-	int left = popInt();
-	push( ob_fromInt( left + right, heap ) );
+	popToken( th );
+	int right = popInt( th );
+	int left = popInt( th );
+	push( ob_fromInt( left + right, th->heap ), th );
 	}
 
-static void subAction( Production handle, GrammarLine gl )
+static void subAction( Production handle, GrammarLine gl, Thread th )
 	{
-	popToken();
-	int right = popInt();
+	popToken( th );
+	int right = popInt( th );
 	int left;
 	if( gl->response.parm1 == 2 )
-		left = popInt();
+		left = popInt( th );
 	else
 		left = 0;
-	push( ob_fromInt( left - right, heap ) );
+	push( ob_fromInt( left - right, th->heap ), th );
 	}
 
-static void mulAction( Production handle, GrammarLine gl )
+static void mulAction( Production handle, GrammarLine gl, Thread th )
 	{
-	popToken();
-	int right = popInt();
-	int left = popInt();
-	push( ob_fromInt( left * right, heap ) );
+	popToken( th );
+	int right = popInt( th );
+	int left = popInt( th );
+	push( ob_fromInt( left * right, th->heap ), th );
 	}
 
-static void divAction( Production handle, GrammarLine gl )
+static void divAction( Production handle, GrammarLine gl, Thread th )
 	{
-	popToken();
-	int right = popInt();
-	int left = popInt();
-	push( ob_fromInt( left / right, heap ) );
+	popToken( th );
+	int right = popInt( th );
+	int left = popInt( th );
+	push( ob_fromInt( left / right, th->heap ), th );
 	}
 
-static void printAction( Production handle, GrammarLine gl )
+static void printAction( Production handle, GrammarLine gl, Thread th )
 	{
 	int depth = gl->response.parm1;
-	ob_sendTo( sk_item( stack, depth ), stdout, heap );
+	ob_sendTo( sk_item( th->stack, depth ), stdout, th->heap );
 	printf("\n");
-	nopAction( handle, gl );
+	nopAction( handle, gl, th );
 	}
 
-#if 0
-static Symbol _wrappeeField = NULL;
+static void recordTokenBlockAction( Production handle, GrammarLine gl, Thread th );
 
-static Symbol wrappeeField()
-	{
-	if( !_wrappeeField )
-		_wrappeeField = sy_byName( ":", st );
-	return _wrappeeField;
-	}
-
-static Object wrap( Object wrappee, Production handle )
-	{
-	Symbol tag = pn_lhs( handle, ps_grammar(ps) );
-	Object result = ob_create( tag, heap );
-	ob_setField( result, wrappeeField(), wrappee, heap );
-	return result;
-	}
-
-static Object unwrap( Object wrapper )
-	{
-	return ob_getField( wrapper, wrappeeField(), heap );
-	}
-
-static void unwrapAction( Production handle, GrammarLine gl ) 
-	{
-	Object wrapped = sk_item( stack, gl->response.parm1 );
-	popN( pn_length( handle, ps_grammar(ps) ) );
-	push( unwrap( wrapped ) );
-	}
-
-#endif
-
-static void recordTokenBlockAction( Production handle, GrammarLine gl );
-
-static void stopRecordingTokenBlockAction( Production handle, GrammarLine gl )
+static void stopRecordingTokenBlockAction( Production handle, GrammarLine gl, Thread th )
 	{
 	assert(0); // Never actually gets called.  It's a kind of null terminator.
 	}
 
-static void parseTreeAction( Production handle, GrammarLine gl )
+static void parseTreeAction( Production handle, GrammarLine gl, Thread th )
 	{
-	Grammar gr = ps_grammar( ps );
+	Grammar gr = ps_grammar( th->ps );
 	Symbol lhs = pn_lhs( handle, gr );
-	Object result = ob_create( lhs, heap );
+	Object result = ob_create( lhs, th->heap );
 	int i;
 	for( i = pn_length(handle, gr) - 1; i >= 0; i-- )
 		{
 		Symbol field = pn_name( handle, i, gr );
 		if( !field )
 			field = pn_token( handle, i, gr );
-		Object value = pop();
-		ob_setField( result, field, value, heap );
+		Object value = pop( th );
+		ob_setField( result, field, value, th->heap );
 		}
-	push( result );
+	push( result, th );
 	}
 
-static void addProductionAction( Production handle, GrammarLine gl )
+static void addProductionAction( Production handle, GrammarLine gl, Thread th )
 	{
-	parseTreeAction( handle, gl );
-	Object production = sk_top( stack );
-	Symbol sym_result = sy_byName( "result", st );
-	Symbol sym_parms  = sy_byName( "parms",  st );
-	Symbol sym_next   = sy_byName( "next",   st );
-	Symbol sym_tag    = sy_byName( "tag",    st );
-	Symbol sym_name   = sy_byName( "name",   st );
-	Symbol sym_abstract = sy_byName( "ABSTRACT_PRODUCTION", st );
+	parseTreeAction( handle, gl, th );
+	Object production = sk_top( th->stack );
+	Symbol sym_result = sy_byName( "result", th->st );
+	Symbol sym_parms  = sy_byName( "parms",  th->st );
+	Symbol sym_next   = sy_byName( "next",   th->st );
+	Symbol sym_tag    = sy_byName( "tag",    th->st );
+	Symbol sym_name   = sy_byName( "name",   th->st );
+	Symbol sym_abstract = sy_byName( "ABSTRACT_PRODUCTION", th->st );
 
 	// Define the nested grammar with this extra production
-	Grammar gr = gr_nested( ps_grammar(ps), 1, ml_indefinite() );
-	Production pn = pn_new( gr, ob_getTokenField( production, sym_result, heap ), 3 );
+	Grammar gr = gr_nested( ps_grammar(th->ps), 1, ml_indefinite() );
+	Production pn = pn_new( gr, ob_getTokenField( production, sym_result, th->heap ), 3 );
 	pn_setConflictResolution( pn, gl->response.parm1, gr );
-	Symbol pnSymbol = pn_autoSymbol( pn, st, gr );
-	ob_setTokenField( production, sy_byName( "productionSymbol", st ), pnSymbol, heap );
+	Symbol pnSymbol = pn_autoSymbol( pn, th->st, gr );
+	ob_setTokenField( production, sy_byName( "productionSymbol", th->st ), pnSymbol, th->heap );
 
 	Object parm;
 	for(
-		parm = ob_getField( production, sym_parms, heap);
-		ob_getField( parm, sym_tag, heap );
-		parm = ob_getField( parm, sym_next, heap ) )
+		parm = ob_getField( production, sym_parms, th->heap);
+		ob_getField( parm, sym_tag, th->heap );
+		parm = ob_getField( parm, sym_next, th->heap ) )
 		{
-		Symbol tag  = ob_getTokenField( parm, sym_tag,  heap );
-		if( ob_getField( parm, sym_name, heap ) )
-			pn_appendWithName( pn, ob_getTokenField( parm, sym_name, heap ), tag, gr );
+		Symbol tag  = ob_getTokenField( parm, sym_tag,  th->heap );
+		if( ob_getField( parm, sym_name, th->heap ) )
+			pn_appendWithName( pn, ob_getTokenField( parm, sym_name, th->heap ), tag, gr );
 		else
 			pn_append( pn, tag, gr );
 		}
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
-	gr = gr_augmentedShallow( gr, ir, sym_abstract, ml_indefinite(), parserGenTrace );
-	addNewestProductionsToMap( gr );
-	ps_close( ps );
-	Automaton au = au_new( gr, st, ir, ml_indefinite(), conflictLog, parserGenTrace );
-	ps = ps_new( au, ml_indefinite(), parserGenTrace );
-	trace( interpreterDiagnostics, "    NEW PARSER\n" );
+	gr = gr_augmentedShallow( gr, th->ir, sym_abstract, ml_indefinite(), th->parserGenTrace );
+	addNewestProductionsToMap( gr, th );
+	ps_close( th->ps );
+	Automaton au = au_new( gr, th->st, th->ir, ml_indefinite(), th->conflictLog, th->parserGenTrace );
+	th->ps = ps_new( au, ml_indefinite(), th->parserGenTrace );
+	trace( th->interpreterDiagnostics, "    NEW PARSER\n" );
 
 	// Prime the parser state with the current stack contents
 	int i;
-	for( i = sk_depth(stack) - 1; i >= 0; i-- )
-		ps_push( ps, sk_item( stack, i ) );
-	dumpParserState( interpreterTrace );
+	for( i = sk_depth(th->stack) - 1; i >= 0; i-- )
+		ps_push( th->ps, sk_item( th->stack, i ) );
+	dumpParserState( th->interpreterTrace, th );
 
 	// Build a context with a symbol for each named parameter
-	cx_save( curContext );
+	cx_save( th->curContext );
 	for( i = 0; i < pn_length( pn, gr ); i++ )
 		{
 		Symbol name  = pn_name( pn, i, gr );
 		Symbol tag   = pn_token( pn, i, gr );
 		if( name )
 			{
-			trace( interpreterTrace, "    -- bound %s to token %s\n", sy_name( name, st ), sy_name( tag, st ) );
-			sy_setValue( name, oh_symbolToken( heap, tag ), curContext );
+			trace( th->interpreterTrace, "    -- bound %s to token %s\n", sy_name( name, th->st ), sy_name( tag, th->st ) );
+			sy_setValue( name, oh_symbolToken( th->heap, tag ), th->curContext );
 			}
 		}
 
-	if( interpreterTrace )
+	if( th->interpreterTrace )
 		{
-		trace( interpreterTrace, "  New production " );
-		pn_sendTo( pn, interpreterTrace, gr, st );
-		trace( interpreterTrace, "\n" );
+		trace( th->interpreterTrace, "  New production " );
+		pn_sendTo( pn, th->interpreterTrace, gr, th->st );
+		trace( th->interpreterTrace, "\n" );
 		}
 	}
 
-static void defAction( Production handle, GrammarLine gl )
+static void defAction( Production handle, GrammarLine gl, Thread th )
 	{
-	TokenBlock block = ob_toTokenBlock( pop(), heap );
-	popToken(); // "as" keyword
-	Object production = pop();
-	popToken(); // "def" keyword
-	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
+	TokenBlock block = ob_toTokenBlock( pop( th ), th->heap );
+	popToken( th ); // "as" keyword
+	Object production = pop( th );
+	popToken( th ); // "def" keyword
+	push( oh_symbolToken( th->heap, pn_lhs( handle, ps_grammar(th->ps) ) ), th );
 
 	// Pop the context built for the def's production
-	cx_restore( curContext );
+	cx_restore( th->curContext );
 
 	// Store the body from the definition
-	Symbol pnSymbol = ob_getTokenField( production, sy_byName( "productionSymbol", st ), heap );
-	trace( programTrace, "  Defining production %s\n", sy_name( pnSymbol, st ) );
+	Symbol pnSymbol = ob_getTokenField( production, sy_byName( "productionSymbol", th->st ), th->heap );
+	trace( th->programTrace, "  Defining production %s\n", sy_name( pnSymbol, th->st ) );
 	Function fn = (Function)ml_alloc( ml_indefinite(), sizeof(*fn) );
 	fn->kind       = FN_TOKEN_BLOCK;
 	fn->body.tb    = block;
-	ob_setFunctionField( executionBindings, pnSymbol, fn, heap );
+	ob_setFunctionField( th->executionBindings, pnSymbol, fn, th->heap );
 	}
 
-static void returnAction( Production handle, GrammarLine gl )
+static void returnAction( Production handle, GrammarLine gl, Thread th )
 	{
-	Grammar gr = ps_grammar( ps );
+	Grammar gr = ps_grammar( th->ps );
 	int depth = gl->response.parm1;
-	Object result = sk_item( stack, depth );
-	popN( pn_length( handle, gr ) );
-	ts_pop( tokenStream );
-	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
-	cx_restore( curContext );
-	cf_pop();
-	trace( programTrace, "  Returned to TokenBlock %p\n", ts_curBlock( tokenStream ) );
-	push( result );
+	Object result = sk_item( th->stack, depth );
+	popN( pn_length( handle, gr ), th );
+	ts_pop( th->tokenStream );
+	push( oh_symbolToken( th->heap, pn_lhs( handle, ps_grammar(th->ps) ) ), th );
+	cx_restore( th->curContext );
+	cf_pop( th );
+	trace( th->programTrace, "  Returned to TokenBlock %p\n", ts_curBlock( th->tokenStream ) );
+	push( result, th );
 	}
 
-static void nonzeroAction( Production handle, GrammarLine gl )
+static void nonzeroAction( Production handle, GrammarLine gl, Thread th )
 	{
-	popToken();
-	int value = popInt();
+	popToken( th );
+	int value = popInt( th );
 	if( value )
-		pushToken( SYM_TRUE );
+		pushToken( SYM_TRUE, th );
 	else
-		pushToken( SYM_FALSE );
+		pushToken( SYM_FALSE, th );
 	}
 
-static void leAction( Production handle, GrammarLine gl )
+static void leAction( Production handle, GrammarLine gl, Thread th )
 	{
-	popToken();
-	int right = popInt();
-	int left = popInt();
+	popToken( th );
+	int right = popInt( th );
+	int left = popInt( th );
 	if( left <= right )
-		pushToken( SYM_TRUE );
+		pushToken( SYM_TRUE, th );
 	else
-		pushToken( SYM_FALSE );
+		pushToken( SYM_FALSE, th );
 	}
 
-static void setAction( Production handle, GrammarLine gl )
+static void setAction( Production handle, GrammarLine gl, Thread th )
 	{
-	popToken();
-	Symbol name = popToken();
-	Object rhs = pop();
-	sy_setValue( name, rhs, curContext );
-	push( oh_symbolToken( heap, pn_lhs( handle, ps_grammar(ps) ) ) );
+	popToken( th );
+	Symbol name = popToken( th );
+	Object rhs = pop( th );
+	sy_setValue( name, rhs, th->curContext );
+	push( oh_symbolToken( th->heap, pn_lhs( handle, ps_grammar(th->ps) ) ), th );
 	}
 
-static Object recordified( Object ob )
+static Object recordified( Object ob, Thread th )
 	{
 	MemoryLifetime ml = ml_begin( 1000, ml_indefinite() );
-	BitVector fieldIDs = bv_new( st_count(st), ml );
-	ob_getFieldSymbols( ob, fieldIDs, heap );
+	BitVector fieldIDs = bv_new( st_count(th->st), ml );
+	ob_getFieldSymbols( ob, fieldIDs, th->heap );
 
 	Record rd = rd_new( fieldIDs, ml_indefinite() );
 
 	char buf[40];
-	sprintf( buf, "BINDINGS_%d", st_count( st ) );
-	Symbol tag = sy_byName( buf, st );
-	sy_setInstanceShape( tag, rd, st );
+	sprintf( buf, "BINDINGS_%d", st_count( th->st ) );
+	Symbol tag = sy_byName( buf, th->st );
+	sy_setInstanceShape( tag, rd, th->st );
 
-	Object result = ob_create( tag, heap );
+	Object result = ob_create( tag, th->heap );
 	int fieldID;
 	for( fieldID = bv_firstBit( fieldIDs ); fieldID != bv_END; fieldID = bv_nextBit( fieldIDs, fieldID ) )
 		{
-		Symbol field = sy_byIndex( fieldID, st );
-		ob_setField( result, field, ob_getField( ob, field, heap ), heap );
+		Symbol field = sy_byIndex( fieldID, th->st );
+		ob_setField( result, field, ob_getField( ob, field, th->heap ), th->heap );
 		}
 
 	ml_end( ml );
 	return result;
 	}
 
-static void optimizeAction( Production handle, GrammarLine gl )
+static void optimizeAction( Production handle, GrammarLine gl, Thread th )
 	{
-	executionBindings = recordified( executionBindings );
+	th->executionBindings = recordified( th->executionBindings, th );
 	if( 0 )
 		{
-		Symbol tag = ob_tag( executionBindings, heap );
-		printf( "optimized executionBindings tag is %s, shape %p\n", sy_name( tag, st ), sy_instanceShape( tag, st ) );
-		rd_sendTo( sy_instanceShape( tag, st ), stdout, st );
+		Symbol tag = ob_tag( th->executionBindings, th->heap );
+		printf( "optimized executionBindings tag is %s, shape %p\n", sy_name( tag, th->st ), sy_instanceShape( tag, th->st ) );
+		rd_sendTo( sy_instanceShape( tag, th->st ), stdout, th->st );
 		}
-	recordingBindings = recordified( recordingBindings );
-	nopAction( handle, gl );
+	th->recordingBindings = recordified( th->recordingBindings, th );
+	nopAction( handle, gl, th );
 	}
 
-static void createAction( Production handle, GrammarLine gl )
+static void createAction( Production handle, GrammarLine gl, Thread th )
 	{
-	popToken();
-	Symbol tag = popToken();
-	push( ob_create( tag, heap ) );
+	popToken( th );
+	Symbol tag = popToken( th );
+	push( ob_create( tag, th->heap ), th );
 	}
 
-static void getFieldAction( Production handle, GrammarLine gl )
+static void getFieldAction( Production handle, GrammarLine gl, Thread th )
 	{
-	popToken();
-	Symbol field = popToken();
-	Object receiver = pop();
-	push( ob_getField( receiver, field, heap ) );
+	popToken( th );
+	Symbol field = popToken( th );
+	Object receiver = pop( th );
+	push( ob_getField( receiver, field, th->heap ), th );
 	}
 
-static void setFieldAction( Production handle, GrammarLine gl )
+static void setFieldAction( Production handle, GrammarLine gl, Thread th )
 	{
-	Object value = sk_item( stack, 1 );
-	Symbol field = ob_toSymbol( sk_item( stack, 2 ), heap );
-	Object receiver = sk_item( stack, 3 );
-	ob_setField( receiver, field, value, heap );
-	nopAction( handle, gl );
+	Object value = sk_item( th->stack, 1 );
+	Symbol field = ob_toSymbol( sk_item( th->stack, 2 ), th->heap );
+	Object receiver = sk_item( th->stack, 3 );
+	ob_setField( receiver, field, value, th->heap );
+	nopAction( handle, gl, th );
 	}
 
 static struct gl_struct grammar1[] =
@@ -617,7 +588,7 @@ static struct
 	{NULL},
 	};
 
-static Grammar populateGrammar( SymbolTable st )
+static Grammar populateGrammar( SymbolTable st, Thread th )
 	{
 	Grammar gr = NULL;
 	int i,j,k;
@@ -627,13 +598,13 @@ static Grammar populateGrammar( SymbolTable st )
 		if( gr )
 			gr = gr_nested( gr, 5, ml_indefinite() );
 		else
-			gr = gr_new( sy_byName( (*curArray)[0].tokens[0], st ), 20, ml_indefinite() );
+			gr = gr_new( sy_byName( (*curArray)[0].tokens[0], th->st ), 20, ml_indefinite() );
 		for( j=0; (*curArray)[j].response.action; j++ )
 			{
 			GrammarLine line = (*curArray) + j;
-			Production pn = pn_new( gr, sy_byName( line->tokens[0], st ), asizeof( line->tokens ) );
+			Production pn = pn_new( gr, sy_byName( line->tokens[0], th->st ), asizeof( line->tokens ) );
 			pn_setConflictResolution( pn, line->cr, gr );
-			Symbol pnSymbol = pn_autoSymbol( pn, st, gr );
+			Symbol pnSymbol = pn_autoSymbol( pn, th->st, gr );
 			for( k=1; k < asizeof( line->tokens ) && line->tokens[k]; k++ )
 				{
 				char *token = line->tokens[k];
@@ -643,94 +614,76 @@ static Grammar populateGrammar( SymbolTable st )
 					char *tag = (char*)ml_alloc( ml_indefinite(), at - token + 1 );
 					memcpy( tag, token, at-token );
 					tag[ at-token ] = 0;
-					pn_appendWithName( pn, sy_byName( at+1, st ), sy_byName( tag, st ), gr );
+					pn_appendWithName( pn, sy_byName( at+1, th->st ), sy_byName( tag, th->st ), gr );
 					}
 				else
 					{
-					pn_append( pn, sy_byName( token, st ), gr );
+					pn_append( pn, sy_byName( token, th->st ), gr );
 					}
 				}
 			pn_stopAppending( pn, gr );
 			Function fn = (Function)ml_alloc( ml_indefinite(), sizeof(*fn) );
 			fn->kind       = FN_NATIVE;
 			fn->body.gl    = line;
-			ob_setFunctionField( executionBindings, pnSymbol, fn, heap );
+			ob_setFunctionField( th->executionBindings, pnSymbol, fn, th->heap );
 			if( line->response.action == stopRecordingTokenBlockAction )
-				ob_setFunctionField( recordingBindings, pnSymbol, fn, heap );
+				ob_setFunctionField( th->recordingBindings, pnSymbol, fn, th->heap );
 			}
 		}
 	gr_stopAdding( gr );
-	Symbol sym_abstract = sy_byName( "ABSTRACT_PRODUCTION", st );
-	gr = gr_augmented( gr, ir, sym_abstract, ml_indefinite(), parserGenTrace );
-	addNewestProductionsToMap( gr );
+	Symbol sym_abstract = sy_byName( "ABSTRACT_PRODUCTION", th->st );
+	gr = gr_augmented( gr, th->ir, sym_abstract, ml_indefinite(), th->parserGenTrace );
+	addNewestProductionsToMap( gr, th );
 
 	for( i=0; initialConcretifications[i].abstract; i++)
 		{
-		Symbol abstract = sy_byName( initialConcretifications[i].abstract, st );
-		Symbol concrete = sy_byName( initialConcretifications[i].concrete, st );
-		ob_setTokenField( concretifications, abstract, concrete, heap );
+		Symbol abstract = sy_byName( initialConcretifications[i].abstract, th->st );
+		Symbol concrete = sy_byName( initialConcretifications[i].concrete, th->st );
+		ob_setTokenField( th->concretifications, abstract, concrete, th->heap );
 		}
 
 	return gr;
 	}
 
-static InheritanceRelation initialIR( ObjectHeap heap, SymbolTable st, MemoryLifetime ml )
+static InheritanceRelation initialIR( ObjectHeap heap, SymbolTable st, MemoryLifetime ml, Thread th )
 	{
 	int superIndex, subIndex;
-	InheritanceRelation result = ir_new( heap, st, ml );
+	InheritanceRelation result = ir_new( th->heap, th->st, ml );
 	for( superIndex = 0; inheritance[ superIndex ].tokens[0]; superIndex++ )
 		{
 		GrammarLine gl = inheritance + superIndex;
-		Symbol super = sy_byName( gl->tokens[0], st );
+		Symbol super = sy_byName( gl->tokens[0], th->st );
 		for( subIndex = 1; gl->tokens[ subIndex ]; subIndex++ )
 			{
-			Symbol sub = sy_byName( gl->tokens[ subIndex ], st );
+			Symbol sub = sy_byName( gl->tokens[ subIndex ], th->st );
 			ir_add( result, super, sub );
 			}
 		}
 
-	if( interpreterTrace )
+	if( th->interpreterTrace )
 		{
-		trace( interpreterTrace, "Initial inheritance relation:\n" );
-		ir_sendTo( result, interpreterTrace );
+		trace( th->interpreterTrace, "Initial inheritance relation:\n" );
+		ir_sendTo( result, th->interpreterTrace );
 		}
 
 	return result;
 	}
 
-#if 0
-// This no longer works because augmenting a grammar can add extra nesting levels that will cause
-// misalignment with the grammar lines
-static GrammarLine lookupGrammarLine( Production pn, Grammar gr )
-	{
-	int depth = pn_nestDepth( pn, gr );
-	Grammar definingGrammar = gr_outerNth( gr, depth );
-	if( gr_nestDepth( definingGrammar ) >= asizeof( initialGrammarNest ) )
-		return NULL;
-
-	GrammarLine array = initialGrammarNest[ gr_nestDepth( definingGrammar ) ];
-	int index = pn_index( pn, gr );
-	if( gr_outer( definingGrammar ) )
-		index -= gr_numProductions( gr_outer( definingGrammar ) );
-	return array + index;
-	}
-#endif
-
-static void mainParsingLoop( TokenBlock recording, Object bindings )
+static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 	{
 	assert( bindings );
 
-	Object endOfInput = oh_symbolToken( heap, sy_byIndex( SYM_END_OF_INPUT, st ) );
-	int startingDepth = ps_depth( ps );
+	Object endOfInput = oh_symbolToken( th->heap, sy_byIndex( SYM_END_OF_INPUT, th->st ) );
+	int startingDepth = ps_depth( th->ps );
 
-	if( interpreterTrace )
+	if( th->interpreterTrace )
 		{
-		trace( interpreterTrace, "Starting mainParsingLoop( " );
+		trace( th->interpreterTrace, "Starting mainParsingLoop( " );
 		if( recording )
-			tb_sendTo( recording, interpreterTrace, heap );
+			tb_sendTo( recording, th->interpreterTrace, th->heap );
 		else
-			trace( interpreterTrace, "NULL" );
-		trace( interpreterTrace, ", %p ) startingDepth=%d\n", bindings, startingDepth );
+			trace( th->interpreterTrace, "NULL" );
+		trace( th->interpreterTrace, ", %p ) startingDepth=%d\n", bindings, startingDepth );
 		}
 
 	Object raw = NULL;
@@ -738,18 +691,18 @@ static void mainParsingLoop( TokenBlock recording, Object bindings )
 		{
 		Symbol handleSymbol;
 		for (
-			handleSymbol = ps_handle( ps, cx_filter( curContext, ts_current( tokenStream ), endOfInput, heap ) );
+			handleSymbol = ps_handle( th->ps, cx_filter( th->curContext, ts_current( th->tokenStream ), endOfInput, th->heap ) );
 			handleSymbol;
-			handleSymbol = ps_handle( ps, cx_filter( curContext, ts_current( tokenStream ), endOfInput, heap ) )
+			handleSymbol = ps_handle( th->ps, cx_filter( th->curContext, ts_current( th->tokenStream ), endOfInput, th->heap ) )
 			){
-			Grammar gr = ps_grammar( ps ); // Grammar can change as the program proceeds
-			Production handleProduction = gr_production( gr, ob_getIntField( productionMap, handleSymbol, heap ) );
-			if( programTrace )
+			Grammar gr = ps_grammar( th->ps ); // Grammar can change as the program proceeds
+			Production handleProduction = gr_production( gr, ob_getIntField( th->productionMap, handleSymbol, th->heap ) );
+			if( th->programTrace )
 				{
-				dumpStack( programTrace );
-				dumpParserState( interpreterTrace );
-				trace( programTrace, "    # Handle %s: ", sy_name( handleSymbol, st ) );
-				pn_sendTo( handleProduction, programTrace, gr, st );
+				dumpStack( th->programTrace, th );
+				dumpParserState( th->interpreterTrace, th );
+				trace( th->programTrace, "    # Handle %s: ", sy_name( handleSymbol, th->st ) );
+				pn_sendTo( handleProduction, th->programTrace, gr, th->st );
 				int i;
 				char *sep = "  with  ";
 				for( i=0; i < pn_length( handleProduction, gr ); i++ )
@@ -757,52 +710,52 @@ static void mainParsingLoop( TokenBlock recording, Object bindings )
 					Symbol nameSymbol = pn_name( handleProduction, i, gr );
 					if( nameSymbol )
 						{
-						Object value = sk_item( stack, pn_length( handleProduction, gr ) - i - 1 );
-						trace( programTrace, "%s%s=", sep, sy_name( nameSymbol, st ) );
-						ob_sendTo( value, programTrace, heap );
+						Object value = sk_item( th->stack, pn_length( handleProduction, gr ) - i - 1 );
+						trace( th->programTrace, "%s%s=", sep, sy_name( nameSymbol, th->st ) );
+						ob_sendTo( value, th->programTrace, th->heap );
 						sep = " ";
 						}
 					}
-				trace( programTrace, "\n" );
+				trace( th->programTrace, "\n" );
 				}
 			Function functionToCall = NULL;
 
-			Object ob = ob_getField( bindings, handleSymbol, heap );
+			Object ob = ob_getField( bindings, handleSymbol, th->heap );
 			if( ob )
-				functionToCall = ob_toFunction( ob, heap );
+				functionToCall = ob_toFunction( ob, th->heap );
 			else // abstract!
 				check( recording );
 
 			if( recording )
 				{
-				int depthWithoutHandle = ps_depth( ps ) - pn_length( handleProduction, gr );
-				popN( pn_length( handleProduction, gr ) );
-				Object lhs = oh_symbolToken( heap, pn_lhs( handleProduction, gr ) );
-				if( interpreterTrace )
+				int depthWithoutHandle = ps_depth( th->ps ) - pn_length( handleProduction, gr );
+				popN( pn_length( handleProduction, gr ), th );
+				Object lhs = oh_symbolToken( th->heap, pn_lhs( handleProduction, gr ) );
+				if( th->interpreterTrace )
 					{
-					trace( interpreterTrace, "Checking %s for concretification in: ", sy_name( ob_toSymbol( lhs, heap ), st ) );
-					ob_sendDeepTo( concretifications, interpreterTrace, heap );
-					trace( interpreterTrace, "\n" );
+					trace( th->interpreterTrace, "Checking %s for concretification in: ", sy_name( ob_toSymbol( lhs, th->heap ), th->st ) );
+					ob_sendDeepTo( th->concretifications, th->interpreterTrace, th->heap );
+					trace( th->interpreterTrace, "\n" );
 					}
-				Object concretified = ob_getFieldIfPresent( concretifications, ob_toSymbol( lhs, heap ), lhs, heap );
+				Object concretified = ob_getFieldIfPresent( th->concretifications, ob_toSymbol( lhs, th->heap ), lhs, th->heap );
 				if( concretified != lhs )
 					{
-					trace( interpreterTrace, "  %s concretified into %s\n", sy_name( ob_toSymbol( lhs, heap ), st ), sy_name( ob_toSymbol( concretified, heap ), st ) );
+					trace( th->interpreterTrace, "  %s concretified into %s\n", sy_name( ob_toSymbol( lhs, th->heap ), th->st ), sy_name( ob_toSymbol( concretified, th->heap ), th->st ) );
 					lhs = concretified;
 					}
-				push( lhs );
-				Object ob = ob_getField( bindings, handleSymbol, heap );
+				push( lhs, th );
+				Object ob = ob_getField( bindings, handleSymbol, th->heap );
 				if( ob )
 					{
 					assert( functionToCall->body.gl->response.action == stopRecordingTokenBlockAction );
 					if( depthWithoutHandle < startingDepth )
 						{
-						closeTokenStreamsAsNecessary();
-						trace( interpreterTrace, "   Done recording\n" );
+						closeTokenStreamsAsNecessary( th );
+						trace( th->interpreterTrace, "   Done recording\n" );
 						goto done;
 						}
 					else
-						trace( interpreterTrace, "     Too deep to stop recording yet\n" );
+						trace( th->interpreterTrace, "     Too deep to stop recording yet\n" );
 					}
 				}
 			else if( functionToCall )
@@ -812,28 +765,28 @@ static void mainParsingLoop( TokenBlock recording, Object bindings )
 					case FN_TOKEN_BLOCK:
 						{
 						assert( handleProduction );
-						closeTokenStreamsAsNecessary(); // tail call optimization?
-						cx_save( curContext );
+						closeTokenStreamsAsNecessary( th ); // tail call optimization?
+						cx_save( th->curContext );
 						int i;
 						for( i = pn_length( handleProduction, gr ) - 1; i >= 0; i-- )
 							{
 							Symbol nameSymbol = pn_name( handleProduction, i, gr );
-							Object value = pop();
+							Object value = pop( th );
 							if( nameSymbol )
-								sy_setValue( nameSymbol, value, curContext );
+								sy_setValue( nameSymbol, value, th->curContext );
 							}
-						ts_push( tokenStream, functionToCall->body.tb );
-						cf_push();
-						trace( programTrace, "    Calling body %p for production %d\n", tokenStream, pn_index( handleProduction, gr ) );
+						ts_push( th->tokenStream, functionToCall->body.tb );
+						cf_push( th );
+						trace( th->programTrace, "    Calling body %p for production %d\n", th->tokenStream, pn_index( handleProduction, gr ) );
 						}
 						break;
 					case FN_NATIVE:
 						{
 						GrammarLine line = functionToCall->body.gl;
 						assert( line );
-						trace( interpreterTrace, "   Calling native action %p\n", line );
-						line->response.action( handleProduction, line );
-						trace( interpreterTrace, "   Done native action %p\n", line );
+						trace( th->interpreterTrace, "   Calling native action %p\n", line );
+						line->response.action( handleProduction, line, th );
+						trace( th->interpreterTrace, "   Done native action %p\n", line );
 						}
 						break;
 					}
@@ -843,76 +796,76 @@ static void mainParsingLoop( TokenBlock recording, Object bindings )
 			{
 			// This raw token didn't cause the recording to terminate.  Append it.
 			tb_append( recording, raw );
-			if( interpreterTrace )
+			if( th->interpreterTrace )
 				{
-				trace( interpreterTrace, "   Appended " );
-				ob_sendTo( raw, interpreterTrace, heap );
-				trace( interpreterTrace, " to ");
-				tb_sendTo( recording, interpreterTrace, heap );
-				trace( interpreterTrace, "\n");
+				trace( th->interpreterTrace, "   Appended " );
+				ob_sendTo( raw, th->interpreterTrace, th->heap );
+				trace( th->interpreterTrace, " to ");
+				tb_sendTo( recording, th->interpreterTrace, th->heap );
+				trace( th->interpreterTrace, "\n");
 				}
 			}
-		raw = ts_current( tokenStream );
+		raw = ts_current( th->tokenStream );
 		if( !raw )
 			{
-			trace( interpreterTrace, "   Raw token is NULL\n" );
-			closeTokenStreamsAsNecessary();
+			trace( th->interpreterTrace, "   Raw token is NULL\n" );
+			closeTokenStreamsAsNecessary( th );
 			goto done;
 			}
-		Object toPush = cx_filter( curContext, raw, endOfInput, heap );
-		if( interpreterTrace )
+		Object toPush = cx_filter( th->curContext, raw, endOfInput, th->heap );
+		if( th->interpreterTrace )
 			{
-			trace( interpreterTrace, "Pushing token from %p: ", ts_curBlock( tokenStream ) );
-			ob_sendTo( toPush, interpreterTrace, heap );
-			trace( interpreterTrace, "\n");
+			trace( th->interpreterTrace, "Pushing token from %p: ", ts_curBlock( th->tokenStream ) );
+			ob_sendTo( toPush, th->interpreterTrace, th->heap );
+			trace( th->interpreterTrace, "\n" );
 			}
-		push( toPush );
-		trace( interpreterTrace, "Advancing %p\n", ts_curBlock( tokenStream ) );
-		ts_advance( tokenStream );
-		closeTokenStreamsAsNecessary();
+		push( toPush, th );
+		trace( th->interpreterTrace, "Advancing %p\n", ts_curBlock( th->tokenStream ) );
+		ts_advance( th->tokenStream );
+		closeTokenStreamsAsNecessary( th );
 		}
 
 	done:
-	if( interpreterTrace )
+	if( th->interpreterTrace )
 		{
-		trace( interpreterTrace, "Exiting mainParsingLoop" );
-		if( tokenStream && ts_current( tokenStream ) )
+		trace( th->interpreterTrace, "Exiting mainParsingLoop" );
+		if( th->tokenStream && ts_current( th->tokenStream ) )
 			{
-			trace( interpreterTrace, "; current token on %p is ", ts_curBlock( tokenStream ) );
-			ob_sendTo( ts_current( tokenStream ), interpreterTrace, heap );
+			trace( th->interpreterTrace, "; current token on %p is ", ts_curBlock( th->tokenStream ) );
+			ob_sendTo( ts_current( th->tokenStream ), th->interpreterTrace, th->heap );
 			}
-		trace( interpreterTrace, "\n" );
+		trace( th->interpreterTrace, "\n" );
 		}
 	}
 
-static void recordTokenBlockAction( Production handle, GrammarLine gl )
+static void recordTokenBlockAction( Production handle, GrammarLine gl, Thread th )
 	{
-	Grammar gr = ps_grammar( ps );
-	TokenBlock tb = ts_skipBlock( tokenStream );
+	Grammar gr = ps_grammar( th->ps );
+	TokenBlock tb = ts_skipBlock( th->tokenStream );
 	if( !tb )
 		{
-		tb = ts_beginBlock( tokenStream );
-		if( interpreterTrace )
+		tb = ts_beginBlock( th->tokenStream );
+		if( th->interpreterTrace )
 			{
-			trace( programTrace, "  Begin recording token block\n" );
-			tb_sendTo( tb, interpreterTrace, heap );
-			trace( interpreterTrace, "\n" );
+			trace( th->programTrace, "  Begin recording token block\n" );
+			tb_sendTo( tb, th->interpreterTrace, th->heap );
+			trace( th->interpreterTrace, "\n" );
 			}
-		nopAction( handle, gl );
+		nopAction( handle, gl, th );
 
-		mainParsingLoop( tb, recordingBindings );
+		mainParsingLoop( tb, th->recordingBindings, th );
 
 		tb_stopAppending( tb );
 		}
-	popN( pn_length( handle, gr ) );
-	push( ob_fromTokenBlock( tb, heap ) );
-	if( interpreterTrace )
+	popN( pn_length( handle, gr ), th );
+	push( ob_fromTokenBlock( tb, th->heap ), th );
+	if( th->interpreterTrace )
 		{
-		trace( interpreterTrace, "    Recorded token block: " );
-		tb_sendTo( tb, interpreterTrace, heap );
-		trace( interpreterTrace, "\n    Now current: " );
-		ob_sendTo( ts_current( tokenStream ), interpreterTrace, heap );
-		trace( interpreterTrace, "\n" );
+		trace( th->interpreterTrace, "    Recorded token block: " );
+		tb_sendTo( tb, th->interpreterTrace, th->heap );
+		trace( th->interpreterTrace, "\n    Now current: " );
+		ob_sendTo( ts_current( th->tokenStream ), th->interpreterTrace, th->heap );
+		trace( th->interpreterTrace, "\n" );
 		}
 	}
 
@@ -929,28 +882,29 @@ static File openTrace( int fd, char *name )
 
 int main( int argc, char **argv )
 	{
-	conflictLog = stderr;
-	programTrace           = openTrace( 3, "3: Ellesmere program trace" );
-	interpreterDiagnostics = openTrace( 4, "4: Ellesmere interpreter diagnostics" );
-	interpreterTrace       = openTrace( 5, "5: Ellesmere interpreter trace" );
-	parserGenTrace = openTrace( 6, "6: Ellesmere parserGenTrace" );
-	st = theSymbolTable();
-	heap = theObjectHeap();
-	curContext = cx_new( st );
-	callStack = cs_new( 30, ml_indefinite() );
-	cs_setCount( callStack, 1 );
-	ir = initialIR( heap, st, ml_indefinite() );
-	executionBindings = ob_create( sy_byIndex( SYM_BINDINGS, st ), heap );
-	recordingBindings = ob_create( sy_byIndex( SYM_BINDINGS, st ), heap );
-	concretifications = ob_create( sy_byIndex( SYM_BINDINGS, st ), heap );
-	productionMap     = ob_create( sy_byName( "PRODUCTION_MAP", st ), heap );
-	Grammar initialGrammar = populateGrammar( st );
-	Automaton au = au_new( initialGrammar, st, ir, ml_indefinite(), conflictLog, parserGenTrace );
-	ps = ps_new( au, ml_indefinite(), parserGenTrace );
-	stack = sk_new( ml_indefinite() );
-	tokenStream = theLexTokenStream( heap, st );
+	Thread th = &theThread;
+	th->conflictLog = stderr;
+	th->programTrace           = openTrace( 3, "3: Ellesmere program trace" );
+	th->interpreterDiagnostics = openTrace( 4, "4: Ellesmere interpreter diagnostics" );
+	th->interpreterTrace       = openTrace( 5, "5: Ellesmere interpreter trace" );
+	th->parserGenTrace = openTrace( 6, "6: Ellesmere parserGenTrace" );
+	th->st = theSymbolTable();
+	th->heap = theObjectHeap();
+	th->curContext = cx_new( th->st );
+	th->callStack = cs_new( 30, ml_indefinite() );
+	cs_setCount( th->callStack, 1 );
+	th->ir = initialIR( th->heap, th->st, ml_indefinite(), th );
+	th->executionBindings = ob_create( sy_byIndex( SYM_BINDINGS, th->st ), th->heap );
+	th->recordingBindings = ob_create( sy_byIndex( SYM_BINDINGS, th->st ), th->heap );
+	th->concretifications = ob_create( sy_byIndex( SYM_BINDINGS, th->st ), th->heap );
+	th->productionMap     = ob_create( sy_byName( "PRODUCTION_MAP", th->st ), th->heap );
+	Grammar initialGrammar = populateGrammar( th->st, th );
+	Automaton au = au_new( initialGrammar, th->st, th->ir, ml_indefinite(), th->conflictLog, th->parserGenTrace );
+	th->ps = ps_new( au, ml_indefinite(), th->parserGenTrace );
+	th->stack = sk_new( ml_indefinite() );
+	th->tokenStream = theLexTokenStream( th->heap, th->st );
 
-	mainParsingLoop( NULL, executionBindings );
+	mainParsingLoop( NULL, th->executionBindings, th );
 
 #ifndef NDEBUG
 	File memreport = fdopen( 7, "wt" );
