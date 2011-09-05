@@ -83,15 +83,13 @@ FUNC void *ml_reallocAnnotated(MemoryLifetime ml, void *oldStorage, int oldSize,
 
 	Header oldHeader, newHeader, result;
 	oldHeader = ((Header)oldStorage) - 1;
-	// Make a "naked header" to record the original alloc info
-	newHeader = ((Header)ml_allocAnnotated( ml, 1, oldHeader->file, oldHeader->line )) - 1;
+	// Make a "naked header" to record the original size and the realloc file/line
+	newHeader = ((Header)ml_allocAnnotated( ml, 1, file, line )) - 1;
 	newHeader->size = oldHeader->size;
 	// Realloc the new block
 	result = ml_realloc( ml, oldHeader, oldSize + sizeof(*oldHeader), newSize + sizeof(*newHeader) );
 	check( result );
-	// Update new header to record new alloc info
-	result->file = file;
-	result->line = line;
+	// Update new header to record new size
 	result->size = newSize;
 	// Fix up links
 	if( result->prev )
@@ -113,7 +111,7 @@ FUNC int ml_sendReportTo( File fl )
 		Header cur;
 		for( cur = h; cur; cur = cur->reallocatedFrom )
 			{
-			charsSent += fl_write( fl, "%s%d %s %d", sep, cur->size, cur->file, cur->line );
+			charsSent += fl_write( fl, "%s%d bytes %s line %d", sep, cur->size, cur->file, cur->line );
 			sep = " from ";
 			}
 		charsSent += fl_write( fl, "\n" );

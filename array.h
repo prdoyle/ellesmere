@@ -6,7 +6,9 @@
 
 FUNC Array ar_new          ( int capacity, int elementSize, MemoryLifetime ml );
 #ifndef NDEBUG
-FUNC Array ar_newAnnotated ( int capacity, int elementSize, MemoryLifetime ml, const char *file, int line );
+	FUNC Array ar_newAnnotated ( int capacity, int elementSize, MemoryLifetime ml, const char *file, int line );
+
+	#define ar_new(c,s,ml)  ar_newAnnotated( (c), (s), (ml), __FILE__, __LINE__ )
 #endif
 
 FUNC int   ar_count    ( Array ar );

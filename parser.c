@@ -1568,7 +1568,7 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Sy
 		Grammar outer = gr_outer( original );
 		if( recursive )
 			outer = gr_augmentedRecursive( outer, ir, abstractSymbol, ml, diagnostics, true );
-		result = gr_nested( outer, gr_numProductions( outer ), ml );
+		result = gr_nested( outer, gr_numProductions( original ) - gr_numOuterProductions( original ), ml );
 		}
 	else
 		{
@@ -1617,6 +1617,7 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Sy
 		aug_end( aug );
 		}
 
+	gr_stopAdding( result );
 	if( gr_numProductions( result ) == 0 )
 		{
 		trace( diagnostics, "  No implied productions -- returning original grammar\n" );
@@ -1624,7 +1625,6 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Sy
 		}
 	else
 		{
-		gr_stopAdding( result );
 		result = gr_nested( result, gr_numProductions( original ), ml );
 		trace( diagnostics, "  Adding original productions at nest depth %d\n", gr_nestDepth( result ) );
 		for( productionIndex = gr_numOuterProductions( original ); productionIndex < gr_numProductions( original ); productionIndex++ )

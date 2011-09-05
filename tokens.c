@@ -228,10 +228,12 @@ FUNC TokenBlock ts_beginBlock( TokenStream ts )
 	result = (TokenBlock)ml_alloc( ml, sizeof(*result) );
 	result->tag = SYM_TOKEN_BLOCK;
 	result->tokens  = oba_new( DEFAULT_TOKEN_BLOCK_LENGTH, ml );
-	result->subBlocks = tba_new( 1, ml );
 	result->startIndex = di? di->index : 0;
+#if 0
+	result->subBlocks = tba_new( 1, ml );
 	if( di )
 		tba_append( di->tb->subBlocks, result ); // FIXME: Could make a cached block visible before it's complete
+#endif
 	return result;
 	}
 
