@@ -7,10 +7,13 @@
 FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st );
 
 FUNC Object      ts_current    ( TokenStream ts );
+FUNC Object      ts_currentRaw ( TokenStream ts ); // Doesn't apply bindings.  TODO: Is this necessary?
 FUNC void        ts_advance    ( TokenStream ts );
-FUNC void        ts_push       ( TokenStream ts, TokenBlock tb );
+FUNC void        ts_push       ( TokenStream ts, TokenBlock tb, Object bindings );
 FUNC TokenBlock  ts_curBlock   ( TokenStream ts );
-FUNC TokenBlock  ts_pop        ( TokenStream ts );
+FUNC Object      ts_getBindings( TokenStream ts );
+FUNC void        ts_setBindings( TokenStream ts, Object bindings );
+FUNC void        ts_pop        ( TokenStream ts );
 FUNC TokenBlock  ts_beginBlock ( TokenStream ts ); // Return a block begun at the current token
 FUNC TokenBlock  ts_skipBlock  ( TokenStream ts ); // Return a block begun at the current token if it exists, and advance past it
 FUNC ObjectHeap  ts_heap       ( TokenStream ts );

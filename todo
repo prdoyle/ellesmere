@@ -1,4 +1,5 @@
 NEXT:
+- Debug digressions etc. and understand why I'm getting END_OF_INPUT at a weird time
 - I think I want to do "def foo as bar" as a digression, and "def foo as { bar }" as a call
 - Hmm, the LHS trick may not work.  What happens at run time when I'm expecting a BOOLEAN,
   and a production that claims to return a BOOLEAN actually returns TRUE?  Then I get a parse error.

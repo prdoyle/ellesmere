@@ -19,6 +19,7 @@ typedef enum
 	SYM_TOKEN_BLOCK,
 	SYM_TOKEN_STREAM,
 	SYM_GRAMMAR,
+
 	NUM_SPECIAL_OBJECT_TAGS,
 
 	// Other symbols used internally
@@ -36,6 +37,8 @@ typedef enum
 	SYM_SUPERTAGS,
 	SYM_SUBTAGS,
 	SYM_BINDINGS,
+	SYM_DELEGATE,
+
 	NUM_PREDEFINED_SYMBOLS
 	} SymbolIndex;
 
@@ -49,17 +52,6 @@ FUNC Symbol            sy_byName  ( const char *name, SymbolTable st );  // Crea
 FUNC Record            sy_instanceShape    ( Symbol sy, SymbolTable st );
 FUNC void              sy_setInstanceShape ( Symbol sy, Record rd, SymbolTable st );
 FUNC int               sy_sendTo  ( Symbol sy, File fl, SymbolTable st );
-
-FUNC Context      cx_new( SymbolTable st );
-FUNC void         cx_save( Context cx );
-FUNC void         cx_restore( Context cx );
-FUNC SymbolTable  cx_symbolTable( Context cx );
-FUNC Object       cx_filter( Context cx, Object ob, Object defaultIfNull, ObjectHeap heap );
-FUNC int          cx_sendTo( Context cx, File fl );
-
-// Attributes of symbols
-FUNC Object       sy_value     ( Symbol sy, Context cx );
-FUNC void         sy_setValue  ( Symbol sy, Object value, Context cx );
 
 #endif
 

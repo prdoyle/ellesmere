@@ -1819,7 +1819,8 @@ FUNC void ps_push( Parser ps, Object ob )
 							// Once we get past this item, we'll be at position 0, so
 							// we'll want everything before this guy's lhs.
 							SymbolSideTableEntry lhs = pg_sideTableEntry( pg, pn_lhs( it->pn, pg->gr ), NULL );
-							bv_or( nextItems, lhs->expectingItems );
+							if( lhs->expectingItems )
+								bv_or( nextItems, lhs->expectingItems );
 							}
 							// fall through
 						default:

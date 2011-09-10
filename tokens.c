@@ -14,7 +14,8 @@ typedef struct di_struct *Digression;
 struct di_struct
 	{
 	TokenBlock tb;
-	int index;
+	Object     bindings;
+	int        index;
 	};
 
 typedef struct dis_struct *DigressionStack;
@@ -31,6 +32,7 @@ struct ts_struct
 	{
 	ObjectHeap      heap;
 	SymbolTable     st;
+	Object          bindings;
 	DigressionStack digressions;
 	struct
 		{
@@ -71,9 +73,10 @@ static Object getLexToken( TokenStream ts )
 	int token = yylex();
 	switch( token )
 		{
-		case NUM_TOKENS:
 		case ERROR:
 			check(!"Error token!");
+			// fall through
+		case NUM_TOKENS:
 			// fall through
 		case NO_TOKEN:
 			break;
@@ -125,8 +128,9 @@ FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st )
 	if( !result )
 		{
 		result = (TokenStream)ml_alloc( ml_singleton(), sizeof(*result) );
-		result->heap = heap;
-		result->st   = st;
+		result->heap        = heap;
+		result->st          = st;
+		result->bindings    = ob_createX( SYM_BINDINGS, heap );
 		result->digressions = dis_new( 20, ml_singleton() );
 		result->lex.current = getLexToken( result );
 		}
@@ -141,7 +145,7 @@ static Digression ts_digression( TokenStream ts )
 		return NULL;
 	}
 
-FUNC Object ts_current( TokenStream ts )
+FUNC Object ts_currentRaw( TokenStream ts )
 	{
 	Digression di = ts_digression( ts );
 	if( di )
@@ -150,25 +154,44 @@ FUNC Object ts_current( TokenStream ts )
 		return ts->lex.current;
 	}
 
+FUNC Object ts_current( TokenStream ts )
+	{
+	Object result = ts_currentRaw( ts );
+	if( result == NULL )
+		return oh_symbolToken( ts->heap, sy_byIndex( SYM_END_OF_INPUT, ts->st ) );
+	else if( ob_isToken( result, ts->heap ) )
+		return ob_getFieldRecursivelyIfPresent(
+			ts_getBindings( ts ),
+			ob_toSymbol( result, ts->heap ),
+			sy_byIndex( SYM_DELEGATE, ts->st ),
+			result,
+			ts->heap );
+	else
+		return result;
+	}
+
 FUNC void ts_advance( TokenStream ts )
 	{
 	Digression di = ts_digression( ts );
 	if( di )
 		{
-		if( di->index < oba_count( di->tb->tokens ) )
-			di->index += 1;
+		di->index++;
+		while( di && !ts_currentRaw( ts ) )
+			{
+			ts_pop( ts );
+			di = ts_digression( ts );
+			}
 		}
-	else
-		{
+	if( !di ) // We've advanced past all digressions
 		ts->lex.current = getLexToken( ts );
-		}
 	}
 
-FUNC void ts_push( TokenStream ts, TokenBlock tb )
+FUNC void ts_push( TokenStream ts, TokenBlock tb, Object bindings )
 	{
 	Digression di = dis_nextElement( ts->digressions );
-	di->tb = tb;
-	di->index = 0;
+	di->tb       = tb;
+	di->bindings = bindings;
+	di->index    = 0;
 	}
 
 FUNC ObjectHeap ts_heap( TokenStream ts )
@@ -185,13 +208,28 @@ FUNC TokenBlock ts_curBlock( TokenStream ts )
 		return NULL;
 	}
 
-FUNC TokenBlock ts_pop( TokenStream ts )
+FUNC Object ts_getBindings( TokenStream ts )
 	{
 	Digression di = ts_digression( ts );
-	assert( di );
-	TokenBlock result = di->tb;
+	if( di )
+		return di->bindings;
+	else
+		return ts->bindings;
+	}
+
+FUNC void ts_setBindings( TokenStream ts, Object bindings )
+	{
+	Digression di = ts_digression( ts );
+	if( di )
+		di->bindings = bindings;
+	else
+		ts->bindings = bindings;
+	}
+
+FUNC void ts_pop( TokenStream ts )
+	{
+	assert( ts_digression( ts ) );
 	dis_incCountBy( ts->digressions, -1 );
-	return result;
 	}
 
 enum { DEFAULT_TOKEN_BLOCK_LENGTH=29 };
@@ -256,10 +294,13 @@ FUNC int ts_sendTo( TokenStream ts, File fl )
 	{
 	int charsSent = fl_write( fl, "TokenStream_%p: ", ts );
 	int i;
-	for( i = dis_count( ts->digressions )-1; i >= 0; i-- )
+	int lengthLimit = 8;
+	for( i = dis_count( ts->digressions )-1; i >= 0; i--, lengthLimit >>= 1 )
 		{
 		Digression di = dis_element( ts->digressions, i );
-		di_sendNTo( di, 4, fl, ts->heap );
+		if( lengthLimit < 1 )
+			lengthLimit = 1;
+		di_sendNTo( di, lengthLimit, fl, ts->heap );
 		charsSent += fl_write( fl, "  ||  " );
 		}
 	if( ts->lex.current )

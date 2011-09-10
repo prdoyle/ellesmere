@@ -36,7 +36,6 @@ struct th_struct
 	SymbolTable          st;
 	TokenStream          tokenStream;
 	Stack                stack;
-	Context              curContext;
 	ObjectHeap           heap;
 	Parser               ps;
 	InheritanceRelation  ir;
@@ -221,16 +220,6 @@ static Symbol popToken( Thread th )
 	return ob_toSymbol( popped, th->heap );
 	}
 
-static void closeTokenStreamsAsNecessary( Thread th )
-	{
-	while( !ts_current( th->tokenStream ) && ts_curBlock( th->tokenStream ) )
-		{
-		ts_pop( th->tokenStream );
-		cx_restore( th->curContext );
-		trace( th->programTrace, "  Returned to TokenBlock %p\n", ts_curBlock( th->tokenStream ) );
-		}
-	}
-
 struct gl_struct
 	{
 	char *tokens[10];
@@ -371,16 +360,18 @@ static void addProductionAction( Production handle, GrammarLine gl, Thread th )
 		ps_push( th->ps, sk_item( th->stack, i ) );
 	dumpParserState( th->interpreterTrace, th );
 
-	// Build a context with a symbol for each named parameter
-	cx_save( th->curContext );
+	// Add bindings with a symbol for each named parameter
+	Object bindings = ob_create( sy_byIndex( SYM_BINDINGS, th->st ), th->heap );
+	ob_setFieldX( bindings, SYM_DELEGATE, ts_getBindings( th->tokenStream ), th->heap );
+	ts_setBindings( th->tokenStream, bindings );
 	for( i = 0; i < pn_length( pn, gr ); i++ )
 		{
-		Symbol name  = pn_name( pn, i, gr );
-		Symbol tag   = pn_token( pn, i, gr );
+		Symbol name = pn_name( pn, i, gr );
 		if( name )
 			{
+			Symbol tag = pn_token( pn, i, gr );
 			trace( th->interpreterTrace, "    -- bound %s to token %s\n", sy_name( name, th->st ), sy_name( tag, th->st ) );
-			sy_setValue( name, oh_symbolToken( th->heap, tag ), th->curContext );
+			ob_setField( bindings, name, oh_symbolToken( th->heap, tag ), th->heap );
 			}
 		}
 
@@ -400,8 +391,8 @@ static void defAction( Production handle, GrammarLine gl, Thread th )
 	popToken( th ); // "def" keyword
 	push( oh_symbolToken( th->heap, pn_lhs( handle, ps_grammar(th->ps) ) ), th );
 
-	// Pop the context built for the def's production
-	cx_restore( th->curContext );
+	// Remove argument bindings
+	ts_setBindings( th->tokenStream, ob_getFieldX( ts_getBindings( th->tokenStream ), SYM_DELEGATE, th->heap ) );
 
 	// Store the body from the definition
 	Symbol pnSymbol = ob_getTokenField( production, sy_byName( "productionSymbol", th->st ), th->heap );
@@ -420,7 +411,6 @@ static void returnAction( Production handle, GrammarLine gl, Thread th )
 	popN( pn_length( handle, gr ), th );
 	ts_pop( th->tokenStream );
 	push( oh_symbolToken( th->heap, pn_lhs( handle, ps_grammar(th->ps) ) ), th );
-	cx_restore( th->curContext );
 	cf_pop( th );
 	trace( th->programTrace, "  Returned to TokenBlock %p\n", ts_curBlock( th->tokenStream ) );
 	push( result, th );
@@ -452,7 +442,7 @@ static void setAction( Production handle, GrammarLine gl, Thread th )
 	popToken( th );
 	Symbol name = popToken( th );
 	Object rhs = pop( th );
-	sy_setValue( name, rhs, th->curContext );
+	ob_setField( ts_getBindings( th->tokenStream ), name, rhs, th->heap );
 	push( oh_symbolToken( th->heap, pn_lhs( handle, ps_grammar(th->ps) ) ), th );
 	}
 
@@ -673,7 +663,6 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 	{
 	assert( bindings );
 
-	Object endOfInput = oh_symbolToken( th->heap, sy_byIndex( SYM_END_OF_INPUT, th->st ) );
 	int startingDepth = ps_depth( th->ps );
 
 	if( th->interpreterTrace )
@@ -691,9 +680,9 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 		{
 		Symbol handleSymbol;
 		for (
-			handleSymbol = ps_handle( th->ps, cx_filter( th->curContext, ts_current( th->tokenStream ), endOfInput, th->heap ) );
+			handleSymbol = ps_handle( th->ps, ts_current( th->tokenStream ) );
 			handleSymbol;
-			handleSymbol = ps_handle( th->ps, cx_filter( th->curContext, ts_current( th->tokenStream ), endOfInput, th->heap ) )
+			handleSymbol = ps_handle( th->ps, ts_current( th->tokenStream ) )
 			){
 			Grammar gr = ps_grammar( th->ps ); // Grammar can change as the program proceeds
 			Production handleProduction = gr_production( gr, ob_getIntField( th->productionMap, handleSymbol, th->heap ) );
@@ -750,7 +739,6 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 					assert( functionToCall->body.gl->response.action == stopRecordingTokenBlockAction );
 					if( depthWithoutHandle < startingDepth )
 						{
-						closeTokenStreamsAsNecessary( th );
 						trace( th->interpreterTrace, "   Done recording\n" );
 						goto done;
 						}
@@ -765,17 +753,16 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 					case FN_TOKEN_BLOCK:
 						{
 						assert( handleProduction );
-						closeTokenStreamsAsNecessary( th ); // tail call optimization?
-						cx_save( th->curContext );
 						int i;
+						Object argBindings = ob_createX( SYM_BINDINGS, th->heap ); // TODO: Recycle?
 						for( i = pn_length( handleProduction, gr ) - 1; i >= 0; i-- )
 							{
 							Symbol nameSymbol = pn_name( handleProduction, i, gr );
 							Object value = pop( th );
 							if( nameSymbol )
-								sy_setValue( nameSymbol, value, th->curContext );
+								ob_setField( argBindings, nameSymbol, value, th->heap );
 							}
-						ts_push( th->tokenStream, functionToCall->body.tb );
+						ts_push( th->tokenStream, functionToCall->body.tb, argBindings );
 						cf_push( th );
 						trace( th->programTrace, "    Calling body %p for production %d\n", th->tokenStream, pn_index( handleProduction, gr ) );
 						}
@@ -805,14 +792,13 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 				trace( th->interpreterTrace, "\n");
 				}
 			}
-		raw = ts_current( th->tokenStream );
+		raw = ts_currentRaw( th->tokenStream );
 		if( !raw )
 			{
 			trace( th->interpreterTrace, "   Raw token is NULL\n" );
-			closeTokenStreamsAsNecessary( th );
 			goto done;
 			}
-		Object toPush = cx_filter( th->curContext, raw, endOfInput, th->heap );
+		Object toPush = ts_current( th->tokenStream );
 		if( th->interpreterTrace )
 			{
 			trace( th->interpreterTrace, "Pushing token from %p: ", ts_curBlock( th->tokenStream ) );
@@ -822,7 +808,6 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 		push( toPush, th );
 		trace( th->interpreterTrace, "Advancing %p\n", ts_curBlock( th->tokenStream ) );
 		ts_advance( th->tokenStream );
-		closeTokenStreamsAsNecessary( th );
 		}
 
 	done:
@@ -890,7 +875,6 @@ int main( int argc, char **argv )
 	th->parserGenTrace = openTrace( 6, "6: Ellesmere parserGenTrace" );
 	th->st = theSymbolTable();
 	th->heap = theObjectHeap();
-	th->curContext = cx_new( th->st );
 	th->callStack = cs_new( 30, ml_indefinite() );
 	cs_setCount( th->callStack, 1 );
 	th->ir = initialIR( th->heap, th->st, ml_indefinite(), th );

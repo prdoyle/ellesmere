@@ -22,7 +22,6 @@ typedef struct ar_struct *Array;
 typedef struct au_struct *Automaton;
 typedef struct bv_struct *BitVector;
 typedef struct cl_struct *CheckList;
-typedef struct cx_struct *Context;
 typedef struct di_struct *Dispatcher;
 typedef struct fn_struct *Function;
 typedef struct gr_struct *Grammar;

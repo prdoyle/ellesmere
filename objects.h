@@ -9,6 +9,7 @@
 FUNC ObjectHeap theObjectHeap();
 
 FUNC SymbolTable oh_tagSymbolTable( ObjectHeap heap );
+FUNC SymbolTable oh_fieldSymbolTable( ObjectHeap heap );
 
 FUNC Object ob_create( Symbol tag, ObjectHeap heap );
 FUNC Symbol ob_tag( Object ob, ObjectHeap heap );
@@ -87,6 +88,19 @@ FUNC Grammar      ob_toGrammar( Object ob, ObjectHeap heap );
 static inline Grammar ob_getGrammarField( Object ob, Symbol field, ObjectHeap heap ){ return ob_toGrammar( ob_getField( ob, field, heap ), heap ); }
 static inline void    ob_setGrammarField( Object ob, Symbol field, Grammar value, ObjectHeap heap ){ ob_setField( ob, field, ob_fromGrammar( value, heap ), heap ); }
 
+// Handy functions taking symbol indexes instead of symbols
+
+static inline Object ob_createX( SymbolIndex tagIndex, ObjectHeap heap )
+	{ return ob_create( sy_byIndex( tagIndex, oh_tagSymbolTable( heap ) ), heap ); }
+
+static inline Object ob_getFieldX( Object ob, SymbolIndex fieldIndex, ObjectHeap heap )
+	{ return ob_getField( ob, sy_byIndex( fieldIndex, oh_fieldSymbolTable( heap ) ), heap ); }
+
+static inline void ob_setFieldX( Object ob, SymbolIndex fieldIndex, Object value, ObjectHeap heap )
+	{ ob_setField( ob, sy_byIndex( fieldIndex, oh_fieldSymbolTable( heap ) ), value, heap ); }
+
+// Miscellaneous handy functions
+
 static inline Object ob_getOrCreateField( Object ob, Symbol field, Symbol tag, ObjectHeap heap )
 	{
 	Object result = ob_getField( ob, field, heap );
@@ -110,6 +124,26 @@ static inline int ob_getIfIntField( Object ob, Symbol field, int defaultValue, O
 static inline Object ob_getFieldIfPresent( Object ob, Symbol field, Object defaultValue, ObjectHeap heap )
 	{
 	Object result = ob_getField( ob, field, heap );
+	if( result )
+		return result;
+	else
+		return defaultValue;
+	}
+
+static inline Object ob_getFieldRecursively( Object ob, Symbol field, Symbol delegateSymbol, ObjectHeap heap )
+	{
+	for( ; ob; ob = ob_getField( ob, delegateSymbol, heap ) )
+		{
+		Object result = ob_getField( ob, field, heap );
+		if( result )
+			return result;
+		}
+	return NULL;
+	}
+
+static inline Object ob_getFieldRecursivelyIfPresent( Object ob, Symbol field, Symbol delegateSymbol, Object defaultValue, ObjectHeap heap )
+	{
+	Object result = ob_getFieldRecursively( ob, field, delegateSymbol, heap );
 	if( result )
 		return result;
 	else

@@ -45,6 +45,11 @@ FUNC SymbolTable oh_tagSymbolTable( ObjectHeap heap )
 	return heap->st;
 	}
 
+FUNC SymbolTable oh_fieldSymbolTable( ObjectHeap heap )
+	{
+	return heap->st;
+	}
+
 typedef struct fdl_struct
 	{
 	SymbolIndex       si;
