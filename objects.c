@@ -502,41 +502,41 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 			{
 			case SYM_INT:
 				{
-				fl_write( fl, "%d", ob_toInt(ob,heap) );
+				charsSent += fl_write( fl, "%d", ob_toInt(ob,heap) );
 				break;
 				}
 			case SYM_STRING:
 				{
-				fl_write( fl, "\"%s\"", ob_toString(ob,heap) );
+				charsSent += fl_write( fl, "\"%s\"", ob_toString(ob,heap) );
 				break;
 				}
 			case SYM_TOKEN:
 				{
 				Symbol sy = ob_toSymbol( ob, heap );
-				fl_write( fl, "%s", sy_name( sy, heap->st ) ); //, sy_index( sy, heap->st ) );
+				charsSent += fl_write( fl, "%s", sy_name( sy, heap->st ) ); //, sy_index( sy, heap->st ) );
 				break;
 				}
 			case SYM_FUNCTION:
 				{
 				Function fn = ob_toFunction( ob, heap );
-				fl_write( fl, "FUNCTION_%p", fn );
+				charsSent += fl_write( fl, "FUNCTION_%p", fn );
 				break;
 				}
 			case SYM_TOKEN_BLOCK:
 				{
 				TokenBlock tb = ob_toTokenBlock( ob, heap );
-				fl_write( fl, "TOKEN_BLOCK_%p", tb );
+				charsSent += fl_write( fl, "TOKEN_BLOCK_%p", tb );
 				break;
 				}
 			case SYM_TOKEN_STREAM:
 				{
 				TokenStream ts = ob_toTokenStream( ob, heap );
-				fl_write( fl, "TOKEN_STREAM_%p", ts );
+				charsSent += fl_write( fl, "TOKEN_STREAM_%p", ts );
 				break;
 				}
 			default:
 				{
-				fl_write( fl, "%s_%p", sy_name( ob_tag(ob,heap), heap->st ), ob );
+				charsSent += fl_write( fl, "%s_%p", sy_name( ob_tag(ob,heap), heap->st ), ob );
 				break;
 				}
 			}

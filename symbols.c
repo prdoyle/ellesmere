@@ -29,6 +29,7 @@ static struct sy_struct predefinedSymbols[] =
 	{ "STATE_NODE" },
 	{ "ITEM_SET_NUM" },
 	{ "REDUCE_CONTEXT_LENGTH" },
+	{ "ANY" },
 	{ "BOOLEAN" },
 	{ "FALSE" },
 	{ "TRUE" },
@@ -75,6 +76,7 @@ FUNC Symbol sy_byName( const char *name, SymbolTable st )
 	sy = sta_nextElement( st );
 	memset( sy, 0, sizeof(*sy) );
 	sy->name = strdup( name );
+	// TODO: Add an inheritance relation with ANY
 	return sy;
 	}
 

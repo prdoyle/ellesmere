@@ -173,8 +173,16 @@ static bool mh_reallocInPlace( MemoryHunk mh, int8_t *oldEnd, int delta )
 	if( mh->alloc == oldEnd )
 		{
 		// This was the last allocation from mh.  Just pretend it was the modified size.
-		mh->alloc += delta;
-		return true;
+		if( mh->alloc + delta <= mh->limit )
+			{
+			mh->alloc += delta;
+			return true;
+			}
+		else
+			{
+			// Doesn't fit
+			return false;
+			}
 		}
 	else if( mh->prev && mh_reallocInPlace( mh->prev, oldEnd, delta ) )
 		{

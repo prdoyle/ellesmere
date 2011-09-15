@@ -154,7 +154,7 @@ static void pg_computeItemsExpectingToken( ParserGenerator pg, ItemVector result
 	ItemVector expectingItems = pg_sideTableEntry( pg, token, traceFile )->expectingItems;
 	if( !expectingItems )
 		{
-		bv_clear( result );
+		bv_clear( result ); // TODO: Is this right?  Why not unconditionally do the bv_copy below?  Perhaps this case never occurs?
 		return;
 		}
 	bv_copy( result, itemSet );
@@ -1800,6 +1800,7 @@ FUNC void ps_push( Parser ps, Object ob )
 				{
 				bv_clear( nextItems );
 				int itemSetNum = ps_itemSetNum( ps, i, isn );
+				charsSent += fl_write( stderr, "  -- is%d --\n", itemSetNum );
 				ItemSet its = itst_element( pg->itemSets, itemSetNum );
 				for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
 					{
@@ -1843,7 +1844,6 @@ FUNC void ps_push( Parser ps, Object ob )
 						}
 					charsSent += fl_write( stderr, " ]\n" );
 					}
-				charsSent += fl_write( stderr, "  ----\n" );
 				firstIteration = false;
 				bv_copy( curItems, nextItems );
 				}

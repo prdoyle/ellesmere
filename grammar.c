@@ -305,10 +305,9 @@ FUNC Production pn_new( Grammar gr, Symbol lhs, int lengthEstimate )
 
 FUNC Production pn_copy( Grammar oldGrammar, Production oldProduction, Grammar gr, Symbol lhs, int numTokensToCopy )
 	{
-	ProductionStorage storage;
+	ProductionStorage storage = pra_nextElement( gr->pra ); // Do this first because it can cause gr->pra (and hence oldGrammar->pra) to get reallocated
 	ProductionStorage old = pn2pns( oldProduction, oldGrammar );
 	int length = pn_length( oldProduction, oldGrammar );
-	storage = pra_nextElement( gr->pra );
 	*storage = *old;
 	storage->lhs = lhs;
 	storage->rhs = rhs_new( length, gr->ml );

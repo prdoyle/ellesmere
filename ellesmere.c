@@ -53,15 +53,23 @@ struct th_struct
 	FILE                *parserGenTrace;
 	} theThread = {0};
 
-static void addNewestProductionsToMap( Grammar gr, Thread th )
+static void addProductionsToMap( Grammar gr, int startIndex, Thread th )
 	{
 	int i;
-	for( i = gr_numOuterProductions( gr ); i < gr_numProductions( gr ); i++ )
+	for( i = startIndex; i < gr_numProductions( gr ); i++ )
 		{
 		Production pn = gr_production( gr, i );
 		if( pn_symbol( pn, gr ) )
+			{
+			trace( th->interpreterTrace, "Add to productionMap: %s -> %d\n", sy_name( pn_symbol( pn, gr ), th->st ), i );
 			ob_setIntField( th->productionMap, pn_symbol( pn, gr ), i, th->heap );
+			}
 		}
+	}
+
+static void addNewestProductionsToMap( Grammar gr, Thread th )
+	{
+	addProductionsToMap( gr, gr_numOuterProductions( gr ), th );
 	}
 
 static void cf_push()
@@ -561,7 +569,7 @@ static GrammarLine initialGrammarNest[] = { grammar1 };
 
 static struct gl_struct inheritance[] =
 	{
-	{{ "ANY",        "INT", "BOOLEAN", "OBJECT" }},
+	{{ "ANY",        "INT", "BOOLEAN", "OBJECT", "STRING" }},
 	{{ "BOOLEAN",    "FALSE", "TRUE" }},
 
 	{{NULL}},
@@ -623,7 +631,7 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 	gr_stopAdding( gr );
 	Symbol sym_abstract = sy_byName( "ABSTRACT_PRODUCTION", th->st );
 	gr = gr_augmented( gr, th->ir, sym_abstract, ml_indefinite(), th->parserGenTrace );
-	addNewestProductionsToMap( gr, th );
+	addProductionsToMap( gr, 0, th );
 
 	for( i=0; initialConcretifications[i].abstract; i++)
 		{
@@ -806,8 +814,13 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 			trace( th->interpreterTrace, "\n" );
 			}
 		push( toPush, th );
-		trace( th->interpreterTrace, "Advancing %p\n", ts_curBlock( th->tokenStream ) );
 		ts_advance( th->tokenStream );
+		if( th->interpreterTrace )
+			{
+			trace( th->interpreterTrace, "Advanced %p: ", ts_curBlock( th->tokenStream ) );
+			ts_sendTo( th->tokenStream, th->interpreterTrace );
+			trace( th->interpreterTrace, "\n" );
+			}
 		}
 
 	done:
@@ -860,7 +873,9 @@ static File openTrace( int fd, char *name )
 	if( result )
 		{
 		setbuf( result, 0 );
-		trace( result, "# %s\n", name );
+		setvbuf( result, malloc(BUFSIZ), _IOLBF, 1000 );
+		if( name )
+			trace( result, "# %s\n", name );
 		}
 	return result;
 	}

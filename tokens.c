@@ -182,7 +182,7 @@ FUNC void ts_advance( TokenStream ts )
 			di = ts_digression( ts );
 			}
 		}
-	if( !di ) // We've advanced past all digressions
+	else
 		ts->lex.current = getLexToken( ts );
 	}
 
