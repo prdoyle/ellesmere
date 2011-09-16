@@ -1,10 +1,16 @@
 
 #include "symbols.h"
 #include "memory.h"
-#include "symbols_impl.h"
 #include "objects.h"
 #include <string.h>
 #include <stdint.h>
+
+struct sy_struct
+	{
+	const char *name;
+	Object token;
+	Record instanceShape;
+	};
 
 #define AR_PREFIX  sta
 #define AR_TYPE    SymbolTable
@@ -106,6 +112,15 @@ FUNC int sy_sendTo( Symbol sy, File fl, SymbolTable st )
 	if( !fl )
 		return 0;
 	return fl_write( fl, "%s", sy_name( sy, st ) );
+	}
+
+#include "symbol_tokens.h"
+
+FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy )
+	{
+	if( !sy->token )
+		sy->token = ob_createToken( sy, heap );
+	return sy->token;
 	}
 
 //MERGE:20

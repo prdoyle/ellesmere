@@ -672,16 +672,13 @@ FUNC int ob_sendDotEdgesTo( Object ob, File fl, ObjectHeap heap )
 	return result;
 	}
 
-#include "symbols_impl.h"
+#include "symbol_tokens.h"
 
-FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy )
+FUNC Object ob_createToken( Symbol sy, ObjectHeap heap )
 	{
-	if( !sy->token )
-		{
-		sy->token = ob_create( sy_byIndex( SYM_TOKEN, heap->st ), heap );
-		sy->token->data.symbol = sy;
-		}
-	return sy->token;
+	Object result = ob_createX( SYM_TOKEN, heap );
+	result->data.symbol = sy;
+	return result;
 	}
 
 #ifdef OBJECTS_T
