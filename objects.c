@@ -5,7 +5,7 @@
 #include "stack.h"
 #include <stdint.h>
 #include <string.h>
-#include "parser.h" // for InheritanceRelation stuff
+#include "parser.h" // for InheritanceRelation stuff, which shouldn't really be in that header anyway...
 
 struct oh_struct
 	{
@@ -682,7 +682,7 @@ FUNC int ob_sendDotEdgesTo( Object ob, File fl, ObjectHeap heap )
 
 #include "symbol_tokens.h"
 
-FUNC Object ob_createToken( Symbol sy, ObjectHeap heap )
+FUNC Object oh_createToken( Symbol sy, ObjectHeap heap )
 	{
 	Object result = ob_createX( SYM_TOKEN, heap );
 	result->data.symbol = sy;

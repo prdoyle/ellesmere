@@ -131,7 +131,7 @@ FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy )
 	{
 	SymbolStorage sys = sy2sys( sy, oh_fieldSymbolTable( heap ) );
 	if( !sys->token )
-		sys->token = ob_createToken( sy, heap );
+		sys->token = oh_createToken( sy, heap );
 	return sys->token;
 	}
 

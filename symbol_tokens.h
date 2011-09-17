@@ -6,7 +6,7 @@
 // just a means by which a symbol table and a heap cooperate to create a unique
 // object ("token") for each symbol.
 //
-FUNC Object ob_createToken( Symbol sy, ObjectHeap heap );
+FUNC Object oh_createToken( Symbol sy, ObjectHeap heap );
 
 #endif
 
