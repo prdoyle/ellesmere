@@ -8,6 +8,7 @@
 typedef enum
 	{
 	NULL_SYMBOL_INDEX=0,
+	SYM_ANY, // Putting this first is useful for bootstrapping the InheritanceRelation
 
 	// Objects with these tags have no fields
 	//
@@ -28,7 +29,6 @@ typedef enum
 	SYM_STATE_NODE,
 	SYM_ITEM_SET_NUM,
 	SYM_REDUCE_CONTEXT_LENGTH,
-	SYM_ANY,
 	SYM_BOOLEAN,
 	SYM_FALSE,
 	SYM_TRUE,
@@ -44,7 +44,9 @@ typedef enum
 	} SymbolIndex;
 
 FUNC SymbolTable theSymbolTable();
-FUNC SymbolIndex st_count   ( SymbolTable st );
+
+FUNC SymbolIndex         st_count               ( SymbolTable st );
+FUNC InheritanceRelation st_inheritanceRelation ( SymbolTable st );
 
 FUNC SymbolIndex       sy_index ( Symbol sy, SymbolTable st );
 FUNC const const char *sy_name  ( Symbol sy, SymbolTable st );

@@ -99,6 +99,7 @@ static void cf_push()
 #endif
 	}
 
+#if 0
 static void cf_pop()
 	{
 #ifdef CALL_STACK
@@ -109,6 +110,7 @@ static void cf_pop()
 	stack = cf->stack;
 #endif
 	}
+#endif
 
 typedef void (*NativeAction)( Production handle, GrammarLine gl, Thread th );
 
@@ -358,7 +360,7 @@ static void addProductionAction( Production handle, GrammarLine gl, Thread th )
 		}
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
-	gr = gr_augmentedShallow( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), th->parserGenTrace );
+	gr = gr_augmentedShallow( gr, st_inheritanceRelation( th->st ), sym_abstract, ml_indefinite(), th->parserGenTrace );
 	addNewestProductionsToMap( gr, th );
 	ps_close( th->ps );
 	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->conflictLog, th->parserGenTrace );
@@ -414,6 +416,7 @@ static void defAction( Production handle, GrammarLine gl, Thread th )
 	ob_setFunctionField( th->executionBindings, pnSymbol, fn, th->heap );
 	}
 
+#if 0
 static void returnAction( Production handle, GrammarLine gl, Thread th )
 	{
 	Grammar gr = ps_grammar( th->ps );
@@ -426,6 +429,7 @@ static void returnAction( Production handle, GrammarLine gl, Thread th )
 	trace( th->programTrace, "  Returned to TokenBlock %p\n", ts_curBlock( th->tokenStream ) );
 	push( result, th );
 	}
+#endif
 
 static void nonzeroAction( Production handle, GrammarLine gl, Thread th )
 	{
@@ -448,6 +452,7 @@ static void leAction( Production handle, GrammarLine gl, Thread th )
 		pushToken( SYM_FALSE, th );
 	}
 
+#if 0
 static void setAction( Production handle, GrammarLine gl, Thread th )
 	{
 	popToken( th );
@@ -456,6 +461,7 @@ static void setAction( Production handle, GrammarLine gl, Thread th )
 	ob_setField( ts_getBindings( th->tokenStream ), name, rhs, th->heap );
 	push( oh_symbolToken( th->heap, pn_lhs( handle, ps_grammar(th->ps) ) ), th );
 	}
+#endif
 
 static Object recordified( Object ob, Thread th )
 	{
@@ -531,12 +537,12 @@ static struct gl_struct grammar1[] =
 	{ { "VOID",     "{", "VOIDS", "}"                                               }, { nopAction } },
 	{ { "VOID",     "{",          "}"                                               }, { nopAction } },
 
-	{ { "VOID",     "ANY", "print!"                                                 }, { printAction, 1 } },
+	{ { "VOID",     "OBJECT", "print!"                                              }, { printAction, 1 } },
 
-	{ { "VOID",     "ANY",  "return!",                                              }, { returnAction, 1 } },
-	{ { "VOID",     "VOID", "return!",                                              }, { returnAction, 1 } },
+	//{ { "VOID",     "OBJECT",  "return!",                                           }, { returnAction, 1 } },
+	//{ { "VOID",     "VOID", "return!",                                              }, { returnAction, 1 } },
 
-	{ { "VOID",     "ANY@value", "TOKEN@name", "set!"                               }, { setAction } },
+	//{ { "VOID",     "OBJECT@value", "TOKEN@name", "set!"                            }, { setAction } },
 
 	{ { "PARAMETER_LIST"                                                            }, { parseTreeAction } },
 	{ { "PARAMETER_LIST",  "TOKEN@tag",      "PARAMETER_LIST@next"                  }, { parseTreeAction } },
@@ -546,16 +552,16 @@ static struct gl_struct grammar1[] =
 	{ { "PRODUCTION",      "l2r", "TOKEN@result", "PARAMETER_LIST@parms"            }, { addProductionAction, CR_REDUCE_BEATS_SHIFT } },
 	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "}"                                 }, { stopRecordingTokenBlockAction } },
 	{ { "TOKEN_BLOCK",     "TB_START",          "}"                                 }, { stopRecordingTokenBlockAction } },
-	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "ANY", "}"                          }, { stopRecordingTokenBlockAction } },
-	{ { "TOKEN_BLOCK",     "TB_START", "ANY", "}"                                   }, { stopRecordingTokenBlockAction } },
+	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "OBJECT", "}"                       }, { stopRecordingTokenBlockAction } },
+	{ { "TOKEN_BLOCK",     "TB_START", "OBJECT", "}"                                }, { stopRecordingTokenBlockAction } },
 	{ { "TB_START",        "{",                                                     }, { recordTokenBlockAction } },
 	{ { "VOID",            "def", "PRODUCTION", "as", "TOKEN_BLOCK"                 }, { defAction } },
 
 	{ { "VOID",     "optimize!"                                                     }, { optimizeAction, 1 } },
 
-	{ { "OBJECT",   "TOKEN@tag", "create!"                                          }, { createAction } },
-	{ { "ANY",      "OBJECT@receiver", "TOKEN@field", "getfield!"                   }, { getFieldAction } },
-	{ { "VOID",     "OBJECT@receiver", "TOKEN@field", "ANY@value", "setfield!"      }, { setFieldAction } },
+	{ { "CREATABLE", "TOKEN@tag", "create!"                                         }, { createAction } },
+	{ { "OBJECT",    "WITH_FIELDS@receiver", "TOKEN@field", "getfield!"             }, { getFieldAction } },
+	{ { "VOID",      "MUTABLE@receiver", "TOKEN@field", "OBJECT@value", "setfield!" }, { setFieldAction } },
 
 	{ { "INT",   "INT", "INT", "add!"                                               }, { addAction } },
 	{ { "INT",   "INT", "INT", "sub!"                                               }, { subAction, 2 } },
@@ -572,8 +578,10 @@ static GrammarLine initialGrammarNest[] = { grammar1 };
 
 static struct gl_struct inheritance[] =
 	{
-	{{ "ANY",        "INT", "BOOLEAN", "OBJECT", "STRING" }},
-	{{ "BOOLEAN",    "FALSE", "TRUE" }},
+	{{ "OBJECT",      "IMMUTABLE", "WITH_FIELDS" }},          // OBJECT includes any sym that can be an object tag
+	{{ "IMMUTABLE",   "INT", "BOOLEAN", "STRING" }},
+	{{ "WITH_FIELDS", "CREATABLE", "MUTABLE" }},
+	{{ "BOOLEAN",     "FALSE", "TRUE" }},
 
 	{{NULL}},
 	};
@@ -633,7 +641,7 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 		}
 	gr_stopAdding( gr );
 	Symbol sym_abstract = sy_byName( "ABSTRACT_PRODUCTION", th->st );
-	gr = gr_augmented( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), th->parserGenTrace );
+	gr = gr_augmented( gr, st_inheritanceRelation( th->st ), sym_abstract, ml_indefinite(), th->parserGenTrace );
 	addProductionsToMap( gr, 0, th );
 
 	for( i=0; initialConcretifications[i].abstract; i++)
@@ -649,7 +657,7 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 static void initializeInheritanceRelation( ObjectHeap heap, SymbolTable st, MemoryLifetime ml, Thread th )
 	{
 	int superIndex, subIndex;
-	InheritanceRelation ir = oh_inheritanceRelation( th->heap );
+	InheritanceRelation ir = st_inheritanceRelation( th->st );
 	for( superIndex = 0; inheritance[ superIndex ].tokens[0]; superIndex++ )
 		{
 		GrammarLine gl = inheritance + superIndex;

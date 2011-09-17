@@ -4,6 +4,7 @@
 #include "objects.h"
 #include <string.h>
 #include <stdint.h>
+#include "parser.h" // for InheritanceRelation stuff, which shouldn't really be in that header anyway...
 
 typedef struct sys_struct
 	{
@@ -26,14 +27,10 @@ typedef struct sys_struct
 	#define sysa_new( size, ml ) sysa_newAnnotated( size, ml, __FILE__, __LINE__ )
 #endif
 
-struct st_struct
-	{
-	SymbolStorageArray array;
-	};
-
 static struct sys_struct predefinedSymbols[] =
 	{
 	{ "NULL_SYMBOL" },
+	{ "ANY" },
 	{ "INT" },
 	{ "STRING" },
 	{ "TOKEN" },
@@ -45,7 +42,6 @@ static struct sys_struct predefinedSymbols[] =
 	{ "STATE_NODE" },
 	{ "ITEM_SET_NUM" },
 	{ "REDUCE_CONTEXT_LENGTH" },
-	{ "ANY" },
 	{ "BOOLEAN" },
 	{ "FALSE" },
 	{ "TRUE" },
@@ -58,12 +54,16 @@ static struct sys_struct predefinedSymbols[] =
 	{ "DELEGATE" },
 	};
 
-enum { FIRST_SYMBOL_INDEX=0 }; // We want NULL_SYMBOL to correspond to zero
+struct st_struct
+	{
+	SymbolStorageArray   array;
+	InheritanceRelation  ir;
+	};
 
 FUNC SymbolIndex sy_index( Symbol sy, SymbolTable st )
 	{
-	SymbolIndex result = (SymbolIndex)( FIRST_SYMBOL_INDEX + ((intptr_t)sy) );
-	assert( 0 <= result && result < st_count( st ) );
+	SymbolIndex result = (SymbolIndex)(intptr_t)sy;
+	assert( NULL_SYMBOL_INDEX <= result && result < st_count( st ) );
 	return result;
 	}
 
@@ -88,10 +88,18 @@ FUNC SymbolTable theSymbolTable()
 	static SymbolTable result = NULL;
 	if( !result )
 		{
+		// Allocate and initialize from the above array
+		//
 		result = (SymbolTable)ml_alloc( ml_singleton(), sizeof(*result) );
 		result->array = sysa_new( 100 + NUM_PREDEFINED_SYMBOLS, ml_singleton() );
 		sysa_setCount( result->array, NUM_PREDEFINED_SYMBOLS );
 		memcpy( sysa_element( result->array, 0 ), predefinedSymbols, sizeof(predefinedSymbols) );
+
+		result->ir = ir_new( theObjectHeap(), result, ml_singleton() );
+		int i;
+		Symbol any = sy_byIndex( SYM_ANY, result );
+		for( i=SYM_ANY+1; i < st_count(result); i++ )
+			ir_add( result->ir, any, sy_byIndex( i, result ) );
 		}
 	return result;
 	}
@@ -99,6 +107,11 @@ FUNC SymbolTable theSymbolTable()
 FUNC SymbolIndex st_count( SymbolTable st )
 	{
 	return sysa_count( st->array );
+	}
+
+FUNC InheritanceRelation st_inheritanceRelation ( SymbolTable st )
+	{
+	return st->ir;
 	}
 
 FUNC Symbol sy_byName( const char *name, SymbolTable st )
@@ -110,8 +123,10 @@ FUNC Symbol sy_byName( const char *name, SymbolTable st )
 	SymbolStorage sys = sysa_nextElement( st->array );
 	memset( sys, 0, sizeof(*sys) );
 	sys->name = strdup( name );
-	// TODO: Add an inheritance relation with ANY
-	return sys2sy( sys, st );
+	Symbol result = sys2sy( sys, st );
+	if( st_inheritanceRelation( st ) ) // Can be NULL while bootstrapping the InheritanceRelation
+		ir_add( st_inheritanceRelation( st ), sy_byIndex( SYM_ANY, st ), result );
+	return result;
 	}
 
 FUNC const char *sy_name( Symbol sy, SymbolTable st )

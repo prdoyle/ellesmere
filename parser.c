@@ -779,7 +779,7 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 					}
 				else
 					{
-					trace( traceFile, "        Competitor has higher priority; removing lookaheads: " );
+					trace( traceFile, "        Competitor has higher priority\n" );
 					}
 
 				bv_minus( reduceSymbols, competitorSymbols );
@@ -968,9 +968,45 @@ FUNC void ir_add( InheritanceRelation ir, Symbol super, Symbol sub )
 	appendToArray( subNode,   SYM_SUPERTAGS, superNode, ir );
 	}
 
+typedef struct printer_struct
+	{
+	File fl;
+	InheritanceRelation ir;
+	int charsSent;
+	} *Printer;
+
+static void printSubtags( void *printerArg, Object node )
+	{
+	Printer p = (Printer)printerArg; File fl = p->fl; InheritanceRelation ir = p->ir;
+	if( ob_tag( node, ir->nodeHeap ) != ir->nodeTag )
+		return;
+
+	Object subArray = ob_getFieldX( node, SYM_SUBTAGS, ir->nodeHeap );
+	if( !subArray )
+		return;
+
+	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, ir->st );
+	int subtagIndex;
+	Object subnode;
+	const char *superName = sy_name( ob_getTokenField( node, symSymbol, ir->nodeHeap ), ir->st );
+	fl_write( fl, "  %s >", superName );
+	for( subtagIndex = IR_START_INDEX; NULL != ( subnode = ob_getElement( subArray, subtagIndex, ir->nodeHeap ) ); subtagIndex++ )
+		{
+		Symbol subTag = ob_getTokenField( subnode, symSymbol, ir->nodeHeap );
+		p->charsSent += fl_write( fl, " %s", sy_name( subTag, ir->st ) );
+		}
+	p->charsSent += fl_write( fl, "\n" );
+	}
+
 FUNC int ir_sendTo( InheritanceRelation ir, File fl )
 	{
-	return ob_sendDeepTo( ir->index, fl, ir->nodeHeap );
+	MemoryLifetime sendTime = ml_begin( 100, ml_undecided() );
+	Stack rootSet = sk_new( sendTime );
+	sk_push( rootSet, ob_getField( ir->index, sy_byIndex( SYM_ANY, ir->st ), ir->nodeHeap ) );
+	struct printer_struct printer = { fl, ir, 0 };
+	postorderWalk( rootSet, everyEdge, printSubtags, ir->nodeHeap, &printer );
+	ml_end( sendTime );
+	return printer.charsSent;
 	}
 
 static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, File diagnostics )
@@ -1275,7 +1311,7 @@ static Augmenter aug_begin( ParserGenerator pg, InheritanceRelation ir, File dia
 	result->ml = ml;
 	result->pg = pg;
 	result->ir = ir;
-	result->diagnostics = diagnostics;
+	result->diagnostics = NULL; // I pretty much trust this now.  Its output is a bit too chatty
 	result->top    = sk_new( result->ml );
 	result->bottom = sk_new( result->ml );
 	result->related    = cl_open( ir->nodeHeap );
@@ -1670,12 +1706,12 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, ObjectHeap heap, MemoryLifeti
 	ParserGenerator pg = pg_new( gr, st, stateNodeTag, generateTime, ml, theObjectHeap() );
 	pg_populateItemTable( pg, diagnostics );
 	pg_populateSymbolSideTable( pg, diagnostics );
-	if(0) sst_augment( oh_inheritanceRelation( heap ), pg, diagnostics );
+	if(0) sst_augment( st_inheritanceRelation( st ), pg, diagnostics );
 	Object startState = pg_computeLR0StateNodes( pg, diagnostics );
 	pg_computeFirstSets( pg, diagnostics );
-	if(0) sst_augment( oh_inheritanceRelation( heap ), pg, diagnostics );
+	if(0) sst_augment( st_inheritanceRelation( st ), pg, diagnostics );
 	pg_computeFollowSets( pg, diagnostics );
-	if(0) sst_augment( oh_inheritanceRelation( heap ), pg, diagnostics );
+	if(0) sst_augment( st_inheritanceRelation( st ), pg, diagnostics );
 	pg_computeSLRLookaheads( pg, diagnostics );
 	pg_computeReduceActions( pg, conflictLog, diagnostics );
 
@@ -1700,7 +1736,7 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, ObjectHeap heap, MemoryLifeti
 		result->pg = NULL;
 		}
 
-	if(0) au_augment( result, oh_inheritanceRelation( heap ), st, diagnostics );
+	if(0) au_augment( result, st_inheritanceRelation( st ), st, diagnostics );
 	return result;
 	}
 
@@ -2158,7 +2194,7 @@ int main( int argc, char *argv[] )
 	gr_stopAdding( gr );
 	//gr_sendTo( gr, traceFile, st );
 
-	InheritanceRelation ir = oh_inheritanceRelation( heap );
+	InheritanceRelation ir = st_inheritanceRelation( st );
 	for( i=0; i < asizeof( subtags ); i++ )
 		{
 		char **line = subtags[ i ];

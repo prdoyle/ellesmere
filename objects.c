@@ -5,13 +5,11 @@
 #include "stack.h"
 #include <stdint.h>
 #include <string.h>
-#include "parser.h" // for InheritanceRelation stuff, which shouldn't really be in that header anyway...
 
 struct oh_struct
 	{
 	SymbolTable          st;
 	MemoryLifetime       ml;
-	InheritanceRelation  ir;
 	int curCheckListIndex;
 	};
 
@@ -37,7 +35,6 @@ FUNC ObjectHeap theObjectHeap()
 		{
 		_theObjectHeap.st = theSymbolTable();
 		_theObjectHeap.ml = ml_singleton();
-		_theObjectHeap.ir = ir_new( &_theObjectHeap, theSymbolTable(), ml_singleton() );
 		_theObjectHeap.curCheckListIndex = 1;
 		}
 	return &_theObjectHeap;
@@ -51,11 +48,6 @@ FUNC SymbolTable oh_tagSymbolTable( ObjectHeap heap )
 FUNC SymbolTable oh_fieldSymbolTable( ObjectHeap heap )
 	{
 	return heap->st;
-	}
-
-FUNC InheritanceRelation oh_inheritanceRelation( ObjectHeap heap )
-	{
-	return heap->ir;
 	}
 
 typedef struct fdl_struct
