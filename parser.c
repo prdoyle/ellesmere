@@ -21,7 +21,11 @@ typedef struct it_struct
 	SymbolVector lookahead;  // May not be the optimal lookahead (ie. for LALR)
 	} *Item;
 
-typedef struct ita_struct *ItemArray;
+#ifdef NDEBUG
+	typedef struct ita_struct *ItemArray;
+#else
+	typedef Array ItemArray;
+#endif
 #define AR_PREFIX  ita
 #define AR_TYPE    ItemArray
 #define AR_ELEMENT struct it_struct
@@ -40,7 +44,11 @@ typedef struct sste_struct
 	SymbolVector follow;
 	} *SymbolSideTableEntry;
 
-typedef struct sst_struct *SymbolSideTable;
+#ifdef NDEBUG
+	typedef struct sst_struct *SymbolSideTable;
+#else
+	typedef Array SymbolSideTable;
+#endif
 #define AR_PREFIX  sst
 #define AR_TYPE    SymbolSideTable
 #define AR_ELEMENT struct sste_struct
@@ -63,7 +71,11 @@ static bool its_isExpanded( ItemSet its )
 	return its->edgePriorities != NULL;
 	}
 
-typedef struct itst_struct *ItemSetTable;
+#ifdef NDEBUG
+	typedef struct itst_struct *ItemSetTable;
+#else
+	typedef Array ItemSetTable;
+#endif
 #define AR_PREFIX  itst
 #define AR_TYPE    ItemSetTable
 #define AR_ELEMENT struct its_struct
@@ -801,7 +813,11 @@ struct ps_struct
 	File detailedDiagnostics;
 	};
 
-typedef struct psa_struct *ParserArray;
+#ifdef NDEBUG
+	typedef struct psa_struct *ParserArray;
+#else
+	typedef Array ParserArray;
+#endif
 #define AR_PREFIX  psa
 #define AR_TYPE    ParserArray
 #define AR_ELEMENT Parser

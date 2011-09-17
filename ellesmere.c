@@ -17,7 +17,11 @@ struct cf_struct
 	Stack  stack;
 	};
 
-typedef struct cs_struct *CallStack;
+#ifdef NDEBUG
+	typedef struct cs_struct *CallStack;
+#else
+	typedef Array CallStack;
+#endif
 #define AR_PREFIX  cs
 #define AR_TYPE    CallStack
 #define AR_ELEMENT struct cf_struct

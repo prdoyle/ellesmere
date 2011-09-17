@@ -18,7 +18,11 @@ struct di_struct
 	int        index;
 	};
 
-typedef struct dis_struct *DigressionStack;
+#ifdef NDEBUG
+	typedef struct dis_struct *DigressionStack;
+#else
+	typedef Array DigressionStack;
+#endif
 #define AR_PREFIX  dis
 #define AR_TYPE    DigressionStack
 #define AR_ELEMENT struct di_struct
@@ -40,7 +44,11 @@ struct ts_struct
 		} lex;
 	};
 
-typedef struct tss_struct *TokenStreamStack;
+#ifdef NDEBUG
+	typedef struct tss_struct *TokenStreamStack;
+#else
+	typedef Array TokenStreamStack;
+#endif
 #define AR_PREFIX  tss
 #define AR_TYPE    TokenStreamStack
 #define AR_ELEMENT TokenStream
@@ -50,7 +58,11 @@ typedef struct tss_struct *TokenStreamStack;
 	#define tss_new( size, ml ) tss_newAnnotated( size, ml, __FILE__, __LINE__ )
 #endif
 
-typedef struct tba_struct *TokenBlockArray;
+#ifdef NDEBUG
+	typedef struct tba_struct *TokenBlockArray;
+#else
+	typedef Array TokenBlockArray;
+#endif
 #define AR_PREFIX  tba
 #define AR_TYPE    TokenBlockArray
 #define AR_ELEMENT TokenBlock

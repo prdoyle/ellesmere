@@ -275,7 +275,7 @@ FUNC Symbol ob_tag( Object ob, ObjectHeap heap )
 
 static bool ob_hasItems( Object ob )
 	{
-	return ob_kind(ob) != OB_INT && ob->tag >= NUM_SPECIAL_OBJECT_TAGS;
+	return ob_kind(ob) != OB_INT && ob->tag >= NUM_FIELDLESS_OBJECT_TAGS;
 	}
 
 static Object ob_getItem( Object ob, SymbolIndex si, ObjectHeap heap )

@@ -11,7 +11,11 @@ typedef struct pe_struct
 	Symbol token;
 	} *ProductionElement;
 
-typedef struct rhs_struct *RightHandSide;
+#ifdef NDEBUG
+	typedef struct rhs_struct *RightHandSide; // type-safe phony struct
+#else
+	typedef Array RightHandSide; // give the debugger some symbol info it can use
+#endif
 #define AR_PREFIX  rhs
 #define AR_TYPE    RightHandSide
 #define AR_ELEMENT struct pe_struct
@@ -29,7 +33,11 @@ typedef struct pns_struct
 	ConflictResolutions cr;
 	} *ProductionStorage;
 
-typedef struct pra_struct *ProductionArray;
+#ifdef NDEBUG
+	typedef struct pra_struct *ProductionArray;
+#else
+	typedef Array ProductionArray;
+#endif
 #define AR_PREFIX  pra
 #define AR_TYPE    ProductionArray
 #define AR_ELEMENT struct pns_struct

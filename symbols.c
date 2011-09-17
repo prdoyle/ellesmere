@@ -12,14 +12,24 @@ typedef struct sys_struct
 	Record instanceShape;
 	} *SymbolStorage;
 
-#define AR_PREFIX  sta
-#define AR_TYPE    SymbolTable
+#ifdef NDEBUG
+	typedef struct sysa_struct *SymbolStorageArray; // type-safe phony struct
+#else
+	typedef Array SymbolStorageArray; // give the debugger some symbol info it can use
+#endif
+#define AR_PREFIX  sysa
+#define AR_TYPE    SymbolStorageArray
 #define AR_ELEMENT struct sys_struct
 #undef AR_BYVALUE
 #include "array_template.h"
 #ifndef NDEBUG
-	#define sta_new( size, ml ) sta_newAnnotated( size, ml, __FILE__, __LINE__ )
+	#define sysa_new( size, ml ) sysa_newAnnotated( size, ml, __FILE__, __LINE__ )
 #endif
+
+struct st_struct
+	{
+	SymbolStorageArray array;
+	};
 
 static struct sys_struct predefinedSymbols[] =
 	{
@@ -65,12 +75,12 @@ FUNC Symbol sy_byIndex( SymbolIndex index, SymbolTable st )
 
 static SymbolStorage sy2sys( Symbol sy, SymbolTable st )
 	{
-	return sta_element( st, sy_index( sy, st ) );
+	return sysa_element( st->array, sy_index( sy, st ) );
 	}
 
 static Symbol sys2sy( SymbolStorage sys, SymbolTable st )
 	{
-	return sy_byIndex( sys - sta_element( st, 0 ), st );
+	return sy_byIndex( sys - sysa_element( st->array, 0 ), st );
 	}
 
 FUNC SymbolTable theSymbolTable()
@@ -78,16 +88,17 @@ FUNC SymbolTable theSymbolTable()
 	static SymbolTable result = NULL;
 	if( !result )
 		{
-		result = sta_new( 100 + NUM_PREDEFINED_SYMBOLS, ml_singleton() );
-		sta_setCount( result, NUM_PREDEFINED_SYMBOLS );
-		memcpy( sta_element( result, 0 ), predefinedSymbols, sizeof(predefinedSymbols) );
+		result = (SymbolTable)ml_alloc( ml_singleton(), sizeof(*result) );
+		result->array = sysa_new( 100 + NUM_PREDEFINED_SYMBOLS, ml_singleton() );
+		sysa_setCount( result->array, NUM_PREDEFINED_SYMBOLS );
+		memcpy( sysa_element( result->array, 0 ), predefinedSymbols, sizeof(predefinedSymbols) );
 		}
 	return result;
 	}
 
 FUNC SymbolIndex st_count( SymbolTable st )
 	{
-	return sta_count( st );
+	return sysa_count( st->array );
 	}
 
 FUNC Symbol sy_byName( const char *name, SymbolTable st )
@@ -96,7 +107,7 @@ FUNC Symbol sy_byName( const char *name, SymbolTable st )
 	for( i=0; i < st_count(st); i++ )
 		if(!strcmp( name, sy_name( sy_byIndex(i,st), st ) ))
 			return sy_byIndex(i,st);
-	SymbolStorage sys = sta_nextElement( st );
+	SymbolStorage sys = sysa_nextElement( st->array );
 	memset( sys, 0, sizeof(*sys) );
 	sys->name = strdup( name );
 	// TODO: Add an inheritance relation with ANY
