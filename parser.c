@@ -1635,7 +1635,7 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Sy
 	return result;
 	}
 
-FUNC Automaton au_new( Grammar gr, SymbolTable st, InheritanceRelation ir, MemoryLifetime ml, File conflictLog, File diagnostics )
+FUNC Automaton au_new( Grammar gr, SymbolTable st, ObjectHeap heap, MemoryLifetime ml, File conflictLog, File diagnostics )
 	{
 	trace( diagnostics, "Generating automaton for {\n" );
 	gr_sendTo( gr, diagnostics, st );
@@ -1654,12 +1654,12 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, InheritanceRelation ir, Memor
 	ParserGenerator pg = pg_new( gr, st, stateNodeTag, generateTime, ml, theObjectHeap() );
 	pg_populateItemTable( pg, diagnostics );
 	pg_populateSymbolSideTable( pg, diagnostics );
-	if(0) sst_augment( ir, pg, diagnostics );
+	if(0) sst_augment( oh_inheritanceRelation( heap ), pg, diagnostics );
 	Object startState = pg_computeLR0StateNodes( pg, diagnostics );
 	pg_computeFirstSets( pg, diagnostics );
-	if(0) sst_augment( ir, pg, diagnostics );
+	if(0) sst_augment( oh_inheritanceRelation( heap ), pg, diagnostics );
 	pg_computeFollowSets( pg, diagnostics );
-	if(0) sst_augment( ir, pg, diagnostics );
+	if(0) sst_augment( oh_inheritanceRelation( heap ), pg, diagnostics );
 	pg_computeSLRLookaheads( pg, diagnostics );
 	pg_computeReduceActions( pg, conflictLog, diagnostics );
 
@@ -1684,7 +1684,7 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, InheritanceRelation ir, Memor
 		result->pg = NULL;
 		}
 
-	if(0) au_augment( result, ir, st, diagnostics );
+	if(0) au_augment( result, oh_inheritanceRelation( heap ), st, diagnostics );
 	return result;
 	}
 
@@ -2142,7 +2142,7 @@ int main( int argc, char *argv[] )
 	gr_stopAdding( gr );
 	//gr_sendTo( gr, traceFile, st );
 
-	InheritanceRelation ir = ir_new( heap, st, ml_indefinite() );
+	InheritanceRelation ir = oh_inheritanceRelation( heap );
 	for( i=0; i < asizeof( subtags ); i++ )
 		{
 		char **line = subtags[ i ];
@@ -2239,7 +2239,7 @@ int main( int argc, char *argv[] )
 		gr_sendTo( gr, traceFile, st );
 		}
 
-	Automaton au = au_new( gr, st, ir, ml_indefinite(), traceFile, traceFile );
+	Automaton au = au_new( gr, st, heap, ml_indefinite(), traceFile, traceFile );
 	fl_write( traceFile, "Automaton:\n" );
 	au_sendTo( au, traceFile, heap, st );
 

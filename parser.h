@@ -8,7 +8,7 @@
 #define ITEM_SET_NUMS
 #define REDUCE_CONTEXT_LENGTH // max tokens that could be involved in a reduce from the given state
 
-FUNC Automaton  au_new ( Grammar gr, SymbolTable st, InheritanceRelation ir, MemoryLifetime ml, File conflictLog, File diagnostics );
+FUNC Automaton  au_new ( Grammar gr, SymbolTable st, ObjectHeap heap, MemoryLifetime ml, File conflictLog, File diagnostics );
 FUNC Grammar    au_grammar ( Automaton au );
 
 FUNC Parser     ps_new ( Automaton au, MemoryLifetime ml, File diagnostics );

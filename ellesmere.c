@@ -38,7 +38,6 @@ struct th_struct
 	Stack                stack;
 	ObjectHeap           heap;
 	Parser               ps;
-	InheritanceRelation  ir;
 	Object               productionMap;
 	Object               executionBindings;
 	Object               recordingBindings;
@@ -355,10 +354,10 @@ static void addProductionAction( Production handle, GrammarLine gl, Thread th )
 		}
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
-	gr = gr_augmentedShallow( gr, th->ir, sym_abstract, ml_indefinite(), th->parserGenTrace );
+	gr = gr_augmentedShallow( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), th->parserGenTrace );
 	addNewestProductionsToMap( gr, th );
 	ps_close( th->ps );
-	Automaton au = au_new( gr, th->st, th->ir, ml_indefinite(), th->conflictLog, th->parserGenTrace );
+	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->conflictLog, th->parserGenTrace );
 	th->ps = ps_new( au, ml_indefinite(), th->parserGenTrace );
 	trace( th->interpreterDiagnostics, "    NEW PARSER\n" );
 
@@ -630,7 +629,7 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 		}
 	gr_stopAdding( gr );
 	Symbol sym_abstract = sy_byName( "ABSTRACT_PRODUCTION", th->st );
-	gr = gr_augmented( gr, th->ir, sym_abstract, ml_indefinite(), th->parserGenTrace );
+	gr = gr_augmented( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), th->parserGenTrace );
 	addProductionsToMap( gr, 0, th );
 
 	for( i=0; initialConcretifications[i].abstract; i++)
@@ -643,10 +642,10 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 	return gr;
 	}
 
-static InheritanceRelation initialIR( ObjectHeap heap, SymbolTable st, MemoryLifetime ml, Thread th )
+static void initializeInheritanceRelation( ObjectHeap heap, SymbolTable st, MemoryLifetime ml, Thread th )
 	{
 	int superIndex, subIndex;
-	InheritanceRelation result = ir_new( th->heap, th->st, ml );
+	InheritanceRelation ir = oh_inheritanceRelation( th->heap );
 	for( superIndex = 0; inheritance[ superIndex ].tokens[0]; superIndex++ )
 		{
 		GrammarLine gl = inheritance + superIndex;
@@ -654,17 +653,15 @@ static InheritanceRelation initialIR( ObjectHeap heap, SymbolTable st, MemoryLif
 		for( subIndex = 1; gl->tokens[ subIndex ]; subIndex++ )
 			{
 			Symbol sub = sy_byName( gl->tokens[ subIndex ], th->st );
-			ir_add( result, super, sub );
+			ir_add( ir, super, sub );
 			}
 		}
 
 	if( th->interpreterTrace )
 		{
 		trace( th->interpreterTrace, "Initial inheritance relation:\n" );
-		ir_sendTo( result, th->interpreterTrace );
+		ir_sendTo( ir, th->interpreterTrace );
 		}
-
-	return result;
 	}
 
 static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
@@ -892,13 +889,13 @@ int main( int argc, char **argv )
 	th->heap = theObjectHeap();
 	th->callStack = cs_new( 30, ml_indefinite() );
 	cs_setCount( th->callStack, 1 );
-	th->ir = initialIR( th->heap, th->st, ml_indefinite(), th );
+	initializeInheritanceRelation( th->heap, th->st, ml_indefinite(), th );
 	th->executionBindings = ob_create( sy_byIndex( SYM_BINDINGS, th->st ), th->heap );
 	th->recordingBindings = ob_create( sy_byIndex( SYM_BINDINGS, th->st ), th->heap );
 	th->concretifications = ob_create( sy_byIndex( SYM_BINDINGS, th->st ), th->heap );
 	th->productionMap     = ob_create( sy_byName( "PRODUCTION_MAP", th->st ), th->heap );
 	Grammar initialGrammar = populateGrammar( th->st, th );
-	Automaton au = au_new( initialGrammar, th->st, th->ir, ml_indefinite(), th->conflictLog, th->parserGenTrace );
+	Automaton au = au_new( initialGrammar, th->st, th->heap, ml_indefinite(), th->conflictLog, th->parserGenTrace );
 	th->ps = ps_new( au, ml_indefinite(), th->parserGenTrace );
 	th->stack = sk_new( ml_indefinite() );
 	th->tokenStream = theLexTokenStream( th->heap, th->st );
