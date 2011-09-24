@@ -39,7 +39,6 @@ struct th_struct
 	{
 	SymbolTable          st;
 	TokenStream          tokenStream;
-	Stack                stack;
 	ObjectHeap           heap;
 	Parser               ps;
 	Object               productionMap;
@@ -130,7 +129,7 @@ static void dumpStack0( File fl, Thread th ) __attribute__((noinline));
 static void dumpStack0( File fl, Thread th )
 	{
 	trace( fl, "    -- Stack: " );
-	sk_sendNTo( th->stack, 5+ps_reduceContextLength( th->ps, th->heap, th->st ), fl, th->heap );
+	sk_sendNTo( ps_operandStack( th->ps ), 5+ps_reduceContextLength( th->ps, th->heap, th->st ), fl, th->heap );
 	int i;
 	for( i = th->callStackDepth-1; i >= 0; i-- )
 		{
@@ -194,22 +193,19 @@ static void push( Object ob, Thread th )
 	trace( th->interpreterTrace, "push(" );
 	ob_sendTo( ob, th->interpreterTrace, th->heap );
 	trace( th->interpreterTrace, ")\n" );
-	sk_push( th->stack, ob );
 	ps_push( th->ps, ob );
 	dumpStuff( th->interpreterTrace, th );
 	}
 
 static Object pop( Thread th )
 	{
-	Object result = sk_pop( th->stack );
-	ps_popN( th->ps, 1 );
+	Object result = ps_pop( th->ps );
 	dumpStuff( th->interpreterTrace, th );
 	return result;
 	}
 
 static void popN( int n, Thread th )
 	{
-	sk_popN( th->stack, n );
 	ps_popN( th->ps, n );
 	dumpStuff( th->interpreterTrace, th );
 	}
@@ -255,7 +251,7 @@ static void passThrough( Production handle, GrammarLine gl, Thread th )
 	{
 	Grammar gr = ps_grammar( th->ps );
 	int depth = gl->response.parm1;
-	Object result = sk_item( th->stack, depth );
+	Object result = sk_item( ps_operandStack( th->ps ), depth );
 	popN( pn_length( handle, gr ), th );
 	push( result, th );
 	}
@@ -299,7 +295,7 @@ static void divAction( Production handle, GrammarLine gl, Thread th )
 static void printAction( Production handle, GrammarLine gl, Thread th )
 	{
 	int depth = gl->response.parm1;
-	ob_sendTo( sk_item( th->stack, depth ), stdout, th->heap );
+	ob_sendTo( sk_item( ps_operandStack( th->ps ), depth ), stdout, th->heap );
 	printf("\n");
 	nopAction( handle, gl, th );
 	}
@@ -331,7 +327,7 @@ static void parseTreeAction( Production handle, GrammarLine gl, Thread th )
 static void addProductionAction( Production handle, GrammarLine gl, Thread th )
 	{
 	parseTreeAction( handle, gl, th );
-	Object production = sk_top( th->stack );
+	Object production = sk_top( ps_operandStack( th->ps ) );
 	Symbol sym_result = sy_byName( "result", th->st );
 	Symbol sym_parms  = sy_byName( "parms",  th->st );
 	Symbol sym_next   = sy_byName( "next",   th->st );
@@ -362,15 +358,23 @@ static void addProductionAction( Production handle, GrammarLine gl, Thread th )
 	gr_stopAdding( gr );
 	gr = gr_augmentedShallow( gr, st_inheritanceRelation( th->st ), sym_abstract, ml_indefinite(), th->parserGenTrace );
 	addNewestProductionsToMap( gr, th );
-	ps_close( th->ps );
 	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->conflictLog, th->parserGenTrace );
+	Parser oldParser = th->ps;
 	th->ps = ps_new( au, ml_indefinite(), th->parserGenTrace );
 	trace( th->interpreterDiagnostics, "    NEW PARSER\n" );
 
+	if (th->interpreterDiagnostics)
+		{
+		trace( th->interpreterDiagnostics, "      Initializing from:\n" );
+		sk_sendTo( ps_operandStack( oldParser ), th->interpreterDiagnostics, th->heap );
+		trace( th->interpreterDiagnostics, "\n" );
+		}
+
 	// Prime the parser state with the current stack contents
 	int i;
-	for( i = sk_depth(th->stack) - 1; i >= 0; i-- )
-		ps_push( th->ps, sk_item( th->stack, i ) );
+	for( i = sk_depth( ps_operandStack( oldParser ) ) - 1; i >= 0; i-- )
+		ps_push( th->ps, sk_item( ps_operandStack( oldParser ), i ) );
+	ps_close( oldParser );
 	dumpParserState( th->interpreterTrace, th );
 
 	// Add bindings with a symbol for each named parameter
@@ -421,7 +425,7 @@ static void returnAction( Production handle, GrammarLine gl, Thread th )
 	{
 	Grammar gr = ps_grammar( th->ps );
 	int depth = gl->response.parm1;
-	Object result = sk_item( th->stack, depth );
+	Object result = sk_item( ps_operandStack( th->ps ), depth );
 	popN( pn_length( handle, gr ), th );
 	ts_pop( th->tokenStream );
 	push( oh_symbolToken( th->heap, pn_lhs( handle, ps_grammar(th->ps) ) ), th );
@@ -518,9 +522,10 @@ static void getFieldAction( Production handle, GrammarLine gl, Thread th )
 
 static void setFieldAction( Production handle, GrammarLine gl, Thread th )
 	{
-	Object value = sk_item( th->stack, 1 );
-	Symbol field = ob_toSymbol( sk_item( th->stack, 2 ), th->heap );
-	Object receiver = sk_item( th->stack, 3 );
+	Stack operandStack = ps_operandStack( th->ps );
+	Object value = sk_item( operandStack, 1 );
+	Symbol field = ob_toSymbol( sk_item( operandStack, 2 ), th->heap );
+	Object receiver = sk_item( operandStack, 3 );
 	ob_setField( receiver, field, value, th->heap );
 	nopAction( handle, gl, th );
 	}
@@ -680,7 +685,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 	{
 	assert( bindings );
 
-	int startingDepth = ps_depth( th->ps );
+	int startingDepth = sk_depth( ps_operandStack( th->ps ) );
 
 	if( th->interpreterTrace )
 		{
@@ -716,7 +721,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 					Symbol nameSymbol = pn_name( handleProduction, i, gr );
 					if( nameSymbol )
 						{
-						Object value = sk_item( th->stack, pn_length( handleProduction, gr ) - i - 1 );
+						Object value = sk_item( ps_operandStack( th->ps ), pn_length( handleProduction, gr ) - i - 1 );
 						trace( th->programTrace, "%s%s=", sep, sy_name( nameSymbol, th->st ) );
 						ob_sendTo( value, th->programTrace, th->heap );
 						sep = " ";
@@ -734,7 +739,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 
 			if( recording )
 				{
-				int depthWithoutHandle = ps_depth( th->ps ) - pn_length( handleProduction, gr );
+				int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
 				popN( pn_length( handleProduction, gr ), th );
 				Object lhs = oh_symbolToken( th->heap, pn_lhs( handleProduction, gr ) );
 				if( th->interpreterTrace )
@@ -909,7 +914,6 @@ int main( int argc, char **argv )
 	Grammar initialGrammar = populateGrammar( th->st, th );
 	Automaton au = au_new( initialGrammar, th->st, th->heap, ml_indefinite(), th->conflictLog, th->parserGenTrace );
 	th->ps = ps_new( au, ml_indefinite(), th->parserGenTrace );
-	th->stack = sk_new( ml_indefinite() );
 	th->tokenStream = theLexTokenStream( th->heap, th->st );
 
 	mainParsingLoop( NULL, th->executionBindings, th );

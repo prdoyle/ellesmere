@@ -84,8 +84,8 @@ FUNC Record rd_new( BitVector fieldIDs, MemoryLifetime ml )
 	// Allocate the result struct
 	Record result;
 	int numFields = bv_population( fieldIDs );
-	if( numFields <= 0 || numFields > ( 1 << (8*sizeof( result->buckets[0].indexes[0] )) ) )
-		return NULL; // TODO: Do the first N and then quit?
+	if( numFields <= 1 || numFields > ( 1 << (8*sizeof( result->buckets[0].indexes[0] )) ) )
+		return NULL; // TODO: Do the first N and then quit?  TODO: Handle 1-field records -- they should be most efficient of all!
 	result = (Record)ml_alloc( ml, sizeof(*result) );
 	result->maxIndex = numFields;
 	result->fieldIDs = bv_new( bv_lastBit( fieldIDs ), ml );

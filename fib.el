@@ -79,6 +79,6 @@ as
 
 optimize!
 
-fibs( 2 )
+#fibs( 2 )
 #fibs( 12 )
-#fibs( 24 )
+fibs( 24 )

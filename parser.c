@@ -809,6 +809,7 @@ struct ps_struct
 	{
 	Automaton au;
 	Stack stateStack;
+	Stack operandStack;
 	File diagnostics;
 	File detailedDiagnostics;
 	};
@@ -1767,7 +1768,8 @@ FUNC Parser ps_new( Automaton au, MemoryLifetime ml, File diagnostics )
 		{
 		result = (Parser)ml_alloc( ml, sizeof(*result) );
 		result->au = au;
-		result->stateStack = sk_new( ml );
+		result->stateStack   = sk_new( ml );
+		result->operandStack = sk_new( ml );
 		trace( diagnostics, "PARSER Allocated new parser %p on %p @ %d\n", result, au, psa_count( au->parsers ) );
 		psa_append( au->parsers, result );
 		}
@@ -1781,12 +1783,25 @@ FUNC void ps_close( Parser ps )
 	{
 	trace( ps->diagnostics, "PARSER Freed parser %p\n", ps );
 	sk_popAll( ps->stateStack );
+	sk_popAll( ps->operandStack );
 	}
 
 FUNC Automaton ps_automaton( Parser ps )
 	{
 	return ps->au;
 	}
+
+FUNC Stack ps_operandStack( Parser ps )
+	{
+	return ps->operandStack;
+	}
+
+#if 0
+FUNC Stack ps_stateStack( Parser ps )
+	{
+	return ps->stateStack;
+	}
+#endif
 
 #ifdef ITEM_SET_NUMS
 static int ps_itemSetNum( Parser ps, int depth, Symbol isn )
@@ -1906,11 +1921,7 @@ FUNC void ps_push( Parser ps, Object ob )
 		}
 	check( nextState );
 	sk_push( ps->stateStack, nextState );
-	}
-
-FUNC int ps_depth( Parser ps )
-	{
-	return sk_depth( ps->stateStack );
+	sk_push( ps->operandStack, ob );
 	}
 
 FUNC Symbol ps_handle( Parser ps, Object lookahead )
@@ -1923,16 +1934,11 @@ FUNC Symbol ps_handle( Parser ps, Object lookahead )
 		return NULL;
 	}
 
-FUNC Symbol ps_representativeHandle( Parser ps, Object lookahead )
+FUNC void ps_popN( Parser ps, int objectCount )
 	{
-	// TODO: Implement this properly or delete it
-	return ps_handle( ps, lookahead );
-	}
-
-FUNC void ps_popN( Parser ps, int count )
-	{
-	assert( sk_depth( ps->stateStack ) >= count+1 ); // must always leave the startState on the stack
-	sk_popN( ps->stateStack, count );
+	assert( sk_depth( ps->stateStack ) >= objectCount+1 ); // must always leave the startState on the stack
+	sk_popN( ps->stateStack, objectCount );
+	sk_popN( ps->operandStack, objectCount );
 	}
 
 FUNC int au_sendTo( Automaton au, File fl, ObjectHeap heap, SymbolTable st )
