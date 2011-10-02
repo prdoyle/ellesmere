@@ -1011,10 +1011,8 @@ static bool subtagPredicate( void *printerArg, Object head, Symbol edgeSymbol, i
 
 FUNC int ir_sendTo( InheritanceRelation ir, File fl )
 	{
-	ob_sendDeepTo( ir->index, fl, ir->nodeHeap );
 	MemoryLifetime sendTime = ml_begin( 100, ml_undecided() );
 	Stack rootSet = sk_new( sendTime );
-	//sk_push( rootSet, ob_getField( ir->index, sy_byIndex( SYM_ANY, ir->st ), ir->nodeHeap ) );
 	sk_push( rootSet, ir->index );
 	struct printer_struct printer = { fl, ir, 0 };
 	postorderWalk( rootSet, subtagPredicate, printSubtags, ir->nodeHeap, &printer );

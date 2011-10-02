@@ -451,7 +451,6 @@ static int recurseIntoArrayElement( Object head, int index, Object tail, Stack w
 
 FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexProcedure processVertex, ObjectHeap heap, void *context )
 	{
-	MemoryLifetime walkTime = ml_begin( 1000, ml_indefinite() );
 	CheckList alreadyPushed = cl_open( heap );
 	int i;
 	for( i=0; i < sk_depth( workList ); i++ )
@@ -464,13 +463,13 @@ FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexPr
 			{
 			Record rd = sy_instanceShape( ob_tag(curObject,heap), heap->st );
 			int fieldID;
-			for( fieldID = rd_firstField(rd); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
+			for( fieldID = rd_firstField(rd); fieldID != rd_NONE && !numChildrenPushed; fieldID = rd_nextField( rd, fieldID ) )
 				{
 				Symbol sy = sy_byIndex( fieldID, heap->st );
 				numChildrenPushed += recurseIntoField( curObject, sy, ob_getField( curObject, sy, heap ), workList, alreadyPushed, heap, recurseIntoEdge, context );
 				}
 			FieldList field;
-			for( field = curObject->data.listFields; field; field = field->tail )
+			for( field = curObject->data.listFields; field && !numChildrenPushed; field = field->tail )
 				{
 				int si = (int)field->si;
 				if( si < 0 )
@@ -486,7 +485,6 @@ FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexPr
 			}
 		}
 	cl_close( alreadyPushed );
-	ml_end( walkTime );
 	}
 
 bool everyEdge( void *context, Object head, Symbol edgeSymbol, int edgeIndex, Object tail ){ return true; }
