@@ -32,6 +32,10 @@ FUNC int ob_sendTo         ( Object ob, File fl, ObjectHeap heap );
 FUNC int ob_sendDeepTo     ( Object ob, File fl, ObjectHeap heap );
 FUNC int ob_sendDotEdgesTo ( Object ob, File fl, ObjectHeap heap );
 
+typedef int ( *ObjectFormat )( void *context, Object object, File fl );
+static inline int ob_sendFormattedTo( Object ob, File fl, ObjectFormat format, void *context )
+	{ return format( context, ob, fl ); }
+
 typedef struct oba_struct *ObjectArray;
 #define AR_PREFIX  oba
 #define AR_TYPE    ObjectArray
@@ -98,6 +102,9 @@ static inline Object ob_getFieldX( Object ob, SymbolIndex fieldIndex, ObjectHeap
 
 static inline void ob_setFieldX( Object ob, SymbolIndex fieldIndex, Object value, ObjectHeap heap )
 	{ ob_setField( ob, sy_byIndex( fieldIndex, oh_fieldSymbolTable( heap ) ), value, heap ); }
+
+static inline Symbol ob_getTokenFieldX( Object ob, SymbolIndex fieldIndex, ObjectHeap heap )
+	{ return ob_getTokenField( ob, sy_byIndex( fieldIndex, oh_fieldSymbolTable( heap ) ), heap ); }
 
 // Miscellaneous handy functions
 

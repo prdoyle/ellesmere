@@ -319,16 +319,18 @@ FUNC void bv_shrinkWrap( BitVector bv )
 	bv->numWords = newNumWords;
 	}
 
-FUNC int bv_sendFormattedTo( BitVector bv, File fl, BitFormat format, void *context )
+FUNC int bv_sendFormattedToX( BitVector bv, File fl, BitFormat format, void *context, char *prefix, char *separator, char *suffix )
 	{
-	int i; int charsSent = fl_write( fl, "{ " ); const char *sep = "";
+	int i;
+	int charsSent = fl_write( fl, "%s", prefix );
+	const char *sep = "";
 	for( i = bv_firstBit( bv ); i != bv_END; i = bv_nextBit( bv, i ) )
 		{
 		charsSent += fl_write( fl, "%s", sep );
 		charsSent += format( context, i, fl );
-		sep = ", ";
+		sep = separator;
 		}
-	charsSent += fl_write( fl, " }" );
+	charsSent += fl_write( fl, "%s", suffix );
 	return charsSent;
 	}
 

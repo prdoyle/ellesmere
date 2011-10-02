@@ -22,5 +22,13 @@ FUNC int sk_sendNTo( Stack sk, int numElements, File fl, ObjectHeap heap );
 static inline int sk_sendTo( Stack sk, File fl, ObjectHeap heap )
 	{ return sk_sendNTo( sk, sk_depth(sk), fl, heap ); }
 
+FUNC int sk_sendNFormattedToX( Stack sk, int numElements, File fl, ObjectFormat format, void *context, char *separator );
+static inline int sk_sendFormattedToX( Stack sk, File fl, ObjectFormat format, void *context, char *separator )
+	{ return sk_sendNFormattedToX( sk, sk_depth(sk), fl, format, context, separator ); }
+static inline int sk_sendNFormattedTo( Stack sk, int numElements, File fl, ObjectFormat format, void *context )
+	{ return sk_sendNFormattedToX( sk, numElements, fl, format, context, ", " ); }
+static inline int sk_sendFormattedTo( Stack sk, File fl, ObjectFormat format, void *context )
+	{ return sk_sendNFormattedTo( sk, sk_depth(sk), fl, format, context ); }
+
 #endif
 

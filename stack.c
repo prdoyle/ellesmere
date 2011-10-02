@@ -83,5 +83,26 @@ FUNC int sk_sendNTo( Stack sk, int numElements, File fl, ObjectHeap heap )
 		}
 	}
 
+FUNC int sk_sendNFormattedToX( Stack sk, int numElements, File fl, ObjectFormat format, void *context, char *separator )
+	{
+	if( !fl )
+		return 0;
+	else
+		{
+		int i;
+		int charsSent = 0;
+		if( numElements >= sk_depth(sk) )
+			numElements = sk_depth(sk);
+		char *sep = "";
+		for( i = numElements - 1; i >= 0; i-- )
+			{
+			charsSent += fl_write( fl, "%s", sep );
+			sep = ", ";
+			charsSent += ob_sendFormattedTo( sk_item( sk, i ), fl, format, context );
+			}
+		return charsSent;
+		}
+	}
+
 //MERGE:50
 

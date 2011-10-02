@@ -38,7 +38,9 @@ FUNC void      bv_shift( BitVector bv );
 FUNC void      bv_shrinkWrap( BitVector bv );
 
 typedef int ( *BitFormat )( void *context, int bitIndex, File fl );
-FUNC int       bv_sendFormattedTo( BitVector bv, File fl, BitFormat format, void *context );
+FUNC int       bv_sendFormattedToX( BitVector bv, File fl, BitFormat format, void *context, char *prefix, char *separator, char *suffix );
+static inline int bv_sendFormattedTo( BitVector bv, File fl, BitFormat format, void *context )
+	{ return bv_sendFormattedToX( bv, fl, format, context, "{ ", ", ", " }" ); }
 
 FUNC int sendBitNumber( void *formatStr, int bitIndex, File fl );
 static inline int bv_sendTo( BitVector bv, File fl )

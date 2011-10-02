@@ -261,6 +261,67 @@ static void pg_populateItemTable( ParserGenerator pg, File traceFile )
 	 bv_shrinkWrap( pg->rightmostItems );
 	}
 
+static int sendSymByNumber( void *symbolTable, int symIndex, File file )
+	{
+	SymbolTable st = (SymbolTable)symbolTable;
+	return fl_write( file, "'%s'", sy_name( sy_byIndex( symIndex, st ), st ) );
+	}
+
+static int sendSymBySSTIndex( void *parserGenerator, int sstIndex, File file )
+	{
+	ParserGenerator pg = (ParserGenerator)parserGenerator;
+	SymbolSideTableEntry sste = sst_element( pg->sst, sstIndex );
+	return fl_write( file, "'%s'", sy_name( sste->sy, pg->st ) );
+	}
+
+static int sendItem( void *parserGenerator, int itemIndex, File file )
+	{
+	ParserGenerator pg = (ParserGenerator)parserGenerator;
+	Item it = ita_element( pg->items, itemIndex );
+	int charsSent = 0;
+	charsSent += fl_write( file, "      i%d: ", itemIndex );
+	charsSent += pn_sendItemTo( it->pn, it->dot, file, pg->gr, pg->st );
+	charsSent += fl_write( file, "\n" );
+	return charsSent;
+	}
+
+static int pg_sendSymbolSideTableTo( ParserGenerator pg, File diagnostics )
+	{
+	if( !diagnostics )
+		return 0;
+
+	SymbolSideTable sst = pg->sst;
+	int i, charsSent=0;
+	for( i=1; i < sst_count( sst ); i++ )
+		{
+		SymbolSideTableEntry sste = sst_element( sst, i );
+		charsSent += fl_write( diagnostics, "  s%d: '%s'\n", i, sy_name( sste->sy, pg->st ) );
+		if( sste->leftmostItems )
+			{
+			charsSent += fl_write( diagnostics, "    leftmostItems:\n" );
+			bv_sendFormattedToX( sste->leftmostItems, diagnostics, sendItem, pg, "", "", "" );
+			}
+		if( sste->expectingItems )
+			{
+			charsSent += fl_write( diagnostics, "    expectingItems:\n" );
+			bv_sendFormattedToX( sste->expectingItems, diagnostics, sendItem, pg, "", "", "" );
+			}
+		if( sste->first )
+			{
+			charsSent += fl_write( diagnostics, "    first: " );
+			bv_sendFormattedTo( sste->first, diagnostics, sendSymBySSTIndex, pg );
+			charsSent += fl_write( diagnostics, "\n" );
+			}
+		if( sste->follow )
+			{
+			charsSent += fl_write( diagnostics, "    follow: " );
+			bv_sendFormattedTo( sste->follow, diagnostics, sendSymBySSTIndex, pg );
+			charsSent += fl_write( diagnostics, "\n" );
+			}
+		}
+	return charsSent;
+	}
+
 static void pg_populateSymbolSideTable( ParserGenerator pg, File traceFile )
 	{
 	int i,j;
@@ -313,6 +374,9 @@ static void pg_populateSymbolSideTable( ParserGenerator pg, File traceFile )
 		bv_set( stateNodeFields, sy_index( sste->sy, st ) );
 		}
 	sy_setInstanceShape( pg->stateNodeTag, rd_new( stateNodeFields, pg->parseTime ), st );
+
+	trace( traceFile, "Initial SymbolSideTable:\n" );
+	pg_sendSymbolSideTableTo( pg, traceFile );
 	}
 
 static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
@@ -438,19 +502,9 @@ static void pg_computeFirstSets( ParserGenerator pg, File traceFile )
 				}
 			}
 		}
-	}
 
-static int sendSymByNumber( void *symbolTable, int symIndex, File file )
-	{
-	SymbolTable st = (SymbolTable)symbolTable;
-	return fl_write( file, "'%s'", sy_name( sy_byIndex( symIndex, st ), st ) );
-	}
-
-static int sendSymBySSTIndex( void *parserGenerator, int sstIndex, File file )
-	{
-	ParserGenerator pg = (ParserGenerator)parserGenerator;
-	SymbolSideTableEntry sste = sst_element( pg->sst, sstIndex );
-	return fl_write( file, "'%s'", sy_name( sste->sy, pg->st ) );
+	trace( traceFile, "SymbolSiteTable after pg_computeFirstSets:\n" );
+	pg_sendSymbolSideTableTo( pg, traceFile );
 	}
 
 static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
@@ -523,7 +577,17 @@ static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 				}
 			}
 		}
+
+	trace( traceFile, "SymbolSiteTable after pg_computeFollowSets:\n" );
+	pg_sendSymbolSideTableTo( pg, traceFile );
 	}
+
+#if 0
+static int its_sendTo( ItemSet its, File diagnostics, ParserGenerator pg )
+	{
+	return bv_sendFormattedTo( its->items, diagnostics, sendItem, pg );
+	}
+#endif
 
 static void pg_computeSLRLookaheads( ParserGenerator pg, File traceFile )
 	{
@@ -990,7 +1054,7 @@ static void printSubtags( void *printerArg, Object node )
 	int subtagIndex;
 	Object subnode;
 	const char *superName = sy_name( ob_getTokenField( node, symSymbol, ir->nodeHeap ), ir->st );
-	fl_write( fl, "  %s >", superName );
+	fl_write( fl, "    %s >", superName );
 	for( subtagIndex = IR_START_INDEX; NULL != ( subnode = ob_getElement( subArray, subtagIndex, ir->nodeHeap ) ); subtagIndex++ )
 		{
 		Symbol subTag = ob_getTokenField( subnode, symSymbol, ir->nodeHeap );
@@ -1248,7 +1312,7 @@ static void sste_propagate( SymbolSideTableEntry target, SymbolSideTableEntry so
 	trace( diagnostics, "      sste_propagate '%s' <- '%s'\n", sy_name( target->sy, pg->st ), sy_name( source->sy, pg->st ) );
 	}
 
-static void propagateFromPreds( Symbol sourceArraySymbol, Object targetIRNode, SymbolSideTableEntry targetEntry, ObjectHeap irNodeHeap, ParserGenerator pg, File diagnostics )
+static void propagateFromPreds( Symbol sourceArraySymbol, Object targetIRNode, SymbolSideTableEntry targetEntry, CheckList relatedNodes, ObjectHeap irNodeHeap, ParserGenerator pg, File diagnostics )
 	{
 	SymbolTable st = pg->st;
 	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
@@ -1262,10 +1326,11 @@ static void propagateFromPreds( Symbol sourceArraySymbol, Object targetIRNode, S
 	for( i = IR_START_INDEX; NULL != ( sourceIRNode = ob_getElement( sourceArray, i, irNodeHeap ) ); i++ )
 		{
 		Symbol sourceSym = ob_getTokenField( sourceIRNode, symSymbol, irNodeHeap );
-		sste_propagate(
-			targetEntry,
-			pg_sideTableEntry( pg, sourceSym, diagnostics ),
-			pg, diagnostics );
+		SymbolSideTableEntry sourceEntry = pg_sideTableEntry( pg, sourceSym, diagnostics );
+		if( cl_isChecked( relatedNodes, sourceIRNode ) )
+			sste_propagate( targetEntry, sourceEntry, pg, diagnostics );
+		else
+			trace( diagnostics, "      ('%s' not related)\n", sy_name( sourceSym, pg->st ) );
 		}
 	}
 
@@ -1322,7 +1387,7 @@ static Augmenter aug_begin( ParserGenerator pg, InheritanceRelation ir, File dia
 	result->ml = ml;
 	result->pg = pg;
 	result->ir = ir;
-	result->diagnostics = NULL; // I pretty much trust this now.  Its output is a bit too chatty
+	result->diagnostics = NULL; //diagnostics;
 	result->top    = sk_new( result->ml );
 	result->bottom = sk_new( result->ml );
 	result->related    = cl_open( ir->nodeHeap );
@@ -1412,6 +1477,12 @@ static void pushOntoTopDownStack( void *augArg, Object node )
 	sk_push( aug->topDownStack, node );
 	}
 
+static int printObjectSymbolField( void *heapArg, Object ob, File fl )
+	{
+	ObjectHeap heap = (ObjectHeap)heapArg;
+	return fl_write( fl, "'%s'", sy_name( ob_getTokenFieldX( ob, SYM_SYMBOL, heap ), oh_tagSymbolTable( heap ) ) );
+	}
+
 static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagnostics )
 	{
 	SymbolTable st = pg->st;
@@ -1423,10 +1494,15 @@ static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagno
 
 	if( diagnostics )
 		{
-		trace( diagnostics, "Augmenting symbol side table index\n" );
+		trace( diagnostics, "Augmenting symbol side table\n" );
 		trace( diagnostics, "  Inheritance relation: {\n" );
+		ir_sendTo( ir, diagnostics );
+		trace( diagnostics, "  }\n" );
+		/*
+		trace( diagnostics, "  Inheritance relation object graph: {\n" );
 		ob_sendDeepTo( ir->index, diagnostics, heap );
 		trace( diagnostics, "}\n" );
+		*/
 		}
 
 	int i;
@@ -1440,33 +1516,33 @@ static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagno
 
 	if( diagnostics )
 		{
-		trace( diagnostics, "  Root set: " );
-		sk_sendTo( rootSet, diagnostics, ir->nodeHeap );
-		trace( diagnostics, "\n" );
+		trace( diagnostics, "  Root set: { " );
+		sk_sendFormattedToX( rootSet, diagnostics, printObjectSymbolField, ir->nodeHeap, ", " );
+		trace( diagnostics, "} \n" );
 		}
 
 	trace( diagnostics, "  Walking upward to find top nodes and related nodes\n" );
 	aug->direction     = superTags;
 	aug->terminalNodes = aug->top;
-	postorderWalk( sk_dup( rootSet, aug->ml ), everyEdge, findTerminalNodes, ir->nodeHeap, aug );
+	postorderWalk( sk_dup( rootSet, aug->ml ), propagationPredicate, findTerminalNodes, ir->nodeHeap, aug );
 
 	if( diagnostics )
 		{
-		trace( diagnostics, "    Top: " );
-		sk_sendTo( aug->top, diagnostics, ir->nodeHeap );
-		trace( diagnostics, "\n" );
+		trace( diagnostics, "    Top: { " );
+		sk_sendFormattedToX( aug->top, diagnostics, printObjectSymbolField, ir->nodeHeap, ", " );
+		trace( diagnostics, " }\n" );
 		}
 
 	trace( diagnostics, "  Walking downward to find bottom nodes and related nodes\n" );
 	aug->direction     = subTags;
 	aug->terminalNodes = aug->bottom;
-	postorderWalk( sk_dup( rootSet, aug->ml ), everyEdge, findTerminalNodes, ir->nodeHeap, aug );
+	postorderWalk( sk_dup( rootSet, aug->ml ), propagationPredicate, findTerminalNodes, ir->nodeHeap, aug );
 
 	if( diagnostics )
 		{
-		trace( diagnostics, "    Bottom: " );
-		sk_sendTo( aug->bottom, diagnostics, ir->nodeHeap );
-		trace( diagnostics, "\n" );
+		trace( diagnostics, "    Bottom: { " );
+		sk_sendFormattedToX( aug->bottom, diagnostics, printObjectSymbolField, ir->nodeHeap, ", " );
+		trace( diagnostics, " }\n" );
 		}
 
 	trace( diagnostics, "  Computing top-down stack\n" );
@@ -1477,9 +1553,9 @@ static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagno
 
 	if( diagnostics )
 		{
-		trace( diagnostics, "    Top-down: " );
-		sk_sendTo( topDown, diagnostics, ir->nodeHeap );
-		trace( diagnostics, "\n" );
+		trace( diagnostics, "    Top-down: { " );
+		sk_sendFormattedToX( topDown, diagnostics, printObjectSymbolField, ir->nodeHeap, ", " );
+		trace( diagnostics, " } \n" );
 		}
 
 	trace( diagnostics, "  Initializing newly-added side-table entries\n" );
@@ -1494,9 +1570,12 @@ static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagno
 			bv_set( sste->first, pg_symbolSideTableIndex( pg, sste->sy ) );
 			}
 		}
+
+	CheckList relatedNodes = aug->related;
 	trace( diagnostics, "  Propagating side table info downward into temp table\n" );
 	SymbolSideTable tempTable = sst_new( sst_count( pg->sst ), aug->ml );
 	sst_clear( tempTable, sst_count( pg->sst ) );
+
 	for( i=0; i < sk_depth( topDown ); i++ )
 		{
 		Object node = sk_item( topDown, i );
@@ -1509,7 +1588,7 @@ static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagno
 
 		// Propagate info from all preds into this entry
 		//
-		propagateFromPreds( superTags, node, sste, heap, pg, diagnostics );
+		propagateFromPreds( superTags, node, sste, relatedNodes, heap, pg, aug->diagnostics );
 		}
 
 	trace( diagnostics, "  Propagating side table info upward\n" );
@@ -1517,7 +1596,7 @@ static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagno
 		{
 		Object node = sk_item( topDown, i );
 		SymbolSideTableEntry sste = pg_sideTableEntry( pg, irNodeSymbol( node, ir ), diagnostics );
-		propagateFromPreds( subTags, node, sste, heap, pg, diagnostics );
+		propagateFromPreds( subTags, node, sste, relatedNodes, heap, pg, aug->diagnostics );
 		}
 
 	trace( diagnostics, "  Merging temp table into main table\n" );
@@ -1527,10 +1606,13 @@ static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagno
 		int sstIndex = irNodeSideTableIndex( node, ir, pg );
 		SymbolSideTableEntry realEntry = sst_element( pg->sst,   sstIndex );
 		SymbolSideTableEntry tempEntry = sst_element( tempTable, sstIndex );
-		sste_propagate( realEntry, tempEntry, pg, diagnostics );
+		sste_propagate( realEntry, tempEntry, pg, aug->diagnostics );
 		}
 
 	aug_end( aug );
+
+	trace( diagnostics, "Augmented SymbolSiteTable:\n" );
+	pg_sendSymbolSideTableTo( pg, diagnostics );
 	}
 
 #define INHERIT_DIRECTION SYM_SUBTAGS
