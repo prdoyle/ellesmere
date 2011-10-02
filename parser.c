@@ -365,7 +365,7 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 			int highestPriority = 1 + pn_nestDepth( shallowestItem->pn, pg->gr );
 			int ssti = pg_symbolSideTableIndex( pg, expected );
 			curItemSet->edgePriorities[ ssti ] = highestPriority;
-			trace( traceFile, "      edgePriorities[ %d ] = %d\n", ssti, highestPriority );
+			trace( traceFile, "      edgePriorities['%s'] = %d\n", sy_name( expected, st ), highestPriority );
 
 			bv_minus( itemsLeft, nextItems );
 			trace( traceFile, "          itemsLeft: " );
@@ -999,13 +999,25 @@ static void printSubtags( void *printerArg, Object node )
 	p->charsSent += fl_write( fl, "\n" );
 	}
 
+static bool subtagPredicate( void *printerArg, Object head, Symbol edgeSymbol, int edgeIndex, Object tail )
+	{
+	Printer p = (Printer)printerArg; InheritanceRelation ir = p->ir;
+	if( ob_tag( tail, ir->nodeHeap ) == ir->nodeTag )
+		return true;
+	if( sy_index( edgeSymbol, ir->st ) == SYM_SUBTAGS )
+		return true;
+	return false;
+	}
+
 FUNC int ir_sendTo( InheritanceRelation ir, File fl )
 	{
+	ob_sendDeepTo( ir->index, fl, ir->nodeHeap );
 	MemoryLifetime sendTime = ml_begin( 100, ml_undecided() );
 	Stack rootSet = sk_new( sendTime );
-	sk_push( rootSet, ob_getField( ir->index, sy_byIndex( SYM_ANY, ir->st ), ir->nodeHeap ) );
+	//sk_push( rootSet, ob_getField( ir->index, sy_byIndex( SYM_ANY, ir->st ), ir->nodeHeap ) );
+	sk_push( rootSet, ir->index );
 	struct printer_struct printer = { fl, ir, 0 };
-	postorderWalk( rootSet, everyEdge, printSubtags, ir->nodeHeap, &printer );
+	postorderWalk( rootSet, subtagPredicate, printSubtags, ir->nodeHeap, &printer );
 	ml_end( sendTime );
 	return printer.charsSent;
 	}
@@ -1612,6 +1624,9 @@ static void addAllProductionCombos( Grammar newGrammar, Production newProduction
 
 FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Symbol abstractSymbol, MemoryLifetime ml, File diagnostics, bool recursive )
 	{
+	if (1)
+		return original;
+
 	// TODO: Improve these # production estimates
 	// TODO: Move to grammar.c
 
@@ -1707,7 +1722,7 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, ObjectHeap heap, MemoryLifeti
 	ParserGenerator pg = pg_new( gr, st, stateNodeTag, generateTime, ml, theObjectHeap() );
 	pg_populateItemTable( pg, diagnostics );
 	pg_populateSymbolSideTable( pg, diagnostics );
-	if(0) sst_augment( st_inheritanceRelation( st ), pg, diagnostics );
+	if(1) sst_augment( st_inheritanceRelation( st ), pg, diagnostics );
 	Object startState = pg_computeLR0StateNodes( pg, diagnostics );
 	pg_computeFirstSets( pg, diagnostics );
 	if(0) sst_augment( st_inheritanceRelation( st ), pg, diagnostics );

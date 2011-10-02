@@ -622,6 +622,11 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 			for( k=1; k < asizeof( line->tokens ) && line->tokens[k]; k++ )
 				{
 				char *token = line->tokens[k];
+				if( token[0] == '#' )
+					{
+					pn_append( pn, sy_byIndex( SYM_TOKEN, th->st ), gr );
+					token++;
+					}
 				char *at = strchr( token, '@' );
 				if( at != NULL && at != token )
 					{
