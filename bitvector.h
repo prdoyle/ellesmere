@@ -34,6 +34,13 @@ FUNC void      bv_minus ( BitVector target, BitVector source );
 // the operation changed the target vector
 FUNC bool      bv_orChanged( BitVector target, BitVector source );
 
+static inline BitVector bv_dup( BitVector source, MemoryLifetime ml )
+	{
+	BitVector result = bv_new( 0, ml );
+	bv_copy( result, source );
+	return result;
+	}
+
 FUNC void      bv_shift( BitVector bv );
 FUNC void      bv_shrinkWrap( BitVector bv );
 

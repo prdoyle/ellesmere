@@ -902,7 +902,7 @@ static File openTrace( int fd, char *name )
 int main( int argc, char **argv )
 	{
 	Thread th = &theThread;
-	th->conflictLog = stderr;
+	th->conflictLog = NULL; //stderr;
 	th->programTrace           = openTrace( 3, "3: Ellesmere program trace" );
 	th->interpreterDiagnostics = openTrace( 4, "4: Ellesmere interpreter diagnostics" );
 	th->interpreterTrace       = openTrace( 5, "5: Ellesmere interpreter trace" );

@@ -8,4 +8,4 @@ if [ -n "$1" ]; then
 fi
 shift
 
-./ellesmere < fib.el 3>$WHICH.out 4>&3 5>&3 6>&3
+./ellesmere < fib.el 2>$WHICH.out 3>&2 4>&3 5>&3 6>&3
