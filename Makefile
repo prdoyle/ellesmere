@@ -31,19 +31,17 @@ stripped: all
 
 Y_FILES     := $(wildcard *.y)
 L_FILES     := $(wildcard *.l)
-GEN_C_FILES := $(patsubst %.l,%.l.c,$(L_FILES)) $(patsubst %.y,%.y.c,$(Y_FILES))
-
-small: GEN_C_FILES += _merged.c
-fast:  GEN_C_FILES += _merged.c
-prof:  GEN_C_FILES += _merged.c
+LEX_C_FILES := $(patsubst %.l,%.l.c,$(L_FILES)) $(patsubst %.y,%.y.c,$(Y_FILES))
+GEN_C_FILES := $(LEX_C_FILES) _merged.c
 
 # ALL_X_FILES is all files with an extension of .x
-# X_FILES is all files with an extension of .x without a "main" function
+# X_FILES is all source files (not generated files) with an extension of .x without a "main" function
 #
 GEN_O_FILES := $(patsubst %.c,%.o,$(GEN_C_FILES))
+LEX_O_FILES := $(patsubst %.c,%.o,$(LEX_C_FILES))
 ALL_C_FILES := $(sort $(GEN_C_FILES) $(wildcard *.c))
 T_C_FILES   := $(wildcard *.t.c)
-C_FILES     := $(filter-out $(T_C_FILES) ellesmere.c, $(ALL_C_FILES))
+C_FILES     := $(filter-out $(T_C_FILES) ellesmere.c $(GEN_C_FILES), $(ALL_C_FILES))
 GEN_H_FILES := $(patsubst %.l,%.l.h,$(L_FILES)) $(patsubst %.y,%.y.h,$(Y_FILES))
 H_FILES     := $(sort $(GEN_H_FILES) $(wildcard *.h))
 O_FILES     := $(patsubst %.c,%.o,$(C_FILES))
@@ -67,7 +65,7 @@ _merged.c: $(GEN_H_FILES)
 tags: $(C_FILES) $(H_FILES)
 	ctags -R .
 
-ellesmere: ellesmere.o $(O_FILES)
+ellesmere: ellesmere.o $(O_FILES) $(LEX_O_FILES)
 	$(LD) $(LDFLAGS) $^ -o $@ -lfl #-lefence
 
 $(ALL_O_FILES): %.o: %.c
@@ -76,7 +74,7 @@ $(ALL_O_FILES): %.o: %.c
 $(ALL_I_FILES): %.i: %.c
 	$(CC) $(CFLAGS) -E $< -o $@
 
-$(ALL_S_FILES) _merged.s: %.s: %.c
+$(ALL_S_FILES): %.s: %.c
 	$(CC) $(CFLAGS) -S $< -o $@
 
 
@@ -113,7 +111,7 @@ parser.t: CFLAGS += -DPARSER_T
 parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvector.o stack.o records.o
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
-records.t: records.t.o $(O_FILES)
+records.t: records.t.o records.o symbols.o objects.o memory.o stack.o array.o bitvector.o file.o parser.o grammar.o
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
 objects.t: objects.t.o objects.o bitvector.o memory.o file.o records.o symbols.o stack.o array.o
@@ -121,7 +119,7 @@ objects.t: objects.t.o objects.o bitvector.o memory.o file.o records.o symbols.o
 
 %.pdf: %.dot
 	#neato -Tpdf < $< > $@
-	dot -Tpdf < $< > $@
+	dot -Tpdf $< > $@
 
 states.dot: parser.t
 	./parser.t > states.dot 3> trace.txt
@@ -130,6 +128,6 @@ clean:
 	rm -f ellesmere tags _merged.c $(GEN_C_FILES) $(GEN_H_FILES) $(ALL_O_FILES) $(ALL_I_FILES) $(ALL_D_FILES)
 	rm -f memreport.txt gmon.out *.gcda
 	rm -f memreport.txt gmon.out *.gcda oprof.txt sorted-oprof.txt gprof.txt
-	rm -f bitvector.t parser.t records.t objects.t states.dot states.pdf trace.txt
+	rm -f bitvector.t parser.t records.t objects.t states.dot states.pdf modules.pdf trace.txt
 
 .PHONY: all merged memreport.txt

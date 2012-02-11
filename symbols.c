@@ -155,6 +155,8 @@ FUNC int sy_sendTo( Symbol sy, File fl, SymbolTable st )
 
 FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy )
 	{
+	// TODO: This is a hack that won't work if we ever want multiple object heaps and multiple tokens for a given symbol.
+	// The ObjectHeap should contain a mapping from symbols to tokens.
 	SymbolStorage sys = sy2sys( sy, oh_fieldSymbolTable( heap ) );
 	if( !sys->token )
 		sys->token = oh_createToken( sy, heap );
