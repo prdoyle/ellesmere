@@ -37,14 +37,21 @@ small: GEN_C_FILES += _merged.c
 fast:  GEN_C_FILES += _merged.c
 prof:  GEN_C_FILES += _merged.c
 
+# ALL_X_FILES is all files with an extension of .x
+# X_FILES is all files with an extension of .x without a "main" function
+#
 GEN_O_FILES := $(patsubst %.c,%.o,$(GEN_C_FILES))
-C_FILES     := $(sort $(GEN_C_FILES) $(wildcard *.c))
+ALL_C_FILES := $(sort $(GEN_C_FILES) $(wildcard *.c))
+T_C_FILES   := $(wildcard *.t.c)
+C_FILES     := $(filter-out $(T_C_FILES) ellesmere.c, $(ALL_C_FILES))
 GEN_H_FILES := $(patsubst %.l,%.l.h,$(L_FILES)) $(patsubst %.y,%.y.h,$(Y_FILES))
 H_FILES     := $(sort $(GEN_H_FILES) $(wildcard *.h))
 O_FILES     := $(patsubst %.c,%.o,$(C_FILES))
-D_FILES     := $(patsubst %.c,%.d,$(C_FILES))
-I_FILES     := $(patsubst %.c,%.i,$(C_FILES))
-S_FILES     := $(patsubst %.c,%.s,$(C_FILES))
+ALL_O_FILES := $(patsubst %.c,%.o,$(ALL_C_FILES))
+ALL_D_FILES := $(patsubst %.c,%.d,$(ALL_C_FILES))
+ALL_I_FILES := $(patsubst %.c,%.i,$(ALL_C_FILES))
+ALL_S_FILES := $(patsubst %.c,%.s,$(ALL_C_FILES))
+T_FILES     := $(patsubst %.t.c,%.t,$(T_C_FILES))
 
 _merged.o: CFLAGS += -DFUNC="static " -Wno-unused-function
 _merged.i: CFLAGS += -DFUNC="static " -Wno-unused-function
@@ -60,16 +67,16 @@ _merged.c: $(GEN_H_FILES)
 tags: $(C_FILES) $(H_FILES)
 	ctags -R .
 
-ellesmere: $(O_FILES)
+ellesmere: ellesmere.o $(O_FILES)
 	$(LD) $(LDFLAGS) $^ -o $@ -lfl #-lefence
 
-$(O_FILES): %.o: %.c
+$(ALL_O_FILES): %.o: %.c
 	$(CC) $(CFLAGS) $< -o $@ -MMD -MF $(@:.o=.d)
 
-$(I_FILES): %.i: %.c
+$(ALL_I_FILES): %.i: %.c
 	$(CC) $(CFLAGS) -E $< -o $@
 
-$(S_FILES) _merged.s: %.s: %.c
+$(ALL_S_FILES) _merged.s: %.s: %.c
 	$(CC) $(CFLAGS) -S $< -o $@
 
 
@@ -106,12 +113,10 @@ parser.t: CFLAGS += -DPARSER_T
 parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvector.o stack.o records.o
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
-records.t: CFLAGS += -DRECORDS_T
-records.t: records.o bitvector.o memory.o file.o
+records.t: records.t.o $(O_FILES)
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
-objects.t: CFLAGS += -DOBJECTS_T
-objects.t: objects.o bitvector.o memory.o file.o records.o symbols.o stack.o array.o
+objects.t: objects.t.o objects.o bitvector.o memory.o file.o records.o symbols.o stack.o array.o
 	$(LD) $(LDFLAGS) $^ -o $@ -lefence
 
 %.pdf: %.dot
@@ -122,7 +127,7 @@ states.dot: parser.t
 	./parser.t > states.dot 3> trace.txt
 
 clean:
-	rm -f ellesmere tags _merged.c $(GEN_C_FILES) $(GEN_H_FILES) $(O_FILES) $(I_FILES) $(D_FILES)
+	rm -f ellesmere tags _merged.c $(GEN_C_FILES) $(GEN_H_FILES) $(ALL_O_FILES) $(ALL_I_FILES) $(ALL_D_FILES)
 	rm -f memreport.txt gmon.out *.gcda
 	rm -f memreport.txt gmon.out *.gcda oprof.txt sorted-oprof.txt gprof.txt
 	rm -f bitvector.t parser.t records.t objects.t states.dot states.pdf trace.txt
