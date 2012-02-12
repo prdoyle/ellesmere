@@ -7,6 +7,7 @@ small: merged
 	strip ellesmere
 
 -include *.d
+-include modules.mak
 
 CC := gcc
 CFLAGS  += -c -Wall -Werror -Wmissing-declarations -g -std=gnu99 -I.
@@ -111,7 +112,8 @@ parser.t: CFLAGS += -DPARSER_T
 parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvector.o stack.o records.o
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
-records.t: records.t.o records.o symbols.o objects.o memory.o stack.o array.o bitvector.o file.o parser.o grammar.o
+# TODO: Fix InheritanceRelation so we don't need the explicit dependencies below
+records.t: records.t.o records.o $(records_DEPS) parser.o grammar.o stack.o objects.o
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
 objects.t: objects.t.o objects.o bitvector.o memory.o file.o records.o symbols.o stack.o array.o
@@ -124,10 +126,14 @@ objects.t: objects.t.o objects.o bitvector.o memory.o file.o records.o symbols.o
 states.dot: parser.t
 	./parser.t > states.dot 3> trace.txt
 
+modules.mak: modules.dot dot2mak
+	grep '\->' $< | grep -v OMIT | sort | dot2mak > $@
+
 clean:
 	rm -f ellesmere tags _merged.c $(GEN_C_FILES) $(GEN_H_FILES) $(ALL_O_FILES) $(ALL_I_FILES) $(ALL_D_FILES)
 	rm -f memreport.txt gmon.out *.gcda
 	rm -f memreport.txt gmon.out *.gcda oprof.txt sorted-oprof.txt gprof.txt
-	rm -f bitvector.t parser.t records.t objects.t states.dot states.pdf modules.pdf trace.txt
+	rm -f bitvector.t parser.t records.t objects.t states.dot states.pdf trace.txt
+	rm -f modules.pdf modules.mak
 
 .PHONY: all merged memreport.txt

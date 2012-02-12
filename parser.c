@@ -1479,7 +1479,7 @@ static bool propagationPredicate( void *augArg, Object head, Symbol edgeSymbol, 
 		{
 		trace( diagnostics, "      propagationPredicate( " );
 		ob_sendTo( head, diagnostics, heap );
-		trace( diagnostics, ", '%s', %d, ", edgeSymbol?( sy_name( edgeSymbol, theSymbolTable(/*cheat!*/) ) ): "(null)", edgeIndex );
+		trace( diagnostics, ", '%s', %d, ", edgeSymbol?( sy_name( edgeSymbol, theSymbolTable( theObjectHeap() /*cheat!*/) ) ): "(null)", edgeIndex );
 		ob_sendTo( tail, diagnostics, heap );
 		trace( diagnostics, " ) = %s %s\n", result? "is":"is not", reason );
 		}
@@ -1962,7 +1962,7 @@ static Object ps_nextState( Parser ps, Object ob )
 	Symbol token = ob_tag( ob, oh );
 	if( ps->detailedDiagnostics )
 		{
-		trace( ps->detailedDiagnostics, "NEXT STATE from %d ob: ", ps_itemSetNum( ps, 0, sy_byIndex( SYM_ITEM_SET_NUM, theSymbolTable() ) ) );
+		trace( ps->detailedDiagnostics, "NEXT STATE from %d ob: ", ps_itemSetNum( ps, 0, sy_byIndex( SYM_ITEM_SET_NUM, theSymbolTable( theObjectHeap() ) ) ) );
 		ob_sendTo( ob, ps->detailedDiagnostics, theObjectHeap() );
 		trace( ps->detailedDiagnostics, "\n" );
 		}
@@ -2323,8 +2323,8 @@ int main( int argc, char *argv[] )
 	File traceFile = fdopen( 3, "wt" );
 	File dotFile   = stdout;
 
-	st = theSymbolTable();
 	heap = theObjectHeap();
+	st = theSymbolTable( heap );
 	goal = sy_byName( grammar[0][0], st );
 	gr = gr_new( goal, asizeof( grammar ), ml_indefinite() );
 	for( i=0; i < asizeof( grammar ); i++ )

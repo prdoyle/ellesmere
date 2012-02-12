@@ -83,7 +83,7 @@ static Symbol sys2sy( SymbolStorage sys, SymbolTable st )
 	return sy_byIndex( sys - sysa_element( st->array, 0 ), st );
 	}
 
-FUNC SymbolTable theSymbolTable()
+FUNC SymbolTable theSymbolTable( ObjectHeap theObjectHeap )
 	{
 	static SymbolTable result = NULL;
 	if( !result )
@@ -95,7 +95,7 @@ FUNC SymbolTable theSymbolTable()
 		sysa_setCount( result->array, NUM_PREDEFINED_SYMBOLS );
 		memcpy( sysa_element( result->array, 0 ), predefinedSymbols, sizeof(predefinedSymbols) );
 
-		result->ir = ir_new( theObjectHeap(), result, ml_singleton() );
+		result->ir = ir_new( theObjectHeap, result, ml_singleton() );
 		int i;
 		Symbol any = sy_byIndex( SYM_ANY, result );
 		for( i=SYM_ANY+1; i < st_count(result); i++ )
@@ -153,14 +153,14 @@ FUNC int sy_sendTo( Symbol sy, File fl, SymbolTable st )
 
 #include "symbol_tokens.h"
 
-FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy )
+FUNC Object st_getToken( SymbolTable st, Symbol sy )
 	{
-	// TODO: This is a hack that won't work if we ever want multiple object heaps and multiple tokens for a given symbol.
-	// The ObjectHeap should contain a mapping from symbols to tokens.
-	SymbolStorage sys = sy2sys( sy, oh_fieldSymbolTable( heap ) );
-	if( !sys->token )
-		sys->token = oh_createToken( sy, heap );
-	return sys->token;
+	return sy2sys( sy, st )->token;
+	}
+
+FUNC void st_setToken( SymbolTable st, Symbol sy, Object token )
+	{
+	sy2sys( sy, st )->token = token;
 	}
 
 //MERGE:20

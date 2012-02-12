@@ -24,15 +24,14 @@ digraph "Module dependencies" {
 	tokens     -> array
 	grammar    -> symbols
 	parser     -> grammar
-	parser     -> ir
+	parser     -> ir  // OMIT
 	tokens     -> lex
-	symbols    -> ir  // Is this one ok?
+	symbols    -> ir  // OMIT: Is this one ok?
 
-	// Back-edges to eliminate
-	symbols    -> objects [ color=blue weight=0 ]  // objects.c should manage the tokens, not symbols.c
+	//symbols    -> objects [ color=blue weight=0 ]  // OMIT: objects.c should manage the tokens, not symbols.c
 
 	// Bad dependencies
-	ir         -> parser  [ color=red  weight=0 ]  // This should be in its own file
+	ir         -> parser  [ color=red  weight=0 ]  // OMIT: This should be in its own file
 
 	// Everything seems to depend on file
 	bitvector  -> file    [ color=grey weight=0 ]

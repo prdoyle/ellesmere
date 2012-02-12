@@ -43,7 +43,7 @@ typedef enum
 	NUM_PREDEFINED_SYMBOLS
 	} SymbolIndex;
 
-FUNC SymbolTable theSymbolTable();
+FUNC SymbolTable theSymbolTable( ObjectHeap theObjectHeap ); // cheesy interface here
 
 FUNC SymbolIndex         st_count               ( SymbolTable st );
 FUNC InheritanceRelation st_inheritanceRelation ( SymbolTable st );

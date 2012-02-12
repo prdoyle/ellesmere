@@ -33,9 +33,9 @@ FUNC ObjectHeap theObjectHeap()
 	static struct oh_struct _theObjectHeap = { 0 };
 	if( !_theObjectHeap.st )
 		{
-		_theObjectHeap.st = theSymbolTable();
 		_theObjectHeap.ml = ml_singleton();
 		_theObjectHeap.curCheckListIndex = 1;
+		_theObjectHeap.st = theSymbolTable( &_theObjectHeap );
 		}
 	return &_theObjectHeap;
 	}
@@ -672,10 +672,16 @@ FUNC int ob_sendDotEdgesTo( Object ob, File fl, ObjectHeap heap )
 
 #include "symbol_tokens.h"
 
-FUNC Object oh_createToken( Symbol sy, ObjectHeap heap )
+FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy )
 	{
-	Object result = ob_createX( SYM_TOKEN, heap );
-	result->data.symbol = sy;
+	SymbolTable st = oh_fieldSymbolTable( heap );
+	Object result = st_getToken( st, sy );
+	if( !result )
+		{
+		result = ob_createX( SYM_TOKEN, heap );
+		result->data.symbol = sy;
+		st_setToken( st, sy, result );
+		}
 	return result;
 	}
 
@@ -683,12 +689,12 @@ FUNC Object oh_createToken( Symbol sy, ObjectHeap heap )
 
 static Object create( char *tagName )
 	{
-	return ob_create( sy_byName( tagName, theSymbolTable() ), theObjectHeap() );
+	return ob_create( sy_byName( tagName, theSymbolTable( theObjectHeap() ) ), theObjectHeap() );
 	}
 
 static void field( Object from, char *edgeName, Object to )
 	{
-	ob_setField( from, sy_byName( edgeName, theSymbolTable() ), to, theObjectHeap() );
+	ob_setField( from, sy_byName( edgeName, theSymbolTable( theObjectHeap() ) ), to, theObjectHeap() );
 	}
 
 static void element( Object from, int index, Object to )
@@ -699,7 +705,7 @@ static void element( Object from, int index, Object to )
 static const char *ob2str( Object ob )
 	{
 	if( ob )
-		return sy_name( ob_tag( ob, theObjectHeap() ), theSymbolTable() );
+		return sy_name( ob_tag( ob, theObjectHeap() ), theSymbolTable( theObjectHeap() ) );
 	else
 		return "(NULL)";
 	}
@@ -708,7 +714,7 @@ static bool printEveryEdge( void *fileArg, Object head, Symbol edgeSymbol, int e
 	{
 	File file = (File)fileArg;
 	if( edgeSymbol )
-		fl_write( file, "%s -%s-> %s\n", ob2str( head ), sy_name( edgeSymbol, theSymbolTable() ), ob2str( tail ) );
+		fl_write( file, "%s -%s-> %s\n", ob2str( head ), sy_name( edgeSymbol, theSymbolTable( theObjectHeap() ) ), ob2str( tail ) );
 	else
 		fl_write( file, "%s[%d] -> %s\n", ob2str( head ), edgeIndex, ob2str( tail ) );
 	return true;

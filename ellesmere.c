@@ -907,8 +907,8 @@ int main( int argc, char **argv )
 	th->interpreterDiagnostics = openTrace( 4, "4: Ellesmere interpreter diagnostics" );
 	th->interpreterTrace       = openTrace( 5, "5: Ellesmere interpreter trace" );
 	th->parserGenTrace = openTrace( 6, "6: Ellesmere parserGenTrace" );
-	th->st = theSymbolTable();
 	th->heap = theObjectHeap();
+	th->st = theSymbolTable( th->heap );
 	th->callStack = cs_new( 30, ml_indefinite() );
 	cs_setCount( th->callStack, 1 );
 	initializeInheritanceRelation( th->heap, th->st, ml_indefinite(), th );
