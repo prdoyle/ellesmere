@@ -113,7 +113,7 @@ parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvect
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
 # TODO: Fix InheritanceRelation so we don't need the explicit dependencies below
-records.t: records.t.o records.o $(records_DEPS) parser.o grammar.o stack.o objects.o
+records.t: records.t.o records.o $(records_DEPS) parser.o grammar.o stack.o objects.o walk.o
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
 objects.t: objects.t.o objects.o bitvector.o memory.o file.o records.o symbols.o stack.o array.o

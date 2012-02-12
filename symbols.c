@@ -151,7 +151,7 @@ FUNC int sy_sendTo( Symbol sy, File fl, SymbolTable st )
 	return fl_write( fl, "%s", sy_name( sy, st ) );
 	}
 
-#include "symbol_tokens.h"
+#include "objects_symbols_backdoor.h"
 
 FUNC Object st_getToken( SymbolTable st, Symbol sy )
 	{

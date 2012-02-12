@@ -3,18 +3,11 @@ digraph "Module dependencies" {
 	ellesmere [ rank=source ]
 	array      -> memory
 	bitvector  -> memory
-	grammar    -> memory
-	symbols    -> memory
 	tokens     -> memory
 	records    -> symbols
 	records    -> bitvector
 	objects    -> records
-	objects    -> stack
-	objects    -> memory
-	stack      -> memory
-	parser     -> bitvector
-	parser     -> objects
-	parser     -> stack
+	parser     -> walk
 	parser     -> records
 	ellesmere  -> parser
 	ellesmere  -> tokens
@@ -27,6 +20,8 @@ digraph "Module dependencies" {
 	parser     -> ir  // OMIT
 	tokens     -> lex
 	symbols    -> ir  // OMIT: Is this one ok?
+	walk       -> objects
+	walk       -> stack
 
 	//symbols    -> objects [ color=blue weight=0 ]  // OMIT: objects.c should manage the tokens, not symbols.c
 

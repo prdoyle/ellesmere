@@ -14,6 +14,7 @@ FUNC SymbolTable          oh_fieldSymbolTable    ( ObjectHeap heap );
 FUNC Object ob_create( Symbol tag, ObjectHeap heap );
 FUNC Symbol ob_tag( Object ob, ObjectHeap heap );
 
+FUNC bool   ob_hasFields( Object ob ); // TODO: Should we be required to answer this question without a heap?
 FUNC Object ob_getField( Object ob, Symbol field, ObjectHeap heap );
 FUNC void   ob_setField( Object ob, Symbol field, Object value, ObjectHeap heap );
 FUNC void   ob_getFieldSymbols( Object ob, BitVector result, ObjectHeap heap ); // TODO: Not necessarily the most efficient interface, but handy
@@ -156,12 +157,6 @@ static inline Object ob_getFieldRecursivelyIfPresent( Object ob, Symbol field, S
 	else
 		return defaultValue;
 	}
-
-typedef bool ( *EdgePredicate )( void *context, Object head, Symbol edgeSymbol, int edgeIndex, Object tail );
-typedef void ( *VertexProcedure )( void *context, Object vertex );
-
-FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexProcedure processVertex, ObjectHeap heap, void *context );
-bool everyEdge( void *context, Object head, Symbol edgeSymbol, int edgeIndex, Object tail );
 
 #endif
 

@@ -50,12 +50,7 @@ FUNC SymbolTable oh_fieldSymbolTable( ObjectHeap heap )
 	return heap->st;
 	}
 
-typedef struct fdl_struct
-	{
-	SymbolIndex       si;
-	Object            value;
-	struct fdl_struct *tail;
-	} *FieldList;
+#include "objects_walk_backdoor.h"
 
 static FieldList fdl_new( SymbolIndex si, Object value, FieldList tail, ObjectHeap heap )
 	{
@@ -265,9 +260,15 @@ FUNC Symbol ob_tag( Object ob, ObjectHeap heap )
 	return sy_byIndex( ob->tag, heap->st );
 	}
 
-static bool ob_hasItems( Object ob )
+FUNC bool ob_hasFields( Object ob )
 	{
 	return ob_kind(ob) != OB_INT && ob->tag >= NUM_FIELDLESS_OBJECT_TAGS;
+	}
+
+FUNC FieldList ob_listFields( Object ob )
+	{
+	assert( ob_hasFields( ob ) );
+	return ob->data.listFields;
 	}
 
 static Object ob_getItem( Object ob, SymbolIndex si, ObjectHeap heap )
@@ -286,7 +287,7 @@ static Object ob_getItem( Object ob, SymbolIndex si, ObjectHeap heap )
 
 static void ob_setItem( Object ob, SymbolIndex si, Object value, ObjectHeap heap )
 	{
-	assert( ob_hasItems( ob ) );
+	assert( ob_hasFields( ob ) );
 	int index = rd_indexOf( sy_instanceShape( ob_tag(ob,heap), heap->st ), si );
 	if( index )
 		ob->recordFields[ index-1 ] = value;
@@ -303,20 +304,20 @@ static void ob_setItem( Object ob, SymbolIndex si, Object value, ObjectHeap heap
 
 FUNC Object ob_getField( Object ob, Symbol field, ObjectHeap heap )
 	{
-	check( ob_hasItems( ob ) );
+	check( ob_hasFields( ob ) );
 	return ob_getItem( ob, sy_index( field, heap->st ), heap );
 	}
 
 FUNC void ob_setField( Object ob, Symbol field, Object value, ObjectHeap heap )
 	{
-	check( ob_hasItems( ob ) );
+	check( ob_hasFields( ob ) );
 	ob_setItem( ob, sy_index( field, heap->st ), value, heap );
 	assert( ob_getField( ob, field, heap ) == value );
 	}
 
 FUNC void ob_getFieldSymbols( Object ob, BitVector result, ObjectHeap heap )
 	{
-	if( ob_hasItems( ob ) )
+	if( ob_hasFields( ob ) )
 		{
 		Record rd = sy_instanceShape( ob_tag(ob,heap), heap->st );
 		int fieldID;
@@ -347,7 +348,7 @@ static SymbolIndex elementIndex2SymbolIndex( int index )
 	return (SymbolIndex)( (index<<1) ^ nonNegativeMask );
 	}
 
-static int symbolIndex2ElementIndex( SymbolIndex siArg )
+FUNC int symbolIndex2ElementIndex( SymbolIndex siArg )
 	{
 	int si = (int)siArg; // enums can be unsigned
 	assert( si < 0 ); // otherwise it's not an element index at all, but rather a bona fide symbol index
@@ -359,13 +360,13 @@ static int symbolIndex2ElementIndex( SymbolIndex siArg )
 
 FUNC Object ob_getElement( Object ob, int index, ObjectHeap heap )
 	{
-	check( ob_hasItems( ob ) );
+	check( ob_hasFields( ob ) );
 	return ob_getItem( ob, elementIndex2SymbolIndex( index ), heap );
 	}
 
 FUNC void ob_setElement( Object ob, int index, Object value, ObjectHeap heap )
 	{
-	check( ob_hasItems(ob) );
+	check( ob_hasFields(ob) );
 	ob_setItem( ob, elementIndex2SymbolIndex( index ), value, heap );
 	assert( ob_getElement( ob, index, heap ) == value );
 	}
@@ -422,72 +423,6 @@ FUNC bool cl_isChecked( CheckList cl, Object ob )
 	else
 		return bv_isSet( cl->checkMarks, ob->checkListIndex );
 	}
-
-static int recurseIntoField( Object head, Symbol edgeSymbol, Object tail, Stack workList, CheckList alreadyPushed, ObjectHeap heap, EdgePredicate ep, void *context )
-	{
-	if( !tail )
-		return 0;
-	if( cl_isChecked( alreadyPushed, tail ) )
-		return 0;
-	if( !ep( context, head, edgeSymbol, 0, tail ) )
-		return 0;
-	cl_check( alreadyPushed, tail );
-	sk_push( workList, tail );
-	return 1;
-	}
-
-static int recurseIntoArrayElement( Object head, int index, Object tail, Stack workList, CheckList alreadyPushed, ObjectHeap heap, EdgePredicate ep, void *context )
-	{
-	if( !tail )
-		return 0;
-	if( cl_isChecked( alreadyPushed, tail ) )
-		return 0;
-	if( !ep( context, head, NULL, index, tail ) )
-		return 0;
-	cl_check( alreadyPushed, tail );
-	sk_push( workList, tail );
-	return 1;
-	}
-
-FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexProcedure processVertex, ObjectHeap heap, void *context )
-	{
-	CheckList alreadyPushed = cl_open( heap );
-	int i;
-	for( i=0; i < sk_depth( workList ); i++ )
-		cl_check( alreadyPushed, sk_item( workList, i ) );
-	while( !sk_isEmpty( workList ) )
-		{
-		Object curObject = sk_top( workList );
-		int numChildrenPushed = 0;
-		if( ob_hasItems( curObject ) )
-			{
-			Record rd = sy_instanceShape( ob_tag(curObject,heap), heap->st );
-			int fieldID;
-			for( fieldID = rd_firstField(rd); fieldID != rd_NONE && !numChildrenPushed; fieldID = rd_nextField( rd, fieldID ) )
-				{
-				Symbol sy = sy_byIndex( fieldID, heap->st );
-				numChildrenPushed += recurseIntoField( curObject, sy, ob_getField( curObject, sy, heap ), workList, alreadyPushed, heap, recurseIntoEdge, context );
-				}
-			FieldList field;
-			for( field = curObject->data.listFields; field && !numChildrenPushed; field = field->tail )
-				{
-				int si = (int)field->si;
-				if( si < 0 )
-					numChildrenPushed += recurseIntoArrayElement( curObject, symbolIndex2ElementIndex( field->si ), field->value, workList, alreadyPushed, heap, recurseIntoEdge, context );
-				else
-					numChildrenPushed += recurseIntoField( curObject, sy_byIndex( field->si, heap->st ), field->value, workList, alreadyPushed, heap, recurseIntoEdge, context );
-				}
-			}
-		if( numChildrenPushed == 0 )
-			{
-			sk_pop( workList );
-			processVertex( context, curObject );
-			}
-		}
-	cl_close( alreadyPushed );
-	}
-
-bool everyEdge( void *context, Object head, Symbol edgeSymbol, int edgeIndex, Object tail ){ return true; }
 
 FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 	{
@@ -565,7 +500,7 @@ static int sendDeepTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 		FieldList field;
 		int fieldID;
 		cl_check( cl, ob );
-		if( ob_hasItems( ob ) )
+		if( ob_hasFields( ob ) )
 			{
 			ob_sendTo( ob, fl, heap );
 			fl_write( fl, "\n  {\n" );
@@ -616,7 +551,7 @@ static int sendDotEdgeTo( Object ob, Symbol sy, Object value, ObjectHeap heap, F
 		return 0;
 
 	int charsSent = 0;
-	if( ob_hasItems( value ) )
+	if( ob_hasFields( value ) )
 		{
 		charsSent += fl_write( fl,
 			"n%p -> n%p [label=\"%s\"]\n",
@@ -642,7 +577,7 @@ static int sendDotEdgesTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 		FieldList field;
 		int fieldID;
 		cl_check( cl, ob );
-		if( ob_hasItems( ob ) )
+		if( ob_hasFields( ob ) )
 			{
 			Record rd = sy_instanceShape( ob_tag(ob,heap), heap->st );
 			for( fieldID = rd_firstField(rd); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
@@ -670,7 +605,7 @@ FUNC int ob_sendDotEdgesTo( Object ob, File fl, ObjectHeap heap )
 	return result;
 	}
 
-#include "symbol_tokens.h"
+#include "objects_symbols_backdoor.h"
 
 FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy )
 	{

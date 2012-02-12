@@ -2,8 +2,7 @@
 #include "parser.h"
 #include "bitvector.h"
 #include "memory.h"
-#include "objects.h"
-#include "stack.h"
+#include "walk.h"
 #include "records.h"
 #include "symbols.h"
 #include <string.h>
