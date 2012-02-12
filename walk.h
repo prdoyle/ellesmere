@@ -8,7 +8,7 @@ typedef bool ( *EdgePredicate )( void *context, Object head, Symbol edgeSymbol, 
 typedef void ( *VertexProcedure )( void *context, Object vertex );
 
 FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexProcedure processVertex, ObjectHeap heap, void *context );
-bool everyEdge( void *context, Object head, Symbol edgeSymbol, int edgeIndex, Object tail );
+FUNC bool everyEdge( void *context, Object head, Symbol edgeSymbol, int edgeIndex, Object tail );
 
 #endif
 

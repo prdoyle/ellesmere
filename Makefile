@@ -79,7 +79,7 @@ $(ALL_S_FILES): %.s: %.c
 	$(CC) $(CFLAGS) -S $< -o $@
 
 
-ellesmere.o: lex.l.h
+tokens.o: lex.l.h
 
 # flex and bison commands should be run on the .c files, not the .h files
 $(GEN_H_FILES): %.h: %.c
@@ -127,7 +127,9 @@ states.dot: parser.t
 	./parser.t > states.dot 3> trace.txt
 
 modules.mak: modules.dot dot2mak
-	grep '\->' $< | grep -v OMIT | sort | dot2mak > $@
+	grep '\->' $< | grep -v "constraint=false" | sort | dot2mak > $@
+
+deps: $(O_FILES) $(LEX_O_FILES)
 
 clean:
 	rm -f ellesmere tags _merged.c $(GEN_C_FILES) $(GEN_H_FILES) $(ALL_O_FILES) $(ALL_I_FILES) $(ALL_D_FILES)
@@ -136,4 +138,4 @@ clean:
 	rm -f bitvector.t parser.t records.t objects.t states.dot states.pdf trace.txt
 	rm -f modules.pdf modules.mak
 
-.PHONY: all merged memreport.txt
+.PHONY: all merged memreport.txt deps

@@ -71,5 +71,5 @@ FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexPr
 	cl_close( alreadyPushed );
 	}
 
-bool everyEdge( void *context, Object head, Symbol edgeSymbol, int edgeIndex, Object tail ){ return true; }
+FUNC bool everyEdge( void *context, Object head, Symbol edgeSymbol, int edgeIndex, Object tail ){ return true; }
 

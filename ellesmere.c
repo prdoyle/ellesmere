@@ -1,6 +1,4 @@
 
-#include "lex.h"
-#include "lex.l.h"
 #include "stack.h"
 #include "parser.h"
 #include "tokens.h"
@@ -9,6 +7,7 @@
 #include "records.h"
 #include <stdarg.h>
 #include <string.h>
+#include <stdlib.h>
 
 typedef struct cf_struct *CallFrame;
 struct cf_struct

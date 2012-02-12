@@ -1,15 +1,14 @@
 #! /usr/bin/awk -f
 
 {
-	if($1 == lhs) {
-		printf " $("$3"_DEPS)";
-	} else {
+	if($1 != lhs) {
 		#printf "\n"$1".t: $("$1"_DEPS)";
 		printf "\n"$1"_DEPS =";
 		lhs = $1;
 		all_modules = all_modules " " $1 "_DEPS";
 		#printf " "$1".o";
 	}
+	printf " $("$3"_DEPS)";
 	printf " "$3".o";
 }
 

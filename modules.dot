@@ -3,7 +3,6 @@ digraph "Module dependencies" {
 	ellesmere [ rank=source ]
 	array      -> memory
 	bitvector  -> memory
-	tokens     -> memory
 	records    -> symbols
 	records    -> bitvector
 	objects    -> records
@@ -11,28 +10,28 @@ digraph "Module dependencies" {
 	parser     -> records
 	ellesmere  -> parser
 	ellesmere  -> tokens
-	ellesmere  -> bitvector
 	stack      -> array
 	symbols    -> array
 	tokens     -> array
 	grammar    -> symbols
 	parser     -> grammar
-	parser     -> ir  // OMIT
 	tokens     -> lex
-	symbols    -> ir  // OMIT: Is this one ok?
+	parser     -> ir
+	ir         -> objects
 	walk       -> objects
 	walk       -> stack
 
-	//symbols    -> objects [ color=blue weight=0 ]  // OMIT: objects.c should manage the tokens, not symbols.c
+	symbols    -> objects [ color=blue fontcolor=blue constraint=false label=Tokens ]  // objects.c should manage the tokens, not symbols.c
+	symbols    -> ir      [ color=blue fontcolor=blue constraint=false label=ANY    ]  // Is this one ok?
 
 	// Bad dependencies
-	ir         -> parser  [ color=red  weight=0 ]  // OMIT: This should be in its own file
+	ir         -> parser  [ color=red fontcolor=red  constraint=false label="same file" ]  // This should be in its own file
 
 	// Everything seems to depend on file
-	bitvector  -> file    [ color=grey weight=0 ]
-	objects    -> file    [ color=grey weight=0 ]
-	records    -> file    [ color=grey weight=0 ]
-	stack      -> file    [ color=grey weight=0 ]
-	symbols    -> file    [ color=grey weight=0 ]
+	bitvector  -> file    [ color=grey fontcolor=grey weight=0 ]
+	objects    -> file    [ color=grey fontcolor=grey weight=0 ]
+	records    -> file    [ color=grey fontcolor=grey weight=0 ]
+	stack      -> file    [ color=grey fontcolor=grey weight=0 ]
+	symbols    -> file    [ color=grey fontcolor=grey weight=0 ]
 }
 
