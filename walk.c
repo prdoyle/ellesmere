@@ -72,3 +72,5 @@ FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexPr
 
 FUNC bool everyEdge( void *context, Object head, Symbol edgeSymbol, int edgeIndex, Object tail ){ return true; }
 
+//MERGE:60
+

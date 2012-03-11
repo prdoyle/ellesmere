@@ -703,6 +703,9 @@ FUNC int ob_sendDotEdgesTo( Object ob, File fl, ObjectHeap heap )
 
 static SymbolDescriptor sy_descriptor( Symbol sy, ObjectHeap heap )
 	{
+	int index = sy_index( sy, heap->st );
+	if( index >= syda_count( heap->symbolDescriptors ) )
+		syda_setCount( heap->symbolDescriptors, st_count( heap->st ) );
 	return syda_element( heap->symbolDescriptors, sy_index( sy, heap->st ) );
 	}
 
