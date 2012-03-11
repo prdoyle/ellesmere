@@ -373,63 +373,15 @@ static void pg_populateSymbolSideTable( ParserGenerator pg, File traceFile )
 		bv_set( sste->first, i );
 		bv_set( stateNodeFields, sy_index( sste->sy, st ) );
 		}
-	sy_setInstanceShape( pg->stateNodeTag, rd_new( stateNodeFields, pg->parseTime ), st );
+	sy_setInstanceShape( pg->stateNodeTag, rd_new( stateNodeFields, pg->parseTime ), pg->heap );
 
 	trace( traceFile, "Initial SymbolSideTable:\n" );
 	pg_sendSymbolSideTableTo( pg, traceFile );
 	}
 
-struct ir_struct
-	{
-	Object      index;
-	Symbol      nodeTag;
-	ObjectHeap  nodeHeap;
-	SymbolTable st;
-	};
-
-#define IR_START_INDEX 1
-
-FUNC InheritanceRelation ir_new( ObjectHeap heap, SymbolTable st, MemoryLifetime ml )
-	{
-	char indexTagName[30], nodeTagName[30];
-	sprintf( indexTagName, "IR_INDEX_%d", st_count( st ) );
-	sprintf( nodeTagName,  "IR_NODE_%d",  st_count( st ) );
-
-	InheritanceRelation result = (InheritanceRelation)ml_alloc( ml, sizeof(*result) );
-	result->index    = ob_create( sy_byName( indexTagName, st ), heap );
-	result->nodeTag  = sy_byName( nodeTagName, st );
-	result->nodeHeap = heap;
-	result->st       = st;
-	return result;
-	}
-
-static void appendToArray( Object ob, int whichArray, Object value, InheritanceRelation ir )
-	{
-	SymbolTable st = ir->st;
-	ObjectHeap heap = ir->nodeHeap;
-	Symbol countSymbol  = sy_byIndex( SYM_ELEMENT_COUNT, st );
-	Symbol arraySymbol  = sy_byIndex( SYM_ARRAY, st );
-	Object array = ob_getOrCreateField( ob, sy_byIndex( whichArray, st ), arraySymbol, heap );
-	int nextIndex = 1 + ob_getIfIntField( array, countSymbol, IR_START_INDEX-1, heap );
-	ob_setIntField( array, countSymbol, nextIndex, heap );
-	ob_setElement( array, nextIndex, value, heap );
-	}
-
-FUNC void ir_add( InheritanceRelation ir, Symbol super, Symbol sub )
-	{
-	SymbolTable st = ir->st;
-	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
-	Object superNode = ob_getOrCreateField( ir->index, super, ir->nodeTag, ir->nodeHeap );
-	Object subNode   = ob_getOrCreateField( ir->index, sub,   ir->nodeTag, ir->nodeHeap );
-	ob_setField( superNode, symSymbol, oh_symbolToken( ir->nodeHeap, super ), ir->nodeHeap );
-	ob_setField( subNode,   symSymbol, oh_symbolToken( ir->nodeHeap, sub   ), ir->nodeHeap );
-	appendToArray( superNode, SYM_SUBTAGS,   subNode, ir );
-	appendToArray( subNode,   SYM_SUPERTAGS, superNode, ir );
-	}
-
 static Symbol irNodeSymbol( Object node, InheritanceRelation ir )
 	{
-	return ob_getTokenField( node, sy_byIndex( SYM_SYMBOL, ir->st ), ir->nodeHeap );
+	return ob_getTokenField( node, sy_byIndex( SYM_SYMBOL, ir_symbolTable(ir) ), ir_nodeHeap(ir) );
 	}
 
 #if 0
@@ -481,14 +433,14 @@ static BitVector *bitvectorFieldAddress( SymbolSideTableEntry sste, size_t offse
 
 static void propagateFromPreds( SymbolIndex sourceDirection, size_t bitvectorOffset, SymbolSideTable sourceTable, Object targetIRNode, SymbolSideTableEntry targetEntry, CheckList relatedNodes, ParserGenerator pg, File diagnostics )
 	{
-	InheritanceRelation ir = st_inheritanceRelation( pg->st );
-	Object sourceArray = ob_getFieldX( targetIRNode, sourceDirection, ir->nodeHeap );
+	InheritanceRelation ir = oh_inheritanceRelation( pg->heap );
+	Object sourceArray = ob_getFieldX( targetIRNode, sourceDirection, ir_nodeHeap(ir) );
 	if( !sourceArray )
 		return;
 	Object sourceIRNode; int i;
-	for( i = IR_START_INDEX; NULL != ( sourceIRNode = ob_getElement( sourceArray, i, ir->nodeHeap ) ); i++ )
+	for( i = IR_START_INDEX; NULL != ( sourceIRNode = ob_getElement( sourceArray, i, ir_nodeHeap(ir) ) ); i++ )
 		{
-		Symbol sourceSym = ob_getTokenFieldX( sourceIRNode, SYM_SYMBOL, ir->nodeHeap );
+		Symbol sourceSym = ob_getTokenFieldX( sourceIRNode, SYM_SYMBOL, ir_nodeHeap(ir) );
 		if( cl_isChecked( relatedNodes, sourceIRNode ) )
 			{
 			SymbolSideTableEntry sourceEntry = sst_element( sourceTable, pg_symbolSideTableIndex( pg, sourceSym ) );
@@ -505,8 +457,8 @@ static void propagateFromPreds( SymbolIndex sourceDirection, size_t bitvectorOff
 
 static void propagateDownward( SymbolSideTable sst, size_t bitvectorOffset, Stack topDown, ParserGenerator pg, File diagnostics )
 	{
-	InheritanceRelation ir = st_inheritanceRelation( pg->st );
-	CheckList relatedNodes = cl_open( ir->nodeHeap );
+	InheritanceRelation ir = oh_inheritanceRelation( pg->heap );
+	CheckList relatedNodes = cl_open( ir_nodeHeap(ir) );
 	int i;
 	for( i=0; i < sk_depth( topDown ); i++ )
 		{
@@ -527,8 +479,8 @@ static void propagateDownward( SymbolSideTable sst, size_t bitvectorOffset, Stac
 
 static void propagateUpward( SymbolSideTable sst, size_t bitvectorOffset, Stack topDown, ParserGenerator pg, File diagnostics )
 	{
-	InheritanceRelation ir = st_inheritanceRelation( pg->st );
-	CheckList relatedNodes = cl_open( ir->nodeHeap );
+	InheritanceRelation ir = oh_inheritanceRelation( pg->heap );
+	CheckList relatedNodes = cl_open( ir_nodeHeap(ir) );
 	int i;
 	for( i=0; i < sk_depth( topDown ); i++ )
 		{
@@ -1113,22 +1065,22 @@ typedef struct printer_struct
 static void printSubtags( void *printerArg, Object node )
 	{
 	Printer p = (Printer)printerArg; File fl = p->fl; InheritanceRelation ir = p->ir;
-	if( ob_tag( node, ir->nodeHeap ) != ir->nodeTag )
+	if( ob_tag( node, ir_nodeHeap(ir) ) != ir_nodeTag(ir) )
 		return;
 
-	Object subArray = ob_getFieldX( node, SYM_SUBTAGS, ir->nodeHeap );
+	Object subArray = ob_getFieldX( node, SYM_SUBTAGS, ir_nodeHeap(ir) );
 	if( !subArray )
 		return;
 
-	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, ir->st );
+	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, ir_symbolTable(ir) );
 	int subtagIndex;
 	Object subnode;
-	const char *superName = sy_name( ob_getTokenField( node, symSymbol, ir->nodeHeap ), ir->st );
+	const char *superName = sy_name( ob_getTokenField( node, symSymbol, ir_nodeHeap(ir) ), ir_symbolTable(ir) );
 	fl_write( fl, "    %s >", superName );
-	for( subtagIndex = IR_START_INDEX; NULL != ( subnode = ob_getElement( subArray, subtagIndex, ir->nodeHeap ) ); subtagIndex++ )
+	for( subtagIndex = IR_START_INDEX; NULL != ( subnode = ob_getElement( subArray, subtagIndex, ir_nodeHeap(ir) ) ); subtagIndex++ )
 		{
-		Symbol subTag = ob_getTokenField( subnode, symSymbol, ir->nodeHeap );
-		p->charsSent += fl_write( fl, " %s", sy_name( subTag, ir->st ) );
+		Symbol subTag = ob_getTokenField( subnode, symSymbol, ir_nodeHeap(ir) );
+		p->charsSent += fl_write( fl, " %s", sy_name( subTag, ir_symbolTable(ir) ) );
 		}
 	p->charsSent += fl_write( fl, "\n" );
 	}
@@ -1136,9 +1088,9 @@ static void printSubtags( void *printerArg, Object node )
 static bool subtagPredicate( void *printerArg, Object head, Symbol edgeSymbol, int edgeIndex, Object tail )
 	{
 	Printer p = (Printer)printerArg; InheritanceRelation ir = p->ir;
-	if( ob_tag( tail, ir->nodeHeap ) == ir->nodeTag )
+	if( ob_tag( tail, ir_nodeHeap(ir) ) == ir_nodeTag(ir) )
 		return true;
-	if( sy_index( edgeSymbol, ir->st ) == SYM_SUBTAGS )
+	if( sy_index( edgeSymbol, ir_symbolTable(ir) ) == SYM_SUBTAGS )
 		return true;
 	return false;
 	}
@@ -1147,9 +1099,9 @@ FUNC int ir_sendTo( InheritanceRelation ir, File fl )
 	{
 	MemoryLifetime sendTime = ml_begin( 100, ml_undecided() );
 	Stack rootSet = sk_new( sendTime );
-	sk_push( rootSet, ir->index );
+	sk_push( rootSet, ir_index(ir) );
 	struct printer_struct printer = { fl, ir, 0 };
-	postorderWalk( rootSet, subtagPredicate, printSubtags, ir->nodeHeap, &printer );
+	postorderWalk( rootSet, subtagPredicate, printSubtags, ir_nodeHeap(ir), &printer );
 	ml_end( sendTime );
 	return printer.charsSent;
 	}
@@ -1197,10 +1149,10 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 				trace( diagnostics, "    - Pushed\n" );
 				}
 
-			Object node = ob_getField( ir->index, edgeSymbol, ir->nodeHeap );
+			Object node = ob_getField( ir_index(ir), edgeSymbol, ir_nodeHeap(ir) );
 			if( node )
 				{
-				CheckList pushedNodes = cl_open( ir->nodeHeap );
+				CheckList pushedNodes = cl_open( ir_nodeHeap(ir) );
 				sk_push( nodes, node );
 				cl_check( pushedNodes, node );
 				while( sk_depth( nodes ) != 0 )
@@ -1209,17 +1161,17 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 					if( diagnostics )
 						{
 						trace( diagnostics, "      Inheritance node: " );
-						ob_sendTo( node, diagnostics, ir->nodeHeap );
+						ob_sendTo( node, diagnostics, ir_nodeHeap(ir) );
 						trace( diagnostics, "\n" );
 						}
-					Object subArray = ob_getField( node, sy_byIndex( SYM_SUBTAGS, st ), ir->nodeHeap );
+					Object subArray = ob_getField( node, sy_byIndex( SYM_SUBTAGS, st ), ir_nodeHeap(ir) );
 					if( subArray )
 						{
 						int subtagIndex;
 						Object subnode;
-						for( subtagIndex = IR_START_INDEX; NULL != ( subnode = ob_getElement( subArray, subtagIndex, ir->nodeHeap ) ); subtagIndex++ )
+						for( subtagIndex = IR_START_INDEX; NULL != ( subnode = ob_getElement( subArray, subtagIndex, ir_nodeHeap(ir) ) ); subtagIndex++ )
 							{
-							Symbol subtag = ob_getTokenField( subnode, symSymbol, ir->nodeHeap );
+							Symbol subtag = ob_getTokenField( subnode, symSymbol, ir_nodeHeap(ir) );
 							trace( diagnostics, "        Subtag '%s' ", sy_name( subtag, st ) );
 							if( ob_getField( state, subtag, au->stateHeap ) )
 								{
@@ -1239,7 +1191,7 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 								}
 							}
 						}
-					Object superArray = ob_getField( node, sy_byIndex( SYM_SUPERTAGS, st ), ir->nodeHeap );
+					Object superArray = ob_getField( node, sy_byIndex( SYM_SUPERTAGS, st ), ir_nodeHeap(ir) );
 					if( superArray )
 						{
 						Object abstractState = targetState;
@@ -1252,9 +1204,9 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 							}
 						int supertagIndex;
 						Object supernode;
-						for( supertagIndex = IR_START_INDEX; NULL != ( supernode = ob_getElement( superArray, supertagIndex, ir->nodeHeap ) ); supertagIndex++ )
+						for( supertagIndex = IR_START_INDEX; NULL != ( supernode = ob_getElement( superArray, supertagIndex, ir_nodeHeap(ir) ) ); supertagIndex++ )
 							{
-							Symbol supertag = ob_getTokenField( supernode, symSymbol, ir->nodeHeap );
+							Symbol supertag = ob_getTokenField( supernode, symSymbol, ir_nodeHeap(ir) );
 							trace( diagnostics, "        Supertag '%s' ", sy_name( supertag, st ) );
 							if( ob_getField( state, supertag, au->stateHeap ) )
 								{
@@ -1283,7 +1235,7 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 	cl_close( pushedStates );
 
 	// Note: it would be possible to build a bitvector of all the symbols in
-	// ir->index, and filter originalEdges against that before iterating over
+	// ir_index(ir), and filter originalEdges against that before iterating over
 	// it, because nothing interesting will happen to unindexed edges anyway.
 	// However, building that bitvector would be O(n) in the size of the subtype
 	// graph, and thus far we have avoided a dependence on that.  The subtype
@@ -1319,7 +1271,7 @@ static ObjectArray postOrder( InheritanceRelation ir, Symbol direction, BitVecto
 	{
 	SymbolTable st = pg->st;
 	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
-	ObjectHeap heap = ir->nodeHeap;
+	ObjectHeap heap = ir_nodeHeap(ir);
 	CheckList alreadyPushed = cl_open( heap );
 	ObjectArray result = oba_new( 10, pg->generateTime );
 
@@ -1332,7 +1284,7 @@ static ObjectArray postOrder( InheritanceRelation ir, Symbol direction, BitVecto
 	int i;
 	for( i = bv_firstBit( rootSet ); i != bv_END; i = bv_nextBit( rootSet, i ) )
 		{
-		Object root = ob_getField( ir->index, sy_byIndex( i, st ), heap );
+		Object root = ob_getField( ir_index(ir), sy_byIndex( i, st ), heap );
 		if( root )
 			{
 			sk_push( worklist, root );
@@ -1418,7 +1370,7 @@ static Augmenter aug_begin( ParserGenerator pg, InheritanceRelation ir, File dia
 	result->diagnostics = diagnostics;
 	result->top    = sk_new( result->ml );
 	result->bottom = sk_new( result->ml );
-	result->related    = cl_open( ir->nodeHeap );
+	result->related    = cl_open( ir_nodeHeap(ir) );
 	result->topDownStack = sk_new( result->ml );
 	result->onlyProcessRelatedNodes = false;
 	return result;
@@ -1433,8 +1385,8 @@ static void aug_end( Augmenter aug )
 static void findTerminalNodes( void *augArg, Object node )
 	{
 	Augmenter aug = (Augmenter)augArg;
-	ObjectHeap heap = aug->ir->nodeHeap;
-	if( ob_tag( node, heap ) != aug->ir->nodeTag )
+	ObjectHeap heap = ir_nodeHeap(aug->ir);
+	if( ob_tag( node, heap ) != ir_nodeTag(aug->ir) )
 		return;
 
 	// This is a node "reachable" from the root set, so it's interesting
@@ -1447,8 +1399,8 @@ static void findTerminalNodes( void *augArg, Object node )
 
 	// If the node has no successors, it's a terminal node
 	//
-	Object successors = ob_getField( node, aug->direction, aug->ir->nodeHeap );
-	if( !successors || !ob_getElement( successors, IR_START_INDEX, aug->ir->nodeHeap ) )
+	Object successors = ob_getField( node, aug->direction, ir_nodeHeap(aug->ir) );
+	if( !successors || !ob_getElement( successors, IR_START_INDEX, ir_nodeHeap(aug->ir) ) )
 		sk_push( aug->terminalNodes, node );
 	}
 
@@ -1456,9 +1408,9 @@ static bool propagationPredicate( void *augArg, Object head, Symbol edgeSymbol, 
 	{
 	bool result;
 	Augmenter aug = (Augmenter)augArg;
-	ObjectHeap heap = aug->ir->nodeHeap;
+	ObjectHeap heap = ir_nodeHeap(aug->ir);
 	char *reason;
-	if( ob_tag( head, heap ) == aug->ir->nodeTag ) // Coming from an IR node
+	if( ob_tag( head, heap ) == ir_nodeTag(aug->ir) ) // Coming from an IR node
 		{
 		result = edgeSymbol == aug->direction; // Proceed only with the successor array that points the right way
 		reason = "successor array";
@@ -1470,7 +1422,7 @@ static bool propagationPredicate( void *augArg, Object head, Symbol edgeSymbol, 
 		}
 	else 
 		{
-		result = ob_tag( tail, heap ) == aug->ir->nodeTag; // Proceed with any IR node
+		result = ob_tag( tail, heap ) == ir_nodeTag(aug->ir); // Proceed with any IR node
 		reason = "successor node";
 		}
 	File diagnostics = aug->diagnostics;
@@ -1488,8 +1440,8 @@ static bool propagationPredicate( void *augArg, Object head, Symbol edgeSymbol, 
 static void pushOntoTopDownStack( void *augArg, Object node )
 	{
 	Augmenter aug = (Augmenter)augArg;
-	ObjectHeap heap = aug->ir->nodeHeap;
-	if( ob_tag( node, heap ) != aug->ir->nodeTag )
+	ObjectHeap heap = ir_nodeHeap(aug->ir);
+	if( ob_tag( node, heap ) != ir_nodeTag(aug->ir) )
 		return;
 
 	sk_push( aug->topDownStack, node );
@@ -1498,17 +1450,17 @@ static void pushOntoTopDownStack( void *augArg, Object node )
 static int printObjectSymbolField( void *heapArg, Object ob, File fl )
 	{
 	ObjectHeap heap = (ObjectHeap)heapArg;
-	return fl_write( fl, "'%s'", sy_name( ob_getTokenFieldX( ob, SYM_SYMBOL, heap ), oh_tagSymbolTable( heap ) ) );
+	return fl_write( fl, "'%s'", sy_name( ob_getTokenFieldX( ob, SYM_SYMBOL, heap ), oh_symbolTable( heap ) ) );
 	}
 
 static Stack pg_topDownStack( ParserGenerator pg, File diagnostics )
 	{
 	SymbolTable st = pg->st;
-	InheritanceRelation ir = st_inheritanceRelation( st );
+	ObjectHeap heap = pg->heap;
+	InheritanceRelation ir = oh_inheritanceRelation( heap );
 	Symbol superTags = sy_byIndex( SYM_SUPERTAGS, st );
 	Symbol subTags   = sy_byIndex( SYM_SUBTAGS,   st );
 	Augmenter aug = aug_begin( pg, ir, diagnostics );
-	ObjectHeap heap = aug->ir->nodeHeap;
 	Stack rootSet = sk_new( aug->ml );
 
 	if( diagnostics )
@@ -1520,14 +1472,14 @@ static Stack pg_topDownStack( ParserGenerator pg, File diagnostics )
 		}
 
 	int i;
-	CheckList rootSetChecklist = cl_open( ir->nodeHeap );
+	CheckList rootSetChecklist = cl_open( ir_nodeHeap(ir) );
 	for( i=0; i < ita_count( pg->items ); i++ )
 		{
 		if( pg_itemIsRightmost( pg, i ) )
 			continue; // the dot in a rightmost item is not pointing at any symbol
 		Item it = ita_element( pg->items, i );
 		Symbol sy = pn_token( it->pn, it->dot, pg->gr );
-		Object node = ob_getField( ir->index, sy, heap );
+		Object node = ob_getField( ir_index(ir), sy, heap );
 		if( node && !cl_isChecked( rootSetChecklist, node ) )
 			{
 			sk_push( rootSet, node );
@@ -1539,44 +1491,44 @@ static Stack pg_topDownStack( ParserGenerator pg, File diagnostics )
 	if( diagnostics )
 		{
 		trace( diagnostics, "  Root set: { " );
-		sk_sendFormattedToX( rootSet, diagnostics, printObjectSymbolField, ir->nodeHeap, ", " );
+		sk_sendFormattedToX( rootSet, diagnostics, printObjectSymbolField, ir_nodeHeap(ir), ", " );
 		trace( diagnostics, " } \n" );
 		}
 
 	trace( diagnostics, "  Walking upward to find top nodes and related nodes\n" );
 	aug->direction     = superTags;
 	aug->terminalNodes = aug->top;
-	postorderWalk( sk_dup( rootSet, aug->ml ), propagationPredicate, findTerminalNodes, ir->nodeHeap, aug );
+	postorderWalk( sk_dup( rootSet, aug->ml ), propagationPredicate, findTerminalNodes, ir_nodeHeap(ir), aug );
 
 	if( diagnostics )
 		{
 		trace( diagnostics, "    Top: { " );
-		sk_sendFormattedToX( aug->top, diagnostics, printObjectSymbolField, ir->nodeHeap, ", " );
+		sk_sendFormattedToX( aug->top, diagnostics, printObjectSymbolField, ir_nodeHeap(ir), ", " );
 		trace( diagnostics, " }\n" );
 		}
 
 	trace( diagnostics, "  Walking downward to find bottom nodes and related nodes\n" );
 	aug->direction     = subTags;
 	aug->terminalNodes = aug->bottom;
-	postorderWalk( sk_dup( rootSet, aug->ml ), propagationPredicate, findTerminalNodes, ir->nodeHeap, aug );
+	postorderWalk( sk_dup( rootSet, aug->ml ), propagationPredicate, findTerminalNodes, ir_nodeHeap(ir), aug );
 
 	if( diagnostics )
 		{
 		trace( diagnostics, "    Bottom: { " );
-		sk_sendFormattedToX( aug->bottom, diagnostics, printObjectSymbolField, ir->nodeHeap, ", " );
+		sk_sendFormattedToX( aug->bottom, diagnostics, printObjectSymbolField, ir_nodeHeap(ir), ", " );
 		trace( diagnostics, " }\n" );
 		}
 
 	trace( diagnostics, "  Computing top-down stack\n" );
 	aug->direction = subTags;
 	aug->onlyProcessRelatedNodes = true;
-	postorderWalk( sk_dup( aug->top, aug->ml ), propagationPredicate, pushOntoTopDownStack, ir->nodeHeap, aug );
+	postorderWalk( sk_dup( aug->top, aug->ml ), propagationPredicate, pushOntoTopDownStack, ir_nodeHeap(ir), aug );
 	Stack topDown = aug->topDownStack; // alias for convenience
 
 	if( diagnostics )
 		{
 		trace( diagnostics, "    Top-down: { " );
-		sk_sendFormattedToX( topDown, diagnostics, printObjectSymbolField, ir->nodeHeap, ", " );
+		sk_sendFormattedToX( topDown, diagnostics, printObjectSymbolField, ir_nodeHeap(ir), ", " );
 		trace( diagnostics, " } \n" );
 		}
 
@@ -1664,22 +1616,22 @@ static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 
 static Stack getInheritingTags( Augmenter aug, Symbol tag, InheritanceRelation ir, int direction )
 	{
-	SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
+	SymbolTable st = oh_symbolTable( ir_nodeHeap(ir) );
 	Stack worklist = sk_new( aug->ml );
 	aug->topDownStack = sk_new( aug->ml );
-	Object curIRNode = ob_getField( ir->index, tag, ir->nodeHeap );
+	Object curIRNode = ob_getField( ir_index(ir), tag, ir_nodeHeap(ir) );
 	if( curIRNode )
 		{
 		sk_push( worklist, curIRNode );
 		aug->direction = sy_byIndex( direction, st );
-		postorderWalk( worklist, propagationPredicate, pushOntoTopDownStack, ir->nodeHeap, aug );
+		postorderWalk( worklist, propagationPredicate, pushOntoTopDownStack, ir_nodeHeap(ir), aug );
 		}
 	return aug->topDownStack;
 	}
 
 static void addAllProductionCombos( Grammar newGrammar, Production newProduction, Grammar oldGrammar, Production oldProduction, int tokenIndex, InheritanceRelation ir, Symbol abstractSymbol, File diagnostics, int recursionDepth )
 	{
-	SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
+	SymbolTable st = oh_symbolTable( ir_nodeHeap(ir) );
 	if( tokenIndex >= pn_length( oldProduction, oldGrammar ) )
 		{
 		// We're done with this production
@@ -1702,7 +1654,7 @@ static void addAllProductionCombos( Grammar newGrammar, Production newProduction
 			newGrammar );
 		addAllProductionCombos( newGrammar, newProduction, oldGrammar, oldProduction, tokenIndex+1, ir, abstractSymbol, diagnostics, recursionDepth+1 );
 
-		SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
+		SymbolTable st = oh_symbolTable( ir_nodeHeap(ir) );
 		Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
 		Augmenter aug = aug_begin( NULL, ir, diagnostics );
 
@@ -1710,7 +1662,7 @@ static void addAllProductionCombos( Grammar newGrammar, Production newProduction
 		while( sk_depth( tags ) )
 			{
 			Object tagNode = sk_pop( tags );
-			Symbol tag = ob_getTokenField( tagNode, symSymbol, ir->nodeHeap );
+			Symbol tag = ob_getTokenField( tagNode, symSymbol, ir_nodeHeap(ir) );
 			if( tag != curToken )
 				{
 				Production dup = pn_copy( newGrammar, newProduction, newGrammar, pn_lhs( newProduction, newGrammar ), tokenIndex );
@@ -1728,7 +1680,7 @@ static void addAllProductionCombos( Grammar newGrammar, Production newProduction
 		while( sk_depth( tags ) )
 			{
 			Object tagNode = sk_pop( tags );
-			Symbol tag = ob_getTokenField( tagNode, symSymbol, ir->nodeHeap );
+			Symbol tag = ob_getTokenField( tagNode, symSymbol, ir_nodeHeap(ir) );
 			if( tag != curToken )
 				{
 				Production dup = pn_copy( newGrammar, newProduction, newGrammar, pn_lhs( newProduction, newGrammar ), tokenIndex );
@@ -1768,7 +1720,7 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Sy
 		result = gr_new( gr_goal( original ), gr_numProductions( original ), ml );
 		}
 
-	SymbolTable st = oh_tagSymbolTable( ir->nodeHeap );
+	SymbolTable st = oh_symbolTable( ir_nodeHeap(ir) );
 	if( diagnostics )
 		{
 		trace( diagnostics, "Augmenting grammar %p {\n", original );
@@ -1798,7 +1750,7 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Sy
 		while( sk_depth( tags ) )
 			{
 			Object tagNode = sk_pop( tags );
-			Symbol tag = ob_getTokenField( tagNode, symSymbol, ir->nodeHeap );
+			Symbol tag = ob_getTokenField( tagNode, symSymbol, ir_nodeHeap(ir) );
 			if( tag != pn_lhs( pn, original ) )
 				{
 				trace( diagnostics, "    Now with lhs=%s\n", sy_name( tag, st ) );
@@ -1880,7 +1832,7 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, ObjectHeap heap, MemoryLifeti
 		result->pg = NULL;
 		}
 
-	if(0) au_augment( result, st_inheritanceRelation( st ), st, diagnostics );
+	if(0) au_augment( result, oh_inheritanceRelation( result->stateHeap ), st, diagnostics );
 	return result;
 	}
 
@@ -2361,7 +2313,7 @@ int main( int argc, char *argv[] )
 			}
 		}
 	//fl_write( traceFile, "Inheritance relation:\n" );
-	//ob_sendDeepTo( ir->index, traceFile, heap );
+	//ob_sendDeepTo( ir_index(ir), traceFile, heap );
 
 	if( false )
 		{

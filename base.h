@@ -28,14 +28,10 @@ typedef struct gr_struct *Grammar;
 typedef struct gl_struct *GrammarLine;
 typedef struct ir_struct *InheritanceRelation;
 typedef struct ml_struct *MemoryLifetime;
-typedef struct ob_struct *Object;
-typedef struct oh_struct *ObjectHeap;
 typedef struct ps_struct *Parser;
 typedef struct pn_struct *Production;
 typedef struct rd_struct *Record;
 typedef struct sk_struct *Stack;
-typedef struct st_struct *SymbolTable;
-typedef struct sy_struct *Symbol;
 typedef struct tb_struct *TokenBlock;
 typedef struct ts_struct *TokenStream;
 

@@ -11,21 +11,19 @@ digraph "Module dependencies" {
 	ellesmere  -> parser
 	ellesmere  -> tokens
 	stack      -> array
+	stack      -> objects
 	symbols    -> array
 	tokens     -> array
 	grammar    -> symbols
 	parser     -> grammar
 	tokens     -> lex
-	parser     -> ir
-	ir         -> objects
+//	parser     -> ir
+//	ir         -> objects
 	walk       -> objects
 	walk       -> stack
 
-	symbols    -> objects [ color=blue fontcolor=blue constraint=false label=Tokens ]  // objects.c should manage the tokens, not symbols.c
-	symbols    -> ir      [ color=blue fontcolor=blue constraint=false label=ANY    ]  // Is this one ok?
-
 	// Bad dependencies
-	ir         -> parser  [ color=red fontcolor=red  constraint=false label="same file" ]  // This should be in its own file
+//	ir         -> parser  [ color=red fontcolor=red  constraint=false label="same file" ]  // This should be in its own file
 
 	// Everything seems to depend on file
 	bitvector  -> file    [ color=grey fontcolor=grey weight=0 ]

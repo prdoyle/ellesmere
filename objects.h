@@ -2,14 +2,30 @@
 #ifndef OBJECTS_H
 #define OBJECTS_H
 
-#include "base.h"
 #include "symbols.h"
+#include "records.h"
 #include "file.h"
+
+typedef struct ob_struct *Object;
+typedef struct oh_struct *ObjectHeap;
 
 FUNC ObjectHeap theObjectHeap();
 
-FUNC SymbolTable          oh_tagSymbolTable      ( ObjectHeap heap );
-FUNC SymbolTable          oh_fieldSymbolTable    ( ObjectHeap heap );
+FUNC SymbolTable          oh_symbolTable         ( ObjectHeap heap );
+FUNC InheritanceRelation  oh_inheritanceRelation ( ObjectHeap heap );
+
+FUNC Record  sy_instanceShape    ( Symbol sy, ObjectHeap heap );
+FUNC void    sy_setInstanceShape ( Symbol sy, Record rd, ObjectHeap heap );
+
+FUNC InheritanceRelation ir_new ( ObjectHeap heap, MemoryLifetime ml ); // TODO: Get rid of this if each heap has exactly one inheritance relation
+FUNC Object              ir_index    ( InheritanceRelation ir );
+FUNC Symbol              ir_nodeTag  ( InheritanceRelation ir );
+FUNC ObjectHeap          ir_nodeHeap ( InheritanceRelation ir );
+FUNC void                ir_add      ( InheritanceRelation ir, Symbol super, Symbol sub );
+FUNC int                 ir_sendTo   ( InheritanceRelation ir, File fl );
+static inline SymbolTable ir_symbolTable( InheritanceRelation ir ){ return oh_symbolTable( ir_nodeHeap(ir) ); }
+
+enum { IR_START_INDEX=1 };
 
 FUNC Object ob_create( Symbol tag, ObjectHeap heap );
 FUNC Symbol ob_tag( Object ob, ObjectHeap heap );
@@ -96,16 +112,16 @@ static inline void    ob_setGrammarField( Object ob, Symbol field, Grammar value
 // Handy functions taking symbol indexes instead of symbols
 
 static inline Object ob_createX( SymbolIndex tagIndex, ObjectHeap heap )
-	{ return ob_create( sy_byIndex( tagIndex, oh_tagSymbolTable( heap ) ), heap ); }
+	{ return ob_create( sy_byIndex( tagIndex, oh_symbolTable( heap ) ), heap ); }
 
 static inline Object ob_getFieldX( Object ob, SymbolIndex fieldIndex, ObjectHeap heap )
-	{ return ob_getField( ob, sy_byIndex( fieldIndex, oh_fieldSymbolTable( heap ) ), heap ); }
+	{ return ob_getField( ob, sy_byIndex( fieldIndex, oh_symbolTable( heap ) ), heap ); }
 
 static inline void ob_setFieldX( Object ob, SymbolIndex fieldIndex, Object value, ObjectHeap heap )
-	{ ob_setField( ob, sy_byIndex( fieldIndex, oh_fieldSymbolTable( heap ) ), value, heap ); }
+	{ ob_setField( ob, sy_byIndex( fieldIndex, oh_symbolTable( heap ) ), value, heap ); }
 
 static inline Symbol ob_getTokenFieldX( Object ob, SymbolIndex fieldIndex, ObjectHeap heap )
-	{ return ob_getTokenField( ob, sy_byIndex( fieldIndex, oh_fieldSymbolTable( heap ) ), heap ); }
+	{ return ob_getTokenField( ob, sy_byIndex( fieldIndex, oh_symbolTable( heap ) ), heap ); }
 
 // Miscellaneous handy functions
 

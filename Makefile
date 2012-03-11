@@ -112,11 +112,11 @@ parser.t: CFLAGS += -DPARSER_T
 parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvector.o stack.o records.o
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
-# TODO: Fix InheritanceRelation so we don't need the explicit dependencies below
-records.t: records.t.o records.o $(records_DEPS) parser.o grammar.o stack.o objects.o walk.o
+records.t: records.t.o records.o $(records_DEPS)
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
-objects.t: objects.t.o objects.o bitvector.o memory.o file.o records.o symbols.o stack.o array.o
+#bitvector.o memory.o file.o records.o symbols.o stack.o array.o
+objects.t: objects.t.o objects.o $(objects_DEPS)
 	$(LD) $(LDFLAGS) $^ -o $@ -lefence
 
 %.pdf: %.dot
@@ -129,6 +129,10 @@ states.dot: parser.t
 modules.mak: modules.dot dot2mak
 	grep '\->' $< | grep -v "constraint=false" | sort | dot2mak > $@
 
+includes.dot: Makefile
+includes.dot: ${C_FILES} $(H_FILES)
+	grep '^[:space:]*#include "' $^ | awk 'BEGIN{FS="[.:]|#include \""} {print $$1, $$(NF-1)}' | sort -u | awk 'BEGIN{ print "digraph \"#includes\" {" } {print $$1, "->", $$2} END{ print "}" }' > $@
+
 deps: $(O_FILES) $(LEX_O_FILES)
 
 clean:
@@ -137,5 +141,6 @@ clean:
 	rm -f memreport.txt gmon.out *.gcda oprof.txt sorted-oprof.txt gprof.txt
 	rm -f bitvector.t parser.t records.t objects.t states.dot states.pdf trace.txt
 	rm -f modules.pdf modules.mak
+	rm -f includes.pdf includes.dot
 
 .PHONY: all merged memreport.txt deps

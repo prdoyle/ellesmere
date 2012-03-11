@@ -2,7 +2,7 @@
 #ifndef WALK_H
 #define WALK_H
 
-#include "base.h"
+#include "objects.h"
 
 typedef bool ( *EdgePredicate )( void *context, Object head, Symbol edgeSymbol, int edgeIndex, Object tail );
 typedef void ( *VertexProcedure )( void *context, Object vertex );

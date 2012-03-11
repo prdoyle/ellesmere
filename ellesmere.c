@@ -355,7 +355,7 @@ static void addProductionAction( Production handle, GrammarLine gl, Thread th )
 		}
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
-	gr = gr_augmentedShallow( gr, st_inheritanceRelation( th->st ), sym_abstract, ml_indefinite(), th->parserGenTrace );
+	gr = gr_augmentedShallow( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), th->parserGenTrace );
 	addNewestProductionsToMap( gr, th );
 	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->conflictLog, th->parserGenTrace );
 	Parser oldParser = th->ps;
@@ -477,7 +477,7 @@ static Object recordified( Object ob, Thread th )
 	char buf[40];
 	sprintf( buf, "BINDINGS_%d", st_count( th->st ) );
 	Symbol tag = sy_byName( buf, th->st );
-	sy_setInstanceShape( tag, rd, th->st );
+	sy_setInstanceShape( tag, rd, th->heap );
 
 	Object result = ob_create( tag, th->heap );
 	int fieldID;
@@ -497,8 +497,8 @@ static void optimizeAction( Production handle, GrammarLine gl, Thread th )
 	if( 0 )
 		{
 		Symbol tag = ob_tag( th->executionBindings, th->heap );
-		printf( "optimized executionBindings tag is %s, shape %p\n", sy_name( tag, th->st ), sy_instanceShape( tag, th->st ) );
-		rd_sendTo( sy_instanceShape( tag, th->st ), stdout, th->st );
+		printf( "optimized executionBindings tag is %s, shape %p\n", sy_name( tag, th->st ), sy_instanceShape( tag, th->heap ) );
+		rd_sendTo( sy_instanceShape( tag, th->heap ), stdout, th->st );
 		}
 	th->recordingBindings = recordified( th->recordingBindings, th );
 	nopAction( handle, gl, th );
@@ -650,7 +650,7 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 		}
 	gr_stopAdding( gr );
 	Symbol sym_abstract = sy_byName( "ABSTRACT_PRODUCTION", th->st );
-	gr = gr_augmented( gr, st_inheritanceRelation( th->st ), sym_abstract, ml_indefinite(), th->parserGenTrace );
+	gr = gr_augmented( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), th->parserGenTrace );
 	addProductionsToMap( gr, 0, th );
 
 	for( i=0; initialConcretifications[i].abstract; i++)
@@ -666,7 +666,7 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 static void initializeInheritanceRelation( ObjectHeap heap, SymbolTable st, MemoryLifetime ml, Thread th )
 	{
 	int superIndex, subIndex;
-	InheritanceRelation ir = st_inheritanceRelation( th->st );
+	InheritanceRelation ir = oh_inheritanceRelation( th->heap );
 	for( superIndex = 0; inheritance[ superIndex ].tokens[0]; superIndex++ )
 		{
 		GrammarLine gl = inheritance + superIndex;

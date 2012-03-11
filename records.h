@@ -3,6 +3,7 @@
 #define RECORDS_H
 
 #include "bitvector.h"
+#include "symbols.h"
 
 FUNC Record rd_new( BitVector fieldIDs, MemoryLifetime ml ); // NULL is a valid Record (the empty record) and other functions can cope with it
 

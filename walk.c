@@ -1,8 +1,7 @@
 
 #include "walk.h"
-#include "objects.h"
-#include "stack.h"
 #include "records.h"
+#include "stack.h"
 
 #include "objects_walk_backdoor.h"
 
@@ -44,8 +43,8 @@ FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexPr
 		int numChildrenPushed = 0;
 		if( ob_hasFields( curObject ) )
 			{
-			SymbolTable st = oh_tagSymbolTable( heap );
-			Record rd = sy_instanceShape( ob_tag(curObject,heap), st );
+			SymbolTable st = oh_symbolTable( heap );
+			Record rd = sy_instanceShape( ob_tag(curObject,heap), heap );
 			int fieldID;
 			for( fieldID = rd_firstField(rd); fieldID != rd_NONE && !numChildrenPushed; fieldID = rd_nextField( rd, fieldID ) )
 				{

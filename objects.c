@@ -1,16 +1,37 @@
 
 #include "objects.h"
-#include "records.h"
 #include "memory.h"
-#include "stack.h"
+//#include "stack.h"
 #include <stdint.h>
 #include <string.h>
 
+typedef struct syd_struct
+	{
+	Object  token;
+	Record  instanceShape;
+	} *SymbolDescriptor;
+
+#ifdef NDEBUG
+	typedef struct syda_struct *SymbolDescriptorArray; // type-safe phony struct
+#else
+	typedef Array SymbolDescriptorArray; // give the debugger some symbol info it can use
+#endif
+#define AR_PREFIX  syda
+#define AR_TYPE    SymbolDescriptorArray
+#define AR_ELEMENT struct syd_struct
+#undef AR_BYVALUE
+#include "array_template.h"
+#ifndef NDEBUG
+	#define syda_new( size, ml ) syda_newAnnotated( size, ml, __FILE__, __LINE__ )
+#endif
+
 struct oh_struct
 	{
-	SymbolTable          st;
-	MemoryLifetime       ml;
-	int curCheckListIndex;
+	MemoryLifetime         ml;
+	SymbolTable            st;
+	InheritanceRelation    ir;
+	SymbolDescriptorArray  symbolDescriptors;
+	int                    curCheckListIndex;
 	};
 
 typedef enum
@@ -28,26 +49,101 @@ static ObjectKind ob_kind( Object ob )
 	return (ObjectKind)(address & OB_KIND_MASK);
 	}
 
+struct ir_struct
+	{
+	Object      index;
+	Symbol      nodeTag;
+	ObjectHeap  nodeHeap;
+	};
+
+FUNC InheritanceRelation ir_new( ObjectHeap heap, MemoryLifetime ml )
+	{
+	SymbolTable st = heap->st;
+
+	char indexTagName[30], nodeTagName[30];
+	sprintf( indexTagName, "IR_INDEX_%d", st_count( st ) );
+	sprintf( nodeTagName,  "IR_NODE_%d",  st_count( st ) );
+
+	InheritanceRelation result = (InheritanceRelation)ml_alloc( ml, sizeof(*result) );
+	result->index    = ob_create( sy_byName( indexTagName, st ), heap );
+	result->nodeTag  = sy_byName( nodeTagName, st );
+	result->nodeHeap = heap;
+	return result;
+	}
+
+FUNC Object ir_index( InheritanceRelation ir )
+	{
+	return ir->index;
+	}
+
+FUNC Symbol ir_nodeTag( InheritanceRelation ir )
+	{
+	return ir->nodeTag;
+	}
+
+FUNC ObjectHeap ir_nodeHeap( InheritanceRelation ir )
+	{
+	return ir->nodeHeap;
+	}
+
+static void appendToArray( Object ob, int whichArray, Object value, InheritanceRelation ir )
+	{
+	ObjectHeap heap = ir->nodeHeap;
+	SymbolTable st  = heap->st;
+	Symbol countSymbol  = sy_byIndex( SYM_ELEMENT_COUNT, st );
+	Symbol arraySymbol  = sy_byIndex( SYM_ARRAY, st );
+	Object array = ob_getOrCreateField( ob, sy_byIndex( whichArray, st ), arraySymbol, heap );
+	int nextIndex = 1 + ob_getIfIntField( array, countSymbol, IR_START_INDEX-1, heap );
+	ob_setIntField( array, countSymbol, nextIndex, heap );
+	ob_setElement( array, nextIndex, value, heap );
+	}
+
+FUNC void ir_add( InheritanceRelation ir, Symbol super, Symbol sub )
+	{
+	SymbolTable st = ir->nodeHeap->st;
+	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
+	Object superNode = ob_getOrCreateField( ir->index, super, ir->nodeTag, ir->nodeHeap );
+	Object subNode   = ob_getOrCreateField( ir->index, sub,   ir->nodeTag, ir->nodeHeap );
+	ob_setField( superNode, symSymbol, oh_symbolToken( ir->nodeHeap, super ), ir->nodeHeap );
+	ob_setField( subNode,   symSymbol, oh_symbolToken( ir->nodeHeap, sub   ), ir->nodeHeap );
+	appendToArray( superNode, SYM_SUBTAGS,   subNode, ir );
+	appendToArray( subNode,   SYM_SUPERTAGS, superNode, ir );
+	}
+
 FUNC ObjectHeap theObjectHeap()
 	{
 	static struct oh_struct _theObjectHeap = { 0 };
-	if( !_theObjectHeap.st )
+	if( !_theObjectHeap.ml )
 		{
-		_theObjectHeap.ml = ml_singleton();
+		MemoryLifetime ml = _theObjectHeap.ml = ml_singleton();
 		_theObjectHeap.curCheckListIndex = 1;
-		_theObjectHeap.st = theSymbolTable( &_theObjectHeap );
+		SymbolTable st = _theObjectHeap.st = theSymbolTable();
+
+		// Symbol descriptor table
+		int initialDescriptorCount = st_count(st);
+		SymbolDescriptorArray syda = _theObjectHeap.symbolDescriptors = syda_new( 100 + initialDescriptorCount, ml );
+		syda_setCount( syda, initialDescriptorCount );
+		SymbolDescriptor firstDescriptor = syda_element( syda, 0 );
+		memset( firstDescriptor, 0, initialDescriptorCount * sizeof( *firstDescriptor ) );
+
+		// Initialize inheritance relation
+		InheritanceRelation ir = _theObjectHeap.ir = ir_new( &_theObjectHeap, ml_singleton() );
+		int i;
+		Symbol any = sy_byIndex( SYM_ANY, st );
+		for( i=SYM_ANY+1; i < st_count(st); i++ )
+			ir_add( ir, any, sy_byIndex( i, st ) );
 		}
 	return &_theObjectHeap;
 	}
 
-FUNC SymbolTable oh_tagSymbolTable( ObjectHeap heap )
+FUNC SymbolTable oh_symbolTable( ObjectHeap heap )
 	{
 	return heap->st;
 	}
 
-FUNC SymbolTable oh_fieldSymbolTable( ObjectHeap heap )
+FUNC InheritanceRelation oh_inheritanceRelation ( ObjectHeap heap )
 	{
-	return heap->st;
+	return heap->ir;
 	}
 
 #include "objects_walk_backdoor.h"
@@ -91,10 +187,10 @@ struct ob_struct
 	Object recordFields[1]; // actually numRecordFields(tag) elements
 	};
 
-static int numRecordFields( Symbol tag, SymbolTable st )
+static int numRecordFields( Symbol tag, ObjectHeap heap )
 	{
-	if( sy_instanceShape( tag, st ) )
-		return rd_maxIndex( sy_instanceShape( tag, st ) );
+	if( sy_instanceShape( tag, heap ) )
+		return rd_maxIndex( sy_instanceShape( tag, heap ) );
 	else
 		return 0;
 	}
@@ -102,7 +198,7 @@ static int numRecordFields( Symbol tag, SymbolTable st )
 FUNC Object ob_create( Symbol tag, ObjectHeap heap )
 	{
 	Object result;
-	int recordFieldBytes = numRecordFields( tag, heap->st ) * sizeof( result->recordFields[0] );
+	int recordFieldBytes = numRecordFields( tag, heap ) * sizeof( result->recordFields[0] );
 	result = (Object)ml_allocZeros( heap->ml, sizeof(*result) - sizeof(result->recordFields) + recordFieldBytes );
 	result->tag = sy_index( tag, heap->st );
 	result->data.listFields = NULL;
@@ -273,7 +369,7 @@ FUNC FieldList ob_listFields( Object ob )
 
 static Object ob_getItem( Object ob, SymbolIndex si, ObjectHeap heap )
 	{
-	int index = rd_indexOf( sy_instanceShape( ob_tag(ob,heap), heap->st ), si );
+	int index = rd_indexOf( sy_instanceShape( ob_tag(ob,heap), heap ), si );
 	if( index )
 		return ob->recordFields[ index-1 ];
 	else
@@ -288,7 +384,7 @@ static Object ob_getItem( Object ob, SymbolIndex si, ObjectHeap heap )
 static void ob_setItem( Object ob, SymbolIndex si, Object value, ObjectHeap heap )
 	{
 	assert( ob_hasFields( ob ) );
-	int index = rd_indexOf( sy_instanceShape( ob_tag(ob,heap), heap->st ), si );
+	int index = rd_indexOf( sy_instanceShape( ob_tag(ob,heap), heap ), si );
 	if( index )
 		ob->recordFields[ index-1 ] = value;
 	else
@@ -319,7 +415,7 @@ FUNC void ob_getFieldSymbols( Object ob, BitVector result, ObjectHeap heap )
 	{
 	if( ob_hasFields( ob ) )
 		{
-		Record rd = sy_instanceShape( ob_tag(ob,heap), heap->st );
+		Record rd = sy_instanceShape( ob_tag(ob,heap), heap );
 		int fieldID;
 		for( fieldID = rd_firstField(rd); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
 			if( ob_getItem( ob, fieldID, heap ) )
@@ -504,7 +600,7 @@ static int sendDeepTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 			{
 			ob_sendTo( ob, fl, heap );
 			fl_write( fl, "\n  {\n" );
-			Record rd = sy_instanceShape( ob_tag(ob,heap), heap->st );
+			Record rd = sy_instanceShape( ob_tag(ob,heap), heap );
 			for( fieldID = rd_firstField(rd); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
 				{
 				Symbol sy = sy_byIndex( fieldID, heap->st );
@@ -579,7 +675,7 @@ static int sendDotEdgesTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 		cl_check( cl, ob );
 		if( ob_hasFields( ob ) )
 			{
-			Record rd = sy_instanceShape( ob_tag(ob,heap), heap->st );
+			Record rd = sy_instanceShape( ob_tag(ob,heap), heap );
 			for( fieldID = rd_firstField(rd); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
 				{
 				Symbol sy = sy_byIndex( fieldID, heap->st );
@@ -605,20 +701,33 @@ FUNC int ob_sendDotEdgesTo( Object ob, File fl, ObjectHeap heap )
 	return result;
 	}
 
-#include "objects_symbols_backdoor.h"
+static SymbolDescriptor sy_descriptor( Symbol sy, ObjectHeap heap )
+	{
+	return syda_element( heap->symbolDescriptors, sy_index( sy, heap->st ) );
+	}
+
+FUNC Record sy_instanceShape( Symbol sy, ObjectHeap heap )
+	{
+	return sy_descriptor( sy, heap )->instanceShape;
+	}
+
+FUNC void sy_setInstanceShape( Symbol sy, Record rd, ObjectHeap heap )
+	{
+	sy_descriptor( sy, heap )->instanceShape = rd;
+	}
 
 FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy )
 	{
-	SymbolTable st = oh_fieldSymbolTable( heap );
-	Object result = st_getToken( st, sy );
+	Object result = sy_descriptor( sy, heap )->token;
 	if( !result )
 		{
 		result = ob_createX( SYM_TOKEN, heap );
 		result->data.symbol = sy;
-		st_setToken( st, sy, result );
+		sy_descriptor( sy, heap )->token = result;
 		}
 	return result;
 	}
+
 
 #ifdef OBJECTS_T
 
