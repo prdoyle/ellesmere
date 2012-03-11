@@ -104,8 +104,7 @@ oprof.txt: fast
 	opannotate --assembly --objdump-params "-Mintel" --include-file ./ellesmere > $@
 	sort -rn $@ > sorted-$@
 
-bitvector.t: CFLAGS += -DBITVECTOR_T
-bitvector.t: bitvector.o memory.o file.o
+bitvector.t: bitvector.t.o bitvector.o $(bitvector_DEPS)
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
 parser.t: CFLAGS += -DPARSER_T
@@ -115,7 +114,6 @@ parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvect
 records.t: records.t.o records.o $(records_DEPS)
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
-#bitvector.o memory.o file.o records.o symbols.o stack.o array.o
 objects.t: objects.t.o objects.o $(objects_DEPS)
 	$(LD) $(LDFLAGS) $^ -o $@ -lefence
 
