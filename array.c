@@ -86,7 +86,7 @@ static void ar_changeCapacity( Array ar, int newCapacity, int elementSize )
 		ar->count = newCapacity;
 	}
 
-FUNC void ar_setCapacity( Array ar, int newCapacity, int elementSize ) __attribute__((always_inline));
+//FUNC void ar_setCapacity( Array ar, int newCapacity, int elementSize ) __attribute__((always_inline));
 FUNC void ar_setCapacity( Array ar, int newCapacity, int elementSize )
 	{
 	assert( newCapacity >= 0 );
@@ -95,7 +95,7 @@ FUNC void ar_setCapacity( Array ar, int newCapacity, int elementSize )
 	assert( ar_capacity(ar) == newCapacity );
 	}
 
-FUNC void ar_setCount( Array ar, int newCount, int elementSize ) __attribute__((always_inline));
+//FUNC void ar_setCount( Array ar, int newCount, int elementSize ) __attribute__((always_inline));
 FUNC void ar_setCount( Array ar, int newCount, int elementSize )
 	{ 
 	if( newCount > ar_capacity( ar ) )
@@ -104,7 +104,7 @@ FUNC void ar_setCount( Array ar, int newCount, int elementSize )
 	assert( ar_count(ar) == newCount );
 	}
 
-FUNC int ar_incCountBy( Array ar, int delta, int elementSize ) __attribute__((always_inline));
+//FUNC int ar_incCountBy( Array ar, int delta, int elementSize ) __attribute__((always_inline));
 FUNC int ar_incCountBy( Array ar, int delta, int elementSize )
 	{ 
 	ar_setCount( ar, ar_count(ar) + delta, elementSize );
