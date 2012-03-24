@@ -84,6 +84,7 @@ FUNC int pn_index( Production pn, Grammar gr )
 	return result;
 	}
 
+#if 0
 static int gr_countNumInheritedProductions( Grammar gr )
 	{
 	switch( gr->kind )
@@ -96,16 +97,17 @@ static int gr_countNumInheritedProductions( Grammar gr )
 	assert(0);
 	return 0;
 	}
+#endif
 
 static inline bool gr_productionIsInherited( Grammar gr, int index )
 	{
-	assert( gr->numInheritedProductions == gr_countNumInheritedProductions( gr ) );
+	xassert( gr->numInheritedProductions == gr_countNumInheritedProductions( gr ) );
 	return index < gr->numInheritedProductions;
 	}
 
 static inline Production pns2pn( ProductionStorage pns, Grammar gr )
 	{
-	assert( gr->numInheritedProductions == gr_countNumInheritedProductions( gr ) );
+	xassert( gr->numInheritedProductions == gr_countNumInheritedProductions( gr ) );
 	return (Production)(
 		  OUTERMOST_INDEX_OFFSET
 		+ gr->numInheritedProductions
@@ -116,7 +118,7 @@ static inline ProductionStorage pn2pns( Production pn, Grammar gr )
 	{
 	while( gr_productionIsInherited( gr, pn_index( pn, gr ) ) )
 		gr = gr->data.outer;
-	assert( gr->numInheritedProductions == gr_countNumInheritedProductions( gr ) );
+	xassert( gr->numInheritedProductions == gr_countNumInheritedProductions( gr ) );
 	return pra_element( gr->pra, pn_index( pn, gr ) - gr->numInheritedProductions );
 	}
 
@@ -230,16 +232,17 @@ FUNC Grammar gr_nested( Grammar outer, int numProductionsEstimate, MemoryLifetim
 
 FUNC int gr_numProductions( Grammar gr )
 	{
-	assert( gr->numInheritedProductions == gr_countNumInheritedProductions( gr ) );
+	xassert( gr->numInheritedProductions == gr_countNumInheritedProductions( gr ) );
 	return pra_count( gr->pra ) + gr->numInheritedProductions;
 	}
 
 FUNC int gr_numOuterProductions( Grammar gr )
 	{
-	assert( gr->numInheritedProductions == gr_countNumInheritedProductions( gr ) );
+	xassert( gr->numInheritedProductions == gr_countNumInheritedProductions( gr ) );
 	return gr->numInheritedProductions;
 	}
 
+#if 0
 static int gr_countItems( Grammar gr )
 	{
 	int result = 0; int i;
@@ -247,10 +250,11 @@ static int gr_countItems( Grammar gr )
 		result += 1 + pn_length( gr_production(gr, i), gr );
 	return result;
 	}
+#endif
 
 FUNC int gr_numItems( Grammar gr )
 	{
-	assert( gr->numItems == gr_countItems(gr) );
+	xassert( gr->numItems == gr_countItems(gr) );
 	return gr->numItems;
 	}
 

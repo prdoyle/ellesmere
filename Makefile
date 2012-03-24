@@ -2,7 +2,7 @@
 all: tags ellesmere
 32bit: all
 fast: merged
-prof: merged
+prof: all
 small: merged
 	strip ellesmere
 
@@ -20,7 +20,10 @@ small: CFLAGS    += -Os -DNDEBUG -g0
 small: LEXFLAGS  += -Cem
 fast:  CFLAGS    += -O3 -DNDEBUG -Winline
 fast:  LEXFLAGS  += --Fast
-prof:  CFLAGS    += -pg -O3 -DNDEBUG -fprofile-arcs
+
+prof:  CFLAGS    += -pg -fprofile-arcs
+#prof:  CFLAGS    += -DNDEBUG
+#prof:  CFLAGS    += -O3
 prof:  LDFLAGS   += -pg -fprofile-arcs
 prof:  LEXFLAGS  += --Fast
 

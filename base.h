@@ -12,6 +12,8 @@ typedef char bool;
 // check is used to catch user errors
 #define check assert
 
+#define xassert(...) // Expensive assertions
+
 #define asizeof(x) ( sizeof(x) / sizeof((x)[0]) )
 
 #ifndef FUNC
