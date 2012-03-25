@@ -35,8 +35,18 @@ FUNC OptionSet os_new ( MemoryLifetime ml );
 FUNC OptionDelta od_parse   ( char *start, char *stop, MemoryLifetime ml );
 FUNC void        od_applyTo ( OptionDelta od, OptionSet os, MemoryLifetime ml );
 
-FUNC bool os_do      ( OptionSet os, OptionVerb verb, OptionNoun noun );
-FUNC File os_logFile ( OptionSet os );
+FUNC bool os_do         ( OptionSet os, OptionVerb verb, OptionNoun noun );
+FUNC File os_getLogFile ( OptionSet os );
+FUNC void os_setLogFile ( OptionSet os, File newLogFile );
+
+static inline File os_logFile ( OptionSet os, OptionNoun noun )
+	{ return os_do( os, ov_LOG, noun )? os_getLogFile( os ) : NULL; }
+
+static inline File os_traceFile ( OptionSet os, OptionNoun noun )
+	{ return os_do( os, ov_TRACE, noun )? os_getLogFile( os ) : NULL; }
+
+FUNC int os_log   ( OptionSet os, OptionNoun noun, const char *format, ... );
+FUNC int os_trace ( OptionSet os, OptionNoun noun, const char *format, ... );
 
 #endif
 

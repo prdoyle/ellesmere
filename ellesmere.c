@@ -913,10 +913,38 @@ static OptionSet processOptions( int argc, char **argv, MemoryLifetime ml )
 		char *arg = argv[i];
 		if( arg[0] == '-' )
 			{
-			MemoryLifetime deltaTime = ml_begin( 1000, ml );
-			OptionDelta delta = od_parse( arg+1, arg + strlen( arg ), deltaTime );
-			od_applyTo( delta, result, ml );
-			ml_end( deltaTime );
+			if( arg[1] == 'L' )
+				{
+				switch( arg[2] )
+					{
+					case '=':
+						arg += 3;
+						break;
+					case 0:
+						arg = argv[++i];
+						break;
+					default:
+						arg += 2;
+						break;
+					}
+				FILE *logFile = fopen( arg, "w" );
+				if( logFile )
+					{
+					os_setLogFile( result, logFile );
+					}
+				else
+					{
+					fprintf( stderr, "Error opening log file '%s': %s\n", arg, strerror(errno) );
+					exit(1);
+					}
+				}
+			else
+				{
+				MemoryLifetime deltaTime = ml_begin( 1000, ml );
+				OptionDelta delta = od_parse( arg+1, arg + strlen( arg ), deltaTime );
+				od_applyTo( delta, result, ml );
+				ml_end( deltaTime );
+				}
 			}
 		else
 			{
@@ -927,7 +955,7 @@ static OptionSet processOptions( int argc, char **argv, MemoryLifetime ml )
 				}
 			else
 				{
-				fprintf( stderr, "Fatal error: %s\n", strerror(errno) );
+				fprintf( stderr, "Fatal error opening input file '%s': %s\n", arg, strerror(errno) );
 				exit(1);
 				}
 			}

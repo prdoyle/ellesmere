@@ -3,6 +3,7 @@
 #include "memory.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
 
 static const struct
 	{
@@ -62,11 +63,18 @@ struct os_struct
 	int  verbsByNoun[ on_NUM_OPTION_NOUNS ];
 	};
 
-FUNC File os_logFile( OptionSet os )
+FUNC File os_getLogFile( OptionSet os )
 	{
 	return os->logFile;
 	}
 
+FUNC void os_setLogFile ( OptionSet os, File newLogFile )
+	{
+	assert( newLogFile != NULL );
+	os->logFile = newLogFile;
+	}
+
+static bool os_getFlag( OptionSet os, OptionVerb verb, OptionNoun noun ) __attribute__((always_inline));
 static bool os_getFlag( OptionSet os, OptionVerb verb, OptionNoun noun )
 	{
 	return ( os->verbsByNoun[ noun ] & ( 1<<verb ) ) != 0;
@@ -88,6 +96,7 @@ static void os_setFlag( OptionSet os, OptionVerb verb, OptionNoun noun )
 	}
 #endif
 
+FUNC bool os_do( OptionSet os, OptionVerb verb, OptionNoun noun ) __attribute__((always_inline));
 FUNC bool os_do( OptionSet os, OptionVerb verb, OptionNoun noun )
 	{
 	return os_getFlag( os, verb, noun );
@@ -122,6 +131,7 @@ FUNC OptionSet os_new( MemoryLifetime ml )
 			break;
 		os_setFlagTo( result, clause->verb, clause->noun, !clause->invert );
 		}
+	result->logFile = stderr;
 	return result;
 	}
 
@@ -197,6 +207,25 @@ FUNC OptionDelta od_parse( char *start, char *stop, MemoryLifetime ml )
 
 	return result;
 	}
+
+FUNC int os_log( OptionSet os, OptionNoun noun, const char *format, ... )
+	{
+	va_list args;
+	va_start( args, format );
+	int result = fl_write( os_logFile( os, noun ), format, args );
+	va_end( args );
+	return result;
+	}
+
+FUNC int os_trace( OptionSet os, OptionNoun noun, const char *format, ... )
+	{
+	va_list args;
+	va_start( args, format );
+	int result = fl_write( os_traceFile( os, noun ), format, args );
+	va_end( args );
+	return result;
+	}
+
 
 //MERGE:65
 
