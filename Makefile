@@ -101,7 +101,7 @@ gmon.out: prof
 
 oprof.txt: fast
 	sudo opcontrol --reset
-	sudo opcontrol --start
+	sudo opcontrol --start --no-vmlinux
 	./ellesmere < fib.el
 	sudo opcontrol --stop
 	opannotate --assembly --objdump-params "-Mintel" --include-file ./ellesmere > $@
