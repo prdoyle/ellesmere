@@ -12,10 +12,10 @@ FUNC int fl_write( File fl, const char *format, ... ) __attribute__ ((format (pr
 FUNC int fl_vwrite( File fl, const char *format, va_list args );
 
 #if 1
-	#define trace    fl_write
+	#define TRACE    fl_write
 	FUNC int optional(char *format, ...);
 #else
-	#define trace(...)
+	#define TRACE(...)
 	static inline int optional(char *format, ...) { return true; }
 #endif
 

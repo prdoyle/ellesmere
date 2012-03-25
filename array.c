@@ -99,7 +99,7 @@ FUNC void ar_setCapacity( Array ar, int newCapacity, int elementSize )
 FUNC void ar_setCount( Array ar, int newCount, int elementSize )
 	{ 
 	if( newCount > ar_capacity( ar ) )
-		ar_changeCapacity( ar, 2 * ( newCount-1 ), elementSize );
+		ar_changeCapacity( ar, 2 * newCount, elementSize );
 	ar->count = newCount;
 	assert( ar_count(ar) == newCount );
 	}

@@ -12,7 +12,7 @@ typedef char bool;
 // check is used to catch user errors
 #define check assert
 
-#define xassert(...) // Expensive assertions
+#define xassert(...) // Expensive assertions: consistency checks that can increase algorithmic complexity
 
 #define asizeof(x) ( sizeof(x) / sizeof((x)[0]) )
 

@@ -10,7 +10,7 @@ small: merged
 -include modules.mak
 
 CC := gcc
-CFLAGS  += -c -Wall -Werror -Wmissing-declarations -g -std=gnu99 -I. $(USER_CFLAGS)
+CFLAGS  += -c -Wall -Werror -Wmissing-declarations -g -std=gnu99 -fno-builtin-log -I. $(USER_CFLAGS)
 LD := gcc
 LDFLAGS += -g
 
