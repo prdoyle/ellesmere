@@ -115,7 +115,7 @@ FUNC void od_applyTo( OptionDelta od, OptionSet os, MemoryLifetime ml )
 
 static OptionClause defaultSettings[] =
 	{
-	{ ov_LOG, on_EXECUTION },
+	//{ ov_LOG, on_EXECUTION },
 	{ 0 }
 	};
 
@@ -212,7 +212,7 @@ FUNC int os_log( OptionSet os, OptionNoun noun, const char *format, ... )
 	{
 	va_list args;
 	va_start( args, format );
-	int result = fl_write( os_logFile( os, noun ), format, args );
+	int result = fl_vwrite( os_logFile( os, noun ), format, args );
 	va_end( args );
 	return result;
 	}
@@ -221,7 +221,7 @@ FUNC int os_trace( OptionSet os, OptionNoun noun, const char *format, ... )
 	{
 	va_list args;
 	va_start( args, format );
-	int result = fl_write( os_traceFile( os, noun ), format, args );
+	int result = fl_vwrite( os_traceFile( os, noun ), format, args );
 	va_end( args );
 	return result;
 	}

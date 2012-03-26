@@ -50,7 +50,6 @@ struct th_struct
 	int                  callStackDepth;
 	OptionSet            os;
 
-	FILE                *programTrace;            // Follow user program step-by-step
 	FILE                *interpreterDiagnostics;  // High-level messages describing unusual events in the interpreter
 	FILE                *interpreterTrace;        // Follow interpreter step-by-step
 	FILE                *parserGenDiagnostics;
@@ -416,11 +415,15 @@ static void defAction( Production handle, GrammarLine gl, Thread th )
 
 	// Store the body from the definition
 	Symbol pnSymbol = ob_getTokenField( production, sy_byName( "productionSymbol", th->st ), th->heap );
-	TRACE( th->programTrace, "  Defining production %s\n", sy_name( pnSymbol, th->st ) );
 	Function fn = (Function)ml_alloc( ml_indefinite(), sizeof(*fn) );
 	fn->kind       = FN_TOKEN_BLOCK;
 	fn->body.tb    = block;
 	ob_setFunctionField( th->executionBindings, pnSymbol, fn, th->heap );
+	if( os_log( th->os, on_EXECUTION, "Defined production %s: ", sy_name( pnSymbol, th->st ) ) )
+		{
+		tb_sendTo( block, os_logFile( th->os, on_EXECUTION ), th->heap );
+		os_log( th->os, on_EXECUTION, "\n" );
+		}
 	}
 
 #if 0
@@ -433,7 +436,7 @@ static void returnAction( Production handle, GrammarLine gl, Thread th )
 	ts_pop( th->tokenStream );
 	push( oh_symbolToken( th->heap, pn_lhs( handle, ps_grammar(th->ps) ) ), th );
 	cf_pop( th );
-	TRACE( th->programTrace, "  Returned to TokenBlock %p\n", ts_curBlock( th->tokenStream ) );
+	os_trace( th->os, on_EXECUTION, "Returned to TokenBlock %p\n", ts_curBlock( th->tokenStream ) );
 	push( result, th );
 	}
 #endif
@@ -716,27 +719,6 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 			){
 			Grammar gr = ps_grammar( th->ps ); // Grammar can change as the program proceeds
 			Production handleProduction = gr_production( gr, ob_getIntField( th->productionMap, handleSymbol, th->heap ) );
-			if( th->programTrace )
-				{
-				dumpStack( th->programTrace, th );
-				dumpParserState( th->interpreterTrace, th );
-				TRACE( th->programTrace, "    # Handle %s: ", sy_name( handleSymbol, th->st ) );
-				pn_sendTo( handleProduction, th->programTrace, gr, th->st );
-				int i;
-				char *sep = "  with  ";
-				for( i=0; i < pn_length( handleProduction, gr ); i++ )
-					{
-					Symbol nameSymbol = pn_name( handleProduction, i, gr );
-					if( nameSymbol )
-						{
-						Object value = sk_item( ps_operandStack( th->ps ), pn_length( handleProduction, gr ) - i - 1 );
-						TRACE( th->programTrace, "%s%s=", sep, sy_name( nameSymbol, th->st ) );
-						ob_sendTo( value, th->programTrace, th->heap );
-						sep = " ";
-						}
-					}
-				TRACE( th->programTrace, "\n" );
-				}
 			Function functionToCall = NULL;
 
 			Object ob = ob_getField( bindings, handleSymbol, th->heap );
@@ -778,6 +760,26 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 				}
 			else if( functionToCall )
 				{
+				if( os_log( th->os, on_EXECUTION, "%-20s: %s <-", sy_name( handleSymbol, th->st ), sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
+					{
+					File logFile = os_logFile( th->os, on_EXECUTION );
+					int i;
+					char *sep = " ";
+					for( i=0; i < pn_length( handleProduction, gr ); i++ )
+						{
+						Symbol tokenSymbol = pn_token( handleProduction, i, gr );
+						os_log( th->os, on_EXECUTION, "%s%s", sep, sy_name( tokenSymbol, th->st ) );
+						Symbol nameSymbol = pn_name( handleProduction, i, gr );
+						if( nameSymbol )
+							{
+							os_log( th->os, on_EXECUTION, "@%s=", sy_name( nameSymbol, th->st ) );
+							Object value = sk_item( ps_operandStack( th->ps ), pn_length( handleProduction, gr ) - i - 1 );
+							ob_sendTo( value, logFile, th->heap );
+							}
+						sep = " ";
+						}
+					os_log( th->os, on_EXECUTION, "\n" );
+					}
 				switch( functionToCall->kind )
 					{
 					case FN_TOKEN_BLOCK:
@@ -794,16 +796,15 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 							}
 						ts_push( th->tokenStream, functionToCall->body.tb, argBindings );
 						cf_push( th );
-						TRACE( th->programTrace, "    Calling body %p for production %d\n", th->tokenStream, pn_index( handleProduction, gr ) );
+						os_trace( th->os, on_EXECUTION, "   Digressing into token block %p\n", functionToCall->body.tb );
 						}
 						break;
 					case FN_NATIVE:
 						{
 						GrammarLine line = functionToCall->body.gl;
 						assert( line );
-						TRACE( th->interpreterTrace, "   Calling native action %p\n", line );
+						os_trace( th->os, on_EXECUTION, "   Calling native action %p\n", line->response.action );
 						line->response.action( handleProduction, line, th );
-						TRACE( th->interpreterTrace, "   Done native action %p\n", line );
 						}
 						break;
 					}
@@ -867,7 +868,7 @@ static void recordTokenBlockAction( Production handle, GrammarLine gl, Thread th
 		tb = ts_beginBlock( th->tokenStream );
 		if( th->interpreterTrace )
 			{
-			TRACE( th->programTrace, "  Begin recording token block\n" );
+			TRACE( th->interpreterTrace, "  Begin recording token block\n" );
 			tb_sendTo( tb, th->interpreterTrace, th->heap );
 			TRACE( th->interpreterTrace, "\n" );
 			}
@@ -968,7 +969,6 @@ int main( int argc, char **argv )
 	Thread th = &theThread;
 	th->os = processOptions( argc, argv, ml_indefinite() );
 	th->conflictLog = stderr;
-	th->programTrace           = openTrace( 3, "3: Ellesmere program trace" );
 	th->interpreterDiagnostics = openTrace( 4, "4: Ellesmere interpreter diagnostics" );
 	th->interpreterTrace       = openTrace( 5, "5: Ellesmere interpreter trace" );
 	th->parserGenDiagnostics = NULL;
