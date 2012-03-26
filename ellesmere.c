@@ -760,7 +760,16 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 				}
 			else if( functionToCall )
 				{
-				if( os_log( th->os, on_EXECUTION, "%-20s: %s <-", sy_name( handleSymbol, th->st ), sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
+				bool doLogging = true;
+				if( functionToCall->kind == FN_NATIVE )
+					{
+					static const NativeAction silentActions[] = { nopAction, passThrough, parseTreeAction, recordTokenBlockAction };
+					NativeAction action = functionToCall->body.gl->response.action;
+					int i;
+					for( i=0; doLogging && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
+						doLogging = ( action != silentActions[i] );
+					}
+				if( doLogging && os_log( th->os, on_EXECUTION, "%-20s: %s <-", sy_name( handleSymbol, th->st ), sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
 					{
 					File logFile = os_logFile( th->os, on_EXECUTION );
 					int i;
