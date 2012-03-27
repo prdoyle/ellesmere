@@ -279,7 +279,7 @@ static int sendItem( void *parserGenerator, int itemIndex, File file )
 	ParserGenerator pg = (ParserGenerator)parserGenerator;
 	Item it = ita_element( pg->items, itemIndex );
 	int charsSent = 0;
-	charsSent += fl_write( file, "      i%d: ", itemIndex );
+	charsSent += fl_write( file, "      i%-3d: ", itemIndex );
 	charsSent += pn_sendItemTo( it->pn, it->dot, file, pg->gr, pg->st );
 	charsSent += fl_write( file, "\n" );
 	return charsSent;
@@ -1735,7 +1735,69 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Sy
 	return result;
 	}
 
-FUNC Automaton au_new( Grammar gr, SymbolTable st, ObjectHeap heap, MemoryLifetime ml, File conflictLog, File diagnostics )
+static int au_sendReportTo( Automaton au, File fl, ParserGenerator pg )
+	{
+	if( !fl )
+		return 0;
+
+	int charsSent = 0;
+#ifdef ITEM_SET_NUMS
+	ObjectHeap heap = pg->heap;
+	SymbolTable st  = pg->st;
+	MemoryLifetime reportTime  = ml_begin( 1000, ml_indefinite() );
+	BitVector      edgeSymbols = bv_new( 0, reportTime );
+
+	fl_write( fl, "start state%d\n", ob_getIntFieldX( au->startState, SYM_ITEM_SET_NUM, heap ) );
+
+	int itemSetNum;
+	for( itemSetNum=0; itemSetNum < itst_count( pg->itemSets ); itemSetNum++ )
+		{
+		fl_write( fl, "  state%d\n", itemSetNum );
+
+		// Items
+		//
+		ItemSet its = itst_element( pg->itemSets, itemSetNum );
+		bv_sendFormattedToX( its->items, fl, sendItem, pg, "", "", "" );
+
+		// Edges
+		//
+		Object state = its->stateNode;
+		bv_clear( edgeSymbols );
+		ob_getFieldSymbols( state, edgeSymbols, heap );
+		int edge;
+		for( edge = bv_firstBit( edgeSymbols ); edge != bv_END; edge = bv_nextBit( edgeSymbols, edge ) )
+			{
+			Symbol edgeSymbol = sy_byIndex( edge, st );
+			Object nextState  = ob_getField( state, edgeSymbol, heap );
+			if( ob_isInt( nextState, heap ) )
+				{
+				// This is a special field of some sort, like SYM_ITEM_SET_NUM.  Ignore.
+				bv_unset( edgeSymbols, edge );
+				}
+			else if( ob_isToken( nextState, heap ) )
+				{
+				// This is a reduce node.  Leave it in edgeSymbols and process it on the next loop.
+				}
+			else
+				{
+				// %12s is enough for END_OF_INPUT
+				fl_write( fl, "    %12s -> state%d\n", sy_name( edgeSymbol, st ), ob_getIntFieldX( nextState, SYM_ITEM_SET_NUM, heap ) );
+				bv_unset( edgeSymbols, edge );
+				}
+			}
+		for( edge = bv_firstBit( edgeSymbols ); edge != bv_END; edge = bv_nextBit( edgeSymbols, edge ) )
+			{
+			Symbol edgeSymbol   = sy_byIndex( edge, st );
+			Symbol reduceSymbol = ob_getTokenField( state, edgeSymbol, heap );
+			fl_write( fl, "    %12s :: %s\n", sy_name( edgeSymbol, st ), sy_name( reduceSymbol, st ) );
+			}
+		}
+	ml_end( reportTime );
+#endif
+	return charsSent;
+	}
+
+FUNC Automaton au_new( Grammar gr, SymbolTable st, ObjectHeap heap, MemoryLifetime ml, OptionSet os, File conflictLog, File diagnostics )
 	{
 	TRACE( diagnostics, "Generating automaton for {\n" );
 	gr_sendTo( gr, diagnostics, st );
@@ -1745,6 +1807,12 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, ObjectHeap heap, MemoryLifeti
 	MemoryLifetime generateTime = ml;
 #endif
 	TRACE( diagnostics, "}\n" );
+
+	if( os_log( os, on_PARSER_GEN, "Generating automaton\n\n" ) )
+		{
+		gr_sendTo( gr, os_logFile( os, on_PARSER_GEN ), st );
+		os_log( os, on_PARSER_GEN, "\n" );
+		}
 
 	Automaton result = (Automaton)ml_alloc( ml, sizeof(*result) );
 	char stateTagName[50];
@@ -1774,6 +1842,11 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, ObjectHeap heap, MemoryLifeti
 		if( 0 )
 			pg_sendDotTo( pg, diagnostics );
 		TRACE( diagnostics, "\n\n" );
+		}
+	if( os_log( os, on_PARSER_GEN, "Finished automaton %p " ), result )
+		{
+		au_sendReportTo( result, os_logFile( os, on_PARSER_GEN ), pg );
+		os_log( os, on_PARSER_GEN, "\n" );
 		}
 
 	if( generateTime == ml )
@@ -1856,6 +1929,12 @@ static int ps_itemSetNum( Parser ps, int depth, Symbol isn )
 	ObjectHeap heap = theObjectHeap(); // Cheating a bit
 	return ob_getIntField( sk_item( ps->stateStack, depth ), isn, heap );
 	}
+
+static int ps_itemSetNumX( Parser ps, int depth, SymbolIndex isnIndex )
+	{
+	ObjectHeap heap = theObjectHeap(); // Cheating a bit
+	return ob_getIntFieldX( sk_item( ps->stateStack, depth ), isnIndex, heap );
+	}
 #endif
 
 static Object ps_nextState( Parser ps, Object ob )
@@ -1865,7 +1944,7 @@ static Object ps_nextState( Parser ps, Object ob )
 	Symbol token = ob_tag( ob, oh );
 	if( ps->detailedDiagnostics )
 		{
-		TRACE( ps->detailedDiagnostics, "NEXT STATE from %d ob: ", ps_itemSetNum( ps, 0, sy_byIndex( SYM_ITEM_SET_NUM, theSymbolTable( theObjectHeap() ) ) ) );
+		TRACE( ps->detailedDiagnostics, "NEXT STATE from %d ob: ", ps_itemSetNumX( ps, 0, SYM_ITEM_SET_NUM ) );
 		ob_sendTo( ob, ps->detailedDiagnostics, theObjectHeap() );
 		TRACE( ps->detailedDiagnostics, "\n" );
 		}
@@ -2007,10 +2086,9 @@ FUNC int ps_sendTo( Parser ps, File fl, ObjectHeap heap, SymbolTable st )
 #ifdef ITEM_SET_NUMS
 	int i;
 	char *sep = ITEM_STATE_PREFIX;
-	Symbol isn = sy_byIndex( SYM_ITEM_SET_NUM, st );
 	for( i=0; i < sk_depth( ps->stateStack ); i++ )
 		{
-		charsSent += fl_write( fl, "%s%d", sep, ps_itemSetNum(ps, i, isn) );
+		charsSent += fl_write( fl, "%s%d", sep, ps_itemSetNumX( ps, i, SYM_ITEM_SET_NUM ) );
 		sep = " " ITEM_STATE_PREFIX;
 		}
 #endif
@@ -2348,7 +2426,7 @@ int main( int argc, char *argv[] )
 		gr_sendTo( gr, traceFile, st );
 		}
 
-	Automaton au = au_new( gr, st, heap, ml_indefinite(), traceFile, traceFile );
+	Automaton au = au_new( gr, st, heap, ml_indefinite(), NULL, traceFile, traceFile );
 	fl_write( traceFile, "Automaton:\n" );
 	au_sendTo( au, traceFile, heap, st );
 

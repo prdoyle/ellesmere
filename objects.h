@@ -117,6 +117,9 @@ static inline Object ob_createX( SymbolIndex tagIndex, ObjectHeap heap )
 static inline Object ob_getFieldX( Object ob, SymbolIndex fieldIndex, ObjectHeap heap )
 	{ return ob_getField( ob, sy_byIndex( fieldIndex, oh_symbolTable( heap ) ), heap ); }
 
+static inline int ob_getIntFieldX( Object ob, SymbolIndex fieldIndex, ObjectHeap heap )
+	{ return ob_getIntField( ob, sy_byIndex( fieldIndex, oh_symbolTable( heap ) ), heap ); }
+
 static inline void ob_setFieldX( Object ob, SymbolIndex fieldIndex, Object value, ObjectHeap heap )
 	{ ob_setField( ob, sy_byIndex( fieldIndex, oh_symbolTable( heap ) ), value, heap ); }
 

@@ -65,11 +65,17 @@ struct os_struct
 
 FUNC File os_getLogFile( OptionSet os )
 	{
+	if( !os )
+		return NULL;
+
 	return os->logFile;
 	}
 
 FUNC void os_setLogFile ( OptionSet os, File newLogFile )
 	{
+	if( !os )
+		return;
+
 	assert( newLogFile != NULL );
 	os->logFile = newLogFile;
 	}
@@ -210,6 +216,9 @@ FUNC OptionDelta od_parse( char *start, char *stop, MemoryLifetime ml )
 
 FUNC int os_log( OptionSet os, OptionNoun noun, const char *format, ... )
 	{
+	if( !os )
+		return 0;
+
 	va_list args;
 	va_start( args, format );
 	int result = fl_vwrite( os_logFile( os, noun ), format, args );
@@ -219,6 +228,9 @@ FUNC int os_log( OptionSet os, OptionNoun noun, const char *format, ... )
 
 FUNC int os_trace( OptionSet os, OptionNoun noun, const char *format, ... )
 	{
+	if( !os )
+		return 0;
+
 	va_list args;
 	va_start( args, format );
 	int result = fl_vwrite( os_traceFile( os, noun ), format, args );

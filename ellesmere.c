@@ -360,7 +360,7 @@ static void addProductionAction( Production handle, GrammarLine gl, Thread th )
 	gr_stopAdding( gr );
 	gr = gr_augmentedShallow( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), th->parserGenTrace );
 	addNewestProductionsToMap( gr, th );
-	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->conflictLog, th->parserGenTrace );
+	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, th->parserGenTrace );
 	Parser oldParser = th->ps;
 	th->ps = ps_new( au, ml_indefinite(), th->parserGenTrace );
 	TRACE( th->interpreterDiagnostics, "    NEW PARSER\n" );
@@ -992,7 +992,7 @@ int main( int argc, char **argv )
 	th->concretifications = ob_create( sy_byIndex( SYM_BINDINGS, th->st ), th->heap );
 	th->productionMap     = ob_create( sy_byName( "PRODUCTION_MAP", th->st ), th->heap );
 	Grammar initialGrammar = populateGrammar( th->st, th );
-	Automaton au = au_new( initialGrammar, th->st, th->heap, ml_indefinite(), th->conflictLog, th->parserGenTrace );
+	Automaton au = au_new( initialGrammar, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, th->parserGenTrace );
 	th->ps = ps_new( au, ml_indefinite(), th->parserGenTrace );
 	th->tokenStream = theLexTokenStream( th->heap, th->st );
 
