@@ -358,7 +358,8 @@ static void addProductionAction( Production handle, GrammarLine gl, Thread th )
 		}
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
-	gr = gr_augmentedShallow( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), th->parserGenTrace );
+	if ( os_enable( th->os, on_INHERITANCE ) )
+		gr = gr_augmentedShallow( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), th->parserGenTrace );
 	addNewestProductionsToMap( gr, th );
 	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, th->parserGenTrace );
 	Parser oldParser = th->ps;
@@ -657,7 +658,8 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 		}
 	gr_stopAdding( gr );
 	Symbol sym_abstract = sy_byName( "ABSTRACT_PRODUCTION", th->st );
-	gr = gr_augmented( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), th->parserGenTrace );
+	if ( os_enable( th->os, on_INHERITANCE ) )
+		gr = gr_augmented( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), th->parserGenTrace );
 	addProductionsToMap( gr, 0, th );
 
 	for( i=0; initialConcretifications[i].abstract; i++)
@@ -672,6 +674,9 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 
 static void initializeInheritanceRelation( ObjectHeap heap, SymbolTable st, MemoryLifetime ml, Thread th )
 	{
+	if ( os_disable( th->os, on_INHERITANCE ) )
+		return;
+
 	int superIndex, subIndex;
 	InheritanceRelation ir = oh_inheritanceRelation( th->heap );
 	for( superIndex = 0; inheritance[ superIndex ].tokens[0]; superIndex++ )
@@ -685,10 +690,12 @@ static void initializeInheritanceRelation( ObjectHeap heap, SymbolTable st, Memo
 			}
 		}
 
-	if( th->interpreterTrace )
+	if(   os_logFile   ( th->os, on_INHERITANCE )
+		|| os_traceFile ( th->os, on_INTERPRETER) )
 		{
-		TRACE( th->interpreterTrace, "Initial inheritance relation:\n" );
-		ir_sendTo( ir, th->interpreterTrace );
+		File fl = os_getLogFile( th->os );
+		fl_write( fl, "Initial inheritance relation:\n" );
+		ir_sendTo( ir, fl );
 		}
 	}
 

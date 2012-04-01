@@ -357,17 +357,16 @@ FUNC int pn_sendTo( Production pn, File fl, Grammar gr, SymbolTable st )
 
 static int sendTo( Grammar gr, File fl, SymbolTable st, int indent )
 	{
-	int i;
-	int charsSent = fl_write( fl, "%*sGrammar %p( %s )\n  %*s{\n", indent, "", gr, sy_name( gr_goal(gr), st ), indent, "" );
+	int charsSent = fl_write( fl, "%*sGrammar %p( %s )\n", 2*indent, "", gr, sy_name( gr_goal(gr), st ) );
 	if( gr->kind == NESTED )
-		charsSent += sendTo( gr->data.outer, fl, st, indent+2 );
+		charsSent += sendTo( gr->data.outer, fl, st, indent+1 );
+	int i;
 	for( i=gr->numInheritedProductions; i < gr_numProductions(gr); i++ )
 		{
-		charsSent += fl_write( fl, "  %*s", indent, "" );
+		charsSent += fl_write( fl, "%*s", 2*indent+2, "" );
 		charsSent += pn_sendTo( gr_production( gr, i ), fl, gr, st );
 		charsSent += fl_write( fl, "\n" );
 		}
-	charsSent += fl_write( fl, "  %*s}\n", indent, "" );
 	return charsSent;
 	}
 

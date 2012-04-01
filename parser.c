@@ -2006,8 +2006,8 @@ FUNC void ps_push( Parser ps, Object ob )
 					{
 					Item it = ita_element( pg->items, j );
 					// Figure out what stuff to print
-#if 0
-					if( !bv_isSet( curItems, j ) && !firstIteration )
+#if 1
+					if( !bv_isSet( curItems, j ) && !firstIteration ) // TODO: Why doesn't this logic work with inheritance?
 						continue;
 #endif
 					switch( it->dot )

@@ -5,15 +5,24 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+typedef struct oc_struct
+	{
+	OptionQuery query;
+	OptionLevel level;
+	OptionNoun  noun;
+	} OptionClause;
+
 static const struct
 	{
-	OptionVerb id;
-	char      *abbreviation;
-	char      *name;
-	char      *description;
+	char         *abbreviation;
+	char         *name;
+	OptionClause  clause;
+	char         *description;
 	} verbs[] = {
-	{ ov_LOG,       "l", "log",    "Record events at a high level"                       },
-	{ ov_TRACE,     "t", "trace",  "Record implementation steps to aid in debugging"     },
+	{ "l", "log",      { oq_REPORT_DETAIL,  1 }, "Record events at a high level"                       },
+	{ "t", "trace",    { oq_REPORT_DETAIL,  2 }, "Record implementation steps to aid in debugging"     },
+	{ "d", "disable",  { oq_DISABLED,       1 }, "Prevent from occurring"                              },
+	{ "e", "enable",   { oq_DISABLED,      -1 }, "Allow to occur"                                      },
 	{ 0 }
 	};
 
@@ -28,15 +37,9 @@ static const struct
 	{ on_INTERPRETER,     "i", "interpreter",     "Reading tokens, walking automata, and computing which operations to perform"  },
 	{ on_PARSER_GEN,      "g", "parsergen",       "Construction of an automaton from a grammar"                                  },
 	{ on_PARSER_CONFLICT, "c", "parserconflict",  "Situations where the automaton to generate is ambiguous"                      },
+	{ on_INHERITANCE,     "I", "inheritance",     "Allowing one symbol to be substituted for another"                            },
 	{ 0 }
 	};
-
-typedef struct oc_struct
-	{
-	OptionVerb verb;
-	OptionNoun noun;
-	bool       invert;
-	} OptionClause;
 
 #ifdef NDEBUG
 	typedef struct oca_struct *OptionClauseArray; // type-safe phony struct
@@ -60,7 +63,7 @@ struct od_struct
 struct os_struct
 	{
 	File logFile;
-	int  verbsByNoun[ on_NUM_OPTION_NOUNS ];
+	int  optionLevels[ oq_NUM_OPTION_QUERIES ][ on_NUM_OPTION_NOUNS ];
 	};
 
 FUNC File os_getLogFile( OptionSet os )
@@ -80,32 +83,20 @@ FUNC void os_setLogFile ( OptionSet os, File newLogFile )
 	os->logFile = newLogFile;
 	}
 
-static bool os_getFlag( OptionSet os, OptionVerb verb, OptionNoun noun ) __attribute__((always_inline));
-static bool os_getFlag( OptionSet os, OptionVerb verb, OptionNoun noun )
+FUNC OptionLevel os_get( OptionSet os, OptionQuery query, OptionNoun noun ) __attribute__((always_inline));
+FUNC OptionLevel os_get( OptionSet os, OptionQuery query, OptionNoun noun )
 	{
-	return ( os->verbsByNoun[ noun ] & ( 1<<verb ) ) != 0;
-	}
-
-static void os_setFlagTo( OptionSet os, OptionVerb verb, OptionNoun noun, bool newValue )
-	{
-	if( newValue )
-		os->verbsByNoun[ noun ] |= ( 1<<verb );
+	if ( os )
+		return os->optionLevels[ query ][ noun ];
 	else
-		os->verbsByNoun[ noun ] &= ~( 1<<verb );
-	assert( os_getFlag( os, verb, noun ) == newValue );
+		return 0;
 	}
 
-#if 0
-static void os_setFlag( OptionSet os, OptionVerb verb, OptionNoun noun )
+static void os_set( OptionSet os, OptionQuery query, OptionNoun noun, OptionLevel level )
 	{
-	os_setFlagTo( os, verb, noun, true );
-	}
-#endif
-
-FUNC bool os_do( OptionSet os, OptionVerb verb, OptionNoun noun ) __attribute__((always_inline));
-FUNC bool os_do( OptionSet os, OptionVerb verb, OptionNoun noun )
-	{
-	return os_getFlag( os, verb, noun );
+	assert( os );
+	if( abs( level ) >= abs( os_get( os, query, noun ) ) )
+		os->optionLevels[ query ][ noun ] = level;
 	}
 
 FUNC void od_applyTo( OptionDelta od, OptionSet os, MemoryLifetime ml )
@@ -115,13 +106,12 @@ FUNC void od_applyTo( OptionDelta od, OptionSet os, MemoryLifetime ml )
 	for( i=0; i < oca_count( clauses ); i++)
 		{
 		OptionClause *clause = oca_element( clauses, i );
-		os_setFlagTo( os, clause->verb, clause->noun, !clause->invert );
+		os_set( os, clause->query, clause->noun, clause->level );
 		}
 	}
 
 static OptionClause defaultSettings[] =
 	{
-	//{ ov_LOG, on_EXECUTION },
 	{ 0 }
 	};
 
@@ -133,9 +123,9 @@ FUNC OptionSet os_new( MemoryLifetime ml )
 	for( i=0; i < sizeof(defaultSettings)/sizeof(defaultSettings[0]); i++ )
 		{
 		OptionClause *clause = defaultSettings + i;
-		if( !clause->verb )
+		if( !clause->query )
 			break;
-		os_setFlagTo( result, clause->verb, clause->noun, !clause->invert );
+		os_set( result, clause->query, clause->noun, clause->level );
 		}
 	result->logFile = stderr;
 	return result;
@@ -191,7 +181,7 @@ FUNC OptionDelta od_parse( char *start, char *stop, MemoryLifetime ml )
 		while( verbs[ verbIndex ].abbreviation[0] != opt[0] )
 			{
 			verbIndex++;
-			if( verbs[ verbIndex ].id == 0 )
+			if( verbs[ verbIndex ].abbreviation == 0 )
 				{
 				fprintf( stderr, "Unrecognized verb: '%c'\n", opt[0] );
 				exit(1);
@@ -206,7 +196,8 @@ FUNC OptionDelta od_parse( char *start, char *stop, MemoryLifetime ml )
 				exit(1);
 				}
 			}
-		OptionClause oc = { verbs[ verbIndex ].id, nouns[ nounIndex ].id };
+		OptionClause oc = verbs[ verbIndex ].clause;
+		oc.noun = nouns[ nounIndex ].id;
 		oca_append( clauses, oc );
 		opt += 2;
 		}
