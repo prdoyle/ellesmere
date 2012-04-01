@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <dlfcn.h>
 
 typedef struct cf_struct *CallFrame;
 struct cf_struct
@@ -242,14 +243,14 @@ struct gl_struct
 	ConflictResolutions cr;
 	};
 	 
-static void nopAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void nopAction( Production handle, GrammarLine gl, Thread th )
 	{
 	Grammar gr = ps_grammar( th->ps );
 	popN( pn_length( handle, gr ), th );
 	push( oh_symbolToken( th->heap, pn_lhs( handle, gr ) ), th );
 	}
 
-static void passThrough( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void passThrough( Production handle, GrammarLine gl, Thread th )
 	{
 	Grammar gr = ps_grammar( th->ps );
 	int depth = gl->response.parm1;
@@ -258,7 +259,7 @@ static void passThrough( Production handle, GrammarLine gl, Thread th )
 	push( result, th );
 	}
 
-static void addAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void addAction( Production handle, GrammarLine gl, Thread th )
 	{
 	popToken( th );
 	int right = popInt( th );
@@ -266,7 +267,7 @@ static void addAction( Production handle, GrammarLine gl, Thread th )
 	push( ob_fromInt( left + right, th->heap ), th );
 	}
 
-static void subAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void subAction( Production handle, GrammarLine gl, Thread th )
 	{
 	popToken( th );
 	int right = popInt( th );
@@ -278,7 +279,7 @@ static void subAction( Production handle, GrammarLine gl, Thread th )
 	push( ob_fromInt( left - right, th->heap ), th );
 	}
 
-static void mulAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void mulAction( Production handle, GrammarLine gl, Thread th )
 	{
 	popToken( th );
 	int right = popInt( th );
@@ -286,7 +287,7 @@ static void mulAction( Production handle, GrammarLine gl, Thread th )
 	push( ob_fromInt( left * right, th->heap ), th );
 	}
 
-static void divAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void divAction( Production handle, GrammarLine gl, Thread th )
 	{
 	popToken( th );
 	int right = popInt( th );
@@ -294,7 +295,7 @@ static void divAction( Production handle, GrammarLine gl, Thread th )
 	push( ob_fromInt( left / right, th->heap ), th );
 	}
 
-static void printAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void printAction( Production handle, GrammarLine gl, Thread th )
 	{
 	int depth = gl->response.parm1;
 	ob_sendTo( sk_item( ps_operandStack( th->ps ), depth ), stdout, th->heap );
@@ -302,14 +303,14 @@ static void printAction( Production handle, GrammarLine gl, Thread th )
 	nopAction( handle, gl, th );
 	}
 
-static void recordTokenBlockAction( Production handle, GrammarLine gl, Thread th );
+NATIVE_ACTION void recordTokenBlockAction( Production handle, GrammarLine gl, Thread th );
 
-static void stopRecordingTokenBlockAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void stopRecordingTokenBlockAction( Production handle, GrammarLine gl, Thread th )
 	{
 	assert(0); // Never actually gets called.  It's a kind of null terminator.
 	}
 
-static void parseTreeAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void parseTreeAction( Production handle, GrammarLine gl, Thread th )
 	{
 	Grammar gr = ps_grammar( th->ps );
 	Symbol lhs = pn_lhs( handle, gr );
@@ -326,7 +327,7 @@ static void parseTreeAction( Production handle, GrammarLine gl, Thread th )
 	push( result, th );
 	}
 
-static void addProductionAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Thread th )
 	{
 	parseTreeAction( handle, gl, th );
 	Object production = sk_top( ps_operandStack( th->ps ) );
@@ -403,7 +404,7 @@ static void addProductionAction( Production handle, GrammarLine gl, Thread th )
 		}
 	}
 
-static void defAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void defAction( Production handle, GrammarLine gl, Thread th )
 	{
 	TokenBlock block = ob_toTokenBlock( pop( th ), th->heap );
 	popToken( th ); // "as" keyword
@@ -428,7 +429,7 @@ static void defAction( Production handle, GrammarLine gl, Thread th )
 	}
 
 #if 0
-static void returnAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void returnAction( Production handle, GrammarLine gl, Thread th )
 	{
 	Grammar gr = ps_grammar( th->ps );
 	int depth = gl->response.parm1;
@@ -442,7 +443,7 @@ static void returnAction( Production handle, GrammarLine gl, Thread th )
 	}
 #endif
 
-static void nonzeroAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void nonzeroAction( Production handle, GrammarLine gl, Thread th )
 	{
 	popToken( th );
 	int value = popInt( th );
@@ -452,7 +453,7 @@ static void nonzeroAction( Production handle, GrammarLine gl, Thread th )
 		pushToken( SYM_FALSE, th );
 	}
 
-static void leAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void leAction( Production handle, GrammarLine gl, Thread th )
 	{
 	popToken( th );
 	int right = popInt( th );
@@ -464,7 +465,7 @@ static void leAction( Production handle, GrammarLine gl, Thread th )
 	}
 
 #if 0
-static void setAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void setAction( Production handle, GrammarLine gl, Thread th )
 	{
 	popToken( th );
 	Symbol name = popToken( th );
@@ -499,7 +500,7 @@ static Object recordified( Object ob, Thread th )
 	return result;
 	}
 
-static void optimizeAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void optimizeAction( Production handle, GrammarLine gl, Thread th )
 	{
 	th->executionBindings = recordified( th->executionBindings, th );
 	if( 0 )
@@ -512,14 +513,14 @@ static void optimizeAction( Production handle, GrammarLine gl, Thread th )
 	nopAction( handle, gl, th );
 	}
 
-static void createAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void createAction( Production handle, GrammarLine gl, Thread th )
 	{
 	popToken( th );
 	Symbol tag = popToken( th );
 	push( ob_create( tag, th->heap ), th );
 	}
 
-static void getFieldAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void getFieldAction( Production handle, GrammarLine gl, Thread th )
 	{
 	popToken( th );
 	Symbol field = popToken( th );
@@ -527,7 +528,7 @@ static void getFieldAction( Production handle, GrammarLine gl, Thread th )
 	push( ob_getField( receiver, field, th->heap ), th );
 	}
 
-static void setFieldAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void setFieldAction( Production handle, GrammarLine gl, Thread th )
 	{
 	Stack operandStack = ps_operandStack( th->ps );
 	Object value = sk_item( operandStack, 1 );
@@ -767,16 +768,16 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 				}
 			else if( functionToCall )
 				{
-				bool doLogging = true;
+				bool logThisFunction = true;
 				if( functionToCall->kind == FN_NATIVE )
 					{
 					static const NativeAction silentActions[] = { nopAction, passThrough, parseTreeAction, recordTokenBlockAction };
 					NativeAction action = functionToCall->body.gl->response.action;
 					int i;
-					for( i=0; doLogging && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
-						doLogging = ( action != silentActions[i] );
+					for( i=0; logThisFunction && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
+						logThisFunction = ( action != silentActions[i] );
 					}
-				if( doLogging && os_log( th->os, on_EXECUTION, "%-20s: %s <-", sy_name( handleSymbol, th->st ), sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
+				if( logThisFunction && os_log( th->os, on_EXECUTION, "%-20s: %s <-", sy_name( handleSymbol, th->st ), sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
 					{
 					File logFile = os_logFile( th->os, on_EXECUTION );
 					int i;
@@ -812,14 +813,22 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 							}
 						ts_push( th->tokenStream, functionToCall->body.tb, argBindings );
 						cf_push( th );
-						os_trace( th->os, on_EXECUTION, "   Digressing into token block %p\n", functionToCall->body.tb );
+						if( logThisFunction )
+							os_trace( th->os, on_EXECUTION, "   Digressing into token block %p\n", functionToCall->body.tb );
 						}
 						break;
 					case FN_NATIVE:
 						{
 						GrammarLine line = functionToCall->body.gl;
 						assert( line );
-						os_trace( th->os, on_EXECUTION, "   Calling native action %p\n", line->response.action );
+						if( logThisFunction && os_trace( th->os, on_EXECUTION, "   Calling native action " ) )
+							{
+							Dl_info nativeInfo;
+							if( dladdr( line->response.action, &nativeInfo ) && nativeInfo.dli_saddr == line->response.action )
+								os_trace( th->os, on_EXECUTION, "%s\n", nativeInfo.dli_sname );
+							else
+								os_trace( th->os, on_EXECUTION, "%p\n", line->response.action );
+							}
 						line->response.action( handleProduction, line, th );
 						}
 						break;
@@ -875,7 +884,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 		}
 	}
 
-static void recordTokenBlockAction( Production handle, GrammarLine gl, Thread th )
+NATIVE_ACTION void recordTokenBlockAction( Production handle, GrammarLine gl, Thread th )
 	{
 	Grammar gr = ps_grammar( th->ps );
 	TokenBlock tb = ts_skipBlock( th->tokenStream );

@@ -10,7 +10,7 @@ small: merged
 -include modules.mak
 
 CC := gcc
-CFLAGS  += -c -Wall -Werror -Wmissing-declarations -g -std=gnu99 -fno-builtin-log -I. $(USER_CFLAGS)
+CFLAGS  += -D_GNU_SOURCE -c -Wall -Werror -Wmissing-declarations -g -std=gnu99 -fno-builtin-log -I. $(USER_CFLAGS)
 LD := gcc
 LDFLAGS += -g
 
@@ -55,13 +55,16 @@ ALL_I_FILES := $(patsubst %.c,%.i,$(ALL_C_FILES))
 ALL_S_FILES := $(patsubst %.c,%.s,$(ALL_C_FILES))
 T_FILES     := $(patsubst %.t.c,%.t,$(T_C_FILES))
 
-_merged.o: CFLAGS += -DFUNC="static " -Wno-unused-function
-_merged.i: CFLAGS += -DFUNC="static " -Wno-unused-function
-_merged.s: CFLAGS += -DFUNC="static " -Wno-unused-function
+_merged.o: CFLAGS += -DFUNC="static " -Wno-unused-function -Wno-missing-declarations
+_merged.i: CFLAGS += -DFUNC="static " -Wno-unused-function -Wno-missing-declarations
+_merged.s: CFLAGS += -DFUNC="static " -Wno-unused-function -Wno-missing-declarations
 _merged.s: _merged.c
 
+# ellesmere.c has the native actions in it, and we want to be able to call dladdr on them
+ellesmere.o: CFLAGS += -Wno-missing-declarations
+
 merged: _merged.o $(GEN_O_FILES)
-	$(LD) $(LDFLAGS) $^ -o ellesmere -lfl
+	$(LD) $(LDFLAGS) $^ -o ellesmere -lfl -ldl
 
 _merged.c: $(GEN_H_FILES)
 	grep MERGE *.c | sort -t: -n -k3 | awk 'BEGIN{ FS=":" } { print "#include \""$$1"\" // "$$3 }' > $@
@@ -70,7 +73,7 @@ tags: $(C_FILES) $(H_FILES)
 	ctags -R .
 
 ellesmere: ellesmere.o $(O_FILES) $(LEX_O_FILES)
-	$(LD) $(LDFLAGS) $^ -o $@ -lfl #-lefence
+	$(LD) $(LDFLAGS) $^ -o $@ -lfl -ldl -Wl,--export-dynamic #-lefence
 
 $(ALL_O_FILES): %.o: %.c
 	$(CC) $(CFLAGS) $< -o $@ -MMD -MF $(@:.o=.d)

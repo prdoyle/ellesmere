@@ -20,6 +20,10 @@ typedef char bool;
 #define FUNC
 #endif
 
+#ifndef NATIVE_ACTION
+#define NATIVE_ACTION
+#endif
+
 typedef struct ar_struct *Array;
 typedef struct au_struct *Automaton;
 typedef struct bv_struct *BitVector;
