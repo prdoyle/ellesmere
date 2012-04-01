@@ -12,7 +12,7 @@ typedef struct oc_struct
 	OptionNoun  noun;
 	} OptionClause;
 
-static const struct
+static const struct verb_struct
 	{
 	char         *abbreviation;
 	char         *name;
@@ -26,18 +26,29 @@ static const struct
 	{ 0 }
 	};
 
-static const struct
+static const struct noun_struct
 	{
 	OptionNoun id;
 	char      *abbreviation;
 	char      *name;
 	char      *description;
 	} nouns[] = {
-	{ on_EXECUTION,       "x", "execution",       "Operations performed by the user program"                                     },
-	{ on_INTERPRETER,     "i", "interpreter",     "Reading tokens, walking automata, and computing which operations to perform"  },
-	{ on_PARSER_GEN,      "g", "parsergen",       "Construction of an automaton from a grammar"                                  },
-	{ on_PARSER_CONFLICT, "c", "parserconflict",  "Situations where the automaton to generate is ambiguous"                      },
-	{ on_INHERITANCE,     "I", "inheritance",     "Allowing one symbol to be substituted for another"                            },
+	{ on_EXECUTION,       "exec", "execution",       "Operations performed by the user program"                                     },
+	{ on_INHERITANCE,     "inh",  "inheritance",     "Allowing one symbol to be substituted for another"                            },
+	{ on_INTERPRETER,     "int",  "interpreter",     "Reading tokens, walking automata, and computing which operations to perform"  },
+	{ on_OPTIONS,         "ops",  "options",         "Processing of options"                                                        },
+	{ on_PARSER_CONFLICT, "pc",   "parserconflict",  "Situations where the automaton to generate is ambiguous"                      },
+	{ on_PARSER_GEN,      "pgen", "parsergen",       "Construction of an automaton from a grammar"                                  },
+	{ 0 }
+	};
+
+static const struct query_struct
+	{
+	OptionQuery  id;
+	char        *name;
+	} queries[] = {
+	{ oq_DISABLED,        "disabled"      },
+	{ oq_REPORT_DETAIL,   "reportDetail"  },
 	{ 0 }
 	};
 
@@ -96,7 +107,14 @@ static void os_set( OptionSet os, OptionQuery query, OptionNoun noun, OptionLeve
 	{
 	assert( os );
 	if( abs( level ) >= abs( os_get( os, query, noun ) ) )
+		{
+		os_log( os, on_OPTIONS, "%s.%s %d -> %d\n", nouns[ noun-1 ].name, queries[ query-1 ].name, os->optionLevels[ query ][ noun ], level );
 		os->optionLevels[ query ][ noun ] = level;
+		}
+	else
+		{
+		os_trace( os, on_OPTIONS, "%s.%s %d takes precedence over %d\n", nouns[ noun-1 ].name, queries[ query-1 ].name, os->optionLevels[ query ][ noun ], level );
+		}
 	}
 
 FUNC void od_applyTo( OptionDelta od, OptionSet os, MemoryLifetime ml )
@@ -148,6 +166,7 @@ static char *optionStop( char *start, char *stop )
 			break;
 	return c;
 	}
+#endif
 
 static bool matches( char *pattern, char *start, char *stop )
 	{
@@ -159,7 +178,6 @@ static bool matches( char *pattern, char *start, char *stop )
 	else
 		return !strncmp( pattern, start, len );
 	}
-#endif
 
 FUNC OptionDelta od_parse( char *start, char *stop, MemoryLifetime ml )
 	{
@@ -176,30 +194,36 @@ FUNC OptionDelta od_parse( char *start, char *stop, MemoryLifetime ml )
 	opt = start;
 	while( opt < stop )
 		{
-		// TODO: Cope with full option names
-		int verbIndex=0, nounIndex=0;
-		while( verbs[ verbIndex ].abbreviation[0] != opt[0] )
+		const struct verb_struct *verb;
+		for( verb = verbs; ; verb++ )
 			{
-			verbIndex++;
-			if( verbs[ verbIndex ].abbreviation == 0 )
+			if( verb->abbreviation == 0 )
 				{
 				fprintf( stderr, "Unrecognized verb: '%c'\n", opt[0] );
 				exit(1);
 				}
+			if( verb->abbreviation[0] == opt[0] )
+				break;
 			}
-		while( nouns[ nounIndex ].abbreviation[0] != opt[1] )
+		const struct noun_struct *noun;
+		int length = stop - (opt+1);
+		for( noun = nouns; ; noun++ )
 			{
-			nounIndex++;
-			if( nouns[ nounIndex ].id == 0 )
+			if( noun->id == 0 )
 				{
-				fprintf( stderr, "Unrecognized noun: '%c'\n", opt[1] );
+				fprintf( stderr, "Unrecognized noun: '%.*s'\n", length, opt+1 );
 				exit(1);
 				}
+			assert( noun - nouns == noun->id - 1 ); // nouns table should be in order
+			if( matches( noun->name, opt+1, stop ) )
+				break;
+			if( matches( noun->abbreviation, opt+1, stop ) )
+				break;
 			}
-		OptionClause oc = verbs[ verbIndex ].clause;
-		oc.noun = nouns[ nounIndex ].id;
+		OptionClause oc = verb->clause;
+		oc.noun = noun->id;
 		oca_append( clauses, oc );
-		opt += 2;
+		opt += 1 + length + 1; // verb + noun + comma
 		}
 
 	return result;

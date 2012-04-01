@@ -136,12 +136,23 @@ includes.dot: ${C_FILES} $(H_FILES)
 
 deps: $(O_FILES) $(LEX_O_FILES)
 
+FILES_TO_CLEAN := ellesmere tags
+FILES_TO_CLEAN += $(GEN_C_FILES) $(GEN_H_FILES) $(ALL_O_FILES) $(ALL_I_FILES) $(ALL_D_FILES)
+FILES_TO_CLEAN += memreport.txt gmon.out $(wildcard *.gcda) oprof.txt sorted-oprof.txt gprof.txt
+FILES_TO_CLEAN += bitvector.t parser.t records.t objects.t states.dot states.pdf trace.txt
+FILES_TO_CLEAN += modules.pdf modules.mak
+FILES_TO_CLEAN += includes.pdf includes.dot
+
 clean:
-	rm -f ellesmere tags _merged.c $(GEN_C_FILES) $(GEN_H_FILES) $(ALL_O_FILES) $(ALL_I_FILES) $(ALL_D_FILES)
-	rm -f memreport.txt gmon.out *.gcda
-	rm -f memreport.txt gmon.out *.gcda oprof.txt sorted-oprof.txt gprof.txt
-	rm -f bitvector.t parser.t records.t objects.t states.dot states.pdf trace.txt
-	rm -f modules.pdf modules.mak
-	rm -f includes.pdf includes.dot
+	rm -f $(FILES_TO_CLEAN)
+
+SUFFIXES_TO_GLOB   := o d i t gcda
+GITIGNORE_PATTERNS := $(patsubst %,\n*.%,$(SUFFIXES_TO_GLOB)) # These patterns start with \n to prevent bash from glob-expanding them
+FILTEROUT_PATTERNS := $(patsubst %,\%.%,$(SUFFIXES_TO_GLOB))
+
+# Turns out this isn't really a super idea
+not.really.gitignore: Makefile
+	echo "# THIS FILE IS AUTO-GENERATED -- see Makefile$(GITIGNORE_PATTERNS)" > $@
+	for FILE in $(filter-out $(FILTEROUT_PATTERNS),$(FILES_TO_CLEAN)); do echo $$FILE; done >> $@
 
 .PHONY: all merged memreport.txt deps

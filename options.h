@@ -12,8 +12,8 @@ typedef enum
 	{
 	oq_NULL,
 
-	oq_REPORT_DETAIL,
 	oq_DISABLED,
+	oq_REPORT_DETAIL,
 
 	oq_NUM_OPTION_QUERIES
 	} OptionQuery;
@@ -23,10 +23,11 @@ typedef enum
 	on_NULL,
 
 	on_EXECUTION,
-	on_INTERPRETER,
-	on_PARSER_GEN,
-	on_PARSER_CONFLICT,
 	on_INHERITANCE,
+	on_INTERPRETER,
+	on_OPTIONS,
+	on_PARSER_CONFLICT,
+	on_PARSER_GEN,
 
 	on_NUM_OPTION_NOUNS
 	} OptionNoun;
