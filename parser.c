@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 
-#define ITEM_STATE_PREFIX "is"
+#define ITEM_STATE_PREFIX "state"
 
 typedef BitVector ItemVector;   // BitVectors of item indexes
 typedef BitVector SymbolVector; // BitVectors of symbol side-table indexes
@@ -503,7 +503,7 @@ static void pg_computeFirstSets( ParserGenerator pg, File traceFile )
 			}
 		}
 
-	TRACE( traceFile, "SymbolSiteTable after pg_computeFirstSets:\n" );
+	TRACE( traceFile, "SymbolSideTable after pg_computeFirstSets:\n" );
 	pg_sendSymbolSideTableTo( pg, traceFile );
 	}
 
@@ -578,7 +578,7 @@ static void pg_computeFollowSets( ParserGenerator pg, File traceFile )
 			}
 		}
 
-	TRACE( traceFile, "SymbolSiteTable after pg_computeFollowSets:\n" );
+	TRACE( traceFile, "SymbolSideTable after pg_computeFollowSets:\n" );
 	pg_sendSymbolSideTableTo( pg, traceFile );
 	}
 
@@ -1566,7 +1566,7 @@ static void sst_augment( InheritanceRelation ir, ParserGenerator pg, File diagno
 
 	aug_end( aug );
 
-	TRACE( diagnostics, "Augmented SymbolSiteTable:\n" );
+	TRACE( diagnostics, "Augmented SymbolSideTable:\n" );
 	pg_sendSymbolSideTableTo( pg, diagnostics );
 	}
 
@@ -1780,8 +1780,8 @@ static int au_sendReportTo( Automaton au, File fl, ParserGenerator pg )
 				}
 			else
 				{
-				// %12s is enough for END_OF_INPUT
-				fl_write( fl, "    %12s -> state%d\n", sy_name( edgeSymbol, st ), ob_getIntFieldX( nextState, SYM_ITEM_SET_NUM, heap ) );
+				// %14s is enough for PARAMETER_LIST
+				fl_write( fl, "    %14s -> state%d\n", sy_name( edgeSymbol, st ), ob_getIntFieldX( nextState, SYM_ITEM_SET_NUM, heap ) );
 				bv_unset( edgeSymbols, edge );
 				}
 			}
@@ -1789,7 +1789,18 @@ static int au_sendReportTo( Automaton au, File fl, ParserGenerator pg )
 			{
 			Symbol edgeSymbol   = sy_byIndex( edge, st );
 			Symbol reduceSymbol = ob_getTokenField( state, edgeSymbol, heap );
-			fl_write( fl, "    %12s :: %s\n", sy_name( edgeSymbol, st ), sy_name( reduceSymbol, st ) );
+			fl_write( fl, "    Reduce %s:", sy_name( reduceSymbol, st ) );
+			int equivalentEdge;
+			for( equivalentEdge = edge; equivalentEdge != bv_END; equivalentEdge = bv_nextBit( edgeSymbols, equivalentEdge ) )
+				{
+				Symbol equivalentEdgeSymbol = sy_byIndex( equivalentEdge, st );
+				if( ob_getTokenField( state, equivalentEdgeSymbol, heap ) == reduceSymbol )
+					{
+					fl_write( fl, " %s", sy_name( equivalentEdgeSymbol, st ));
+					bv_unset( edgeSymbols, equivalentEdge );
+					}
+				}
+			fl_write( fl, "\n" );
 			}
 		}
 	ml_end( reportTime );
@@ -2000,7 +2011,7 @@ FUNC void ps_push( Parser ps, Object ob )
 
 				bv_clear( nextItems );
 				int itemSetNum = ps_itemSetNum( ps, i, isn );
-				charsSent += fl_write( stderr, "     is%d:\n", itemSetNum );
+				charsSent += fl_write( stderr, "     " ITEM_STATE_PREFIX "%d:\n", itemSetNum );
 				ItemSet its = itst_element( pg->itemSets, itemSetNum );
 				for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
 					{

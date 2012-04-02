@@ -54,7 +54,6 @@ struct th_struct
 	FILE                *interpreterDiagnostics;  // High-level messages describing unusual events in the interpreter
 	FILE                *interpreterTrace;        // Follow interpreter step-by-step
 	FILE                *parserGenDiagnostics;
-	FILE                *parserGenTrace;
 	FILE                *conflictLog;
 	} theThread = {0};
 
@@ -359,12 +358,13 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 		}
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
+	File parserGenTrace = os_traceFile( th->os, on_PARSER_GEN );
 	if ( os_enable( th->os, on_INHERITANCE ) )
-		gr = gr_augmentedShallow( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), th->parserGenTrace );
+		gr = gr_augmentedShallow( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), parserGenTrace );
 	addNewestProductionsToMap( gr, th );
-	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, th->parserGenTrace );
+	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, parserGenTrace );
 	Parser oldParser = th->ps;
-	th->ps = ps_new( au, ml_indefinite(), th->parserGenTrace );
+	th->ps = ps_new( au, ml_indefinite(), parserGenTrace );
 	TRACE( th->interpreterDiagnostics, "    NEW PARSER\n" );
 
 	if (th->interpreterDiagnostics)
@@ -660,7 +660,7 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 	gr_stopAdding( gr );
 	Symbol sym_abstract = sy_byName( "ABSTRACT_PRODUCTION", th->st );
 	if ( os_enable( th->os, on_INHERITANCE ) )
-		gr = gr_augmented( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), th->parserGenTrace );
+		gr = gr_augmented( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), os_traceFile( th->os, on_PARSER_GEN ) );
 	addProductionsToMap( gr, 0, th );
 
 	for( i=0; initialConcretifications[i].abstract; i++)
@@ -997,7 +997,6 @@ int main( int argc, char **argv )
 	th->interpreterDiagnostics = openTrace( 4, "4: Ellesmere interpreter diagnostics" );
 	th->interpreterTrace       = openTrace( 5, "5: Ellesmere interpreter trace" );
 	th->parserGenDiagnostics = NULL;
-	th->parserGenTrace = openTrace( 6, "6: Ellesmere parserGenTrace" );
 	th->heap = theObjectHeap();
 	th->st = theSymbolTable( th->heap );
 	th->callStack = cs_new( 30, ml_indefinite() );
@@ -1008,8 +1007,8 @@ int main( int argc, char **argv )
 	th->concretifications = ob_create( sy_byIndex( SYM_BINDINGS, th->st ), th->heap );
 	th->productionMap     = ob_create( sy_byName( "PRODUCTION_MAP", th->st ), th->heap );
 	Grammar initialGrammar = populateGrammar( th->st, th );
-	Automaton au = au_new( initialGrammar, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, th->parserGenTrace );
-	th->ps = ps_new( au, ml_indefinite(), th->parserGenTrace );
+	Automaton au = au_new( initialGrammar, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, os_traceFile( th->os, on_PARSER_GEN ) );
+	th->ps = ps_new( au, ml_indefinite(), os_traceFile( th->os, on_PARSER_GEN ) );
 	th->tokenStream = theLexTokenStream( th->heap, th->st );
 
 	mainParsingLoop( NULL, th->executionBindings, th );
