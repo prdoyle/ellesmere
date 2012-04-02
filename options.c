@@ -17,12 +17,13 @@ static const struct verb_struct
 	char         *abbreviation;
 	char         *name;
 	OptionClause  clause;
-	char         *description;
+	char         *description1;
+	char         *description2;
 	} verbs[] = {
-	{ "l", "log",      { oq_REPORT_DETAIL,  1 }, "Record events at a high level"                       },
-	{ "t", "trace",    { oq_REPORT_DETAIL,  2 }, "Record implementation steps to aid in debugging"     },
-	{ "d", "disable",  { oq_DISABLED,       1 }, "Prevent from occurring"                              },
-	{ "e", "enable",   { oq_DISABLED,      -1 }, "Allow to occur"                                      },
+	{ "l", "log",      { oq_REPORT_DETAIL,  1 }, "record",    "at a coarse granularity to aid understanding"  },
+	{ "t", "trace",    { oq_REPORT_DETAIL,  2 }, "record",    "at a fine granularity to aid debugging"        },
+	{ "d", "disable",  { oq_DISABLED,       1 }, "prevent",   "from occurring"                                },
+	{ "e", "enable",   { oq_DISABLED,      -1 }, "allow",     "to occur"                                      },
 	{ 0 }
 	};
 
@@ -33,12 +34,12 @@ static const struct noun_struct
 	char      *name;
 	char      *description;
 	} nouns[] = {
-	{ on_EXECUTION,       "exec", "execution",       "Operations performed by the user program"                                     },
-	{ on_INHERITANCE,     "inh",  "inheritance",     "Allowing one symbol to be substituted for another"                            },
-	{ on_INTERPRETER,     "int",  "interpreter",     "Reading tokens, walking automata, and computing which operations to perform"  },
-	{ on_OPTIONS,         "ops",  "options",         "Processing of options"                                                        },
-	{ on_PARSER_CONFLICT, "pc",   "parserconflict",  "Situations where the automaton to generate is ambiguous"                      },
-	{ on_PARSER_GEN,      "pgen", "parsergen",       "Construction of an automaton from a grammar"                                  },
+	{ on_EXECUTION,       "exec", "execution",       "operations performed by the user program"                                     },
+	{ on_INHERITANCE,     "inh",  "inheritance",     "substitution of one symbol for another"                                       },
+	{ on_INTERPRETER,     "int",  "interpreter",     "reading tokens, walking automata, and computing which operations to perform"  },
+	{ on_OPTIONS,         "ops",  "options",         "option parsing and processing"                                                },
+	{ on_PARSER_CONFLICT, "pc",   "parserconflict",  "situations where the automaton to generate is ambiguous"                      },
+	{ on_PARSER_GEN,      "pgen", "parsergen",       "construction of an automaton from a grammar"                                  },
 	{ 0 }
 	};
 
@@ -179,6 +180,24 @@ static bool matches( char *pattern, char *start, char *stop )
 		return !strncmp( pattern, start, len );
 	}
 
+static void dumpHelpAndTerminate()
+	{
+	fprintf( stderr, "Options are of the format 'VN', where the 'V' ('verb') is one of the following:\n\n" );
+	const struct verb_struct *verb;
+	for( verb = verbs; verb->abbreviation; verb++)
+		fprintf( stderr, "  %5s: %s %s ('%s')\n", verb->abbreviation, verb->description1, verb->description2, verb->name );
+	fprintf( stderr, "\n...and the 'N' ('noun') is one of the following:\n\n" );
+	const struct noun_struct *noun;
+	for( noun = nouns; noun->abbreviation; noun++)
+		fprintf( stderr, "  %5s: %s ('%s')\n", noun->abbreviation, noun->description, noun->name );
+	const struct verb_struct *exampleVerb = verbs;
+	const struct noun_struct *exampleNoun = nouns;
+	fprintf( stderr, "\nFor example, '%s%s' means '%s %s'", exampleVerb->abbreviation, exampleNoun->abbreviation, exampleVerb->name, exampleNoun->name );
+	fprintf( stderr, ", which would %s\n%s %s", exampleVerb->description1, exampleNoun->description, exampleVerb->description2 );
+	fprintf( stderr, "\n" );
+	exit(1);
+	}
+
 FUNC OptionDelta od_parse( char *start, char *stop, MemoryLifetime ml )
 	{
 	int numClauses = 1;
@@ -200,7 +219,7 @@ FUNC OptionDelta od_parse( char *start, char *stop, MemoryLifetime ml )
 			if( verb->abbreviation == 0 )
 				{
 				fprintf( stderr, "Unrecognized verb: '%c'\n", opt[0] );
-				exit(1);
+				dumpHelpAndTerminate();
 				}
 			if( verb->abbreviation[0] == opt[0] )
 				break;
@@ -212,7 +231,7 @@ FUNC OptionDelta od_parse( char *start, char *stop, MemoryLifetime ml )
 			if( noun->id == 0 )
 				{
 				fprintf( stderr, "Unrecognized noun: '%.*s'\n", length, opt+1 );
-				exit(1);
+				dumpHelpAndTerminate();
 				}
 			assert( noun - nouns == noun->id - 1 ); // nouns table should be in order
 			if( matches( noun->name, opt+1, stop ) )

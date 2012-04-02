@@ -1994,9 +1994,12 @@ FUNC void ps_push( Parser ps, Object ob )
 			// Extended debug info
 			int i,j,k;
 			int charsSent = 0;
-			charsSent += fl_write( stderr, "\nUnexpected '%s': ", sy_name( ob_tag( ob, oh ), pg->st ) );
-			charsSent += ob_sendTo( ob, stderr, oh );
-			charsSent += fl_write( stderr, "\nState:\n" );
+			File fl = ps->diagnostics;
+			if( !fl )
+				fl = stderr;
+			charsSent += fl_write( fl, "\nUnexpected '%s': ", sy_name( ob_tag( ob, oh ), pg->st ) );
+			charsSent += ob_sendTo( ob, fl, oh );
+			charsSent += fl_write( fl, "\nState:\n" );
 			Symbol isn = sy_byIndex( SYM_ITEM_SET_NUM, pg->st );
 			SymbolVector  follow = bv_new( sst_count(pg->sst),  ml_undecided() );
 			ItemVector curItems  = bv_new( gr_numItems(pg->gr), ml_undecided() );
@@ -2005,13 +2008,13 @@ FUNC void ps_push( Parser ps, Object ob )
 			// Too bad the nextItems logic requires us to print the innermost frame first...
 			for( i = 0; i < sk_depth( ps->stateStack ); i++ )
 				{
-				charsSent += fl_write( stderr, "  -- " );
-				charsSent += ob_sendTo( sk_item( ps_operandStack( ps ), i ), stderr, oh );
-				charsSent += fl_write( stderr, " --\n" );
+				charsSent += fl_write( fl, "  -- " );
+				charsSent += ob_sendTo( sk_item( ps_operandStack( ps ), i ), fl, oh );
+				charsSent += fl_write( fl, " --\n" );
 
 				bv_clear( nextItems );
 				int itemSetNum = ps_itemSetNum( ps, i, isn );
-				charsSent += fl_write( stderr, "     " ITEM_STATE_PREFIX "%d:\n", itemSetNum );
+				charsSent += fl_write( fl, "     " ITEM_STATE_PREFIX "%d:\n", itemSetNum );
 				ItemSet its = itst_element( pg->itemSets, itemSetNum );
 				for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
 					{
@@ -2041,25 +2044,25 @@ FUNC void ps_push( Parser ps, Object ob )
 						}
 
 					// Print it
-					charsSent += fl_write( stderr, "    " );
-					charsSent += pn_sendItemTo( it->pn, it->dot, stderr, pg->gr, pg->st );
-					charsSent += fl_write( stderr, "  [ " );
+					charsSent += fl_write( fl, "    " );
+					charsSent += pn_sendItemTo( it->pn, it->dot, fl, pg->gr, pg->st );
+					charsSent += fl_write( fl, "  [ " );
 					char *sep = "";
 					bv_clear( follow );
 					it_getFollow( it, follow, pg, NULL );
 					for( k = bv_firstBit( follow ); k != bv_END; k = bv_nextBit( follow, k ) )
 						{
 						SymbolSideTableEntry sste = sst_element( pg->sst, k );
-						charsSent += fl_write( stderr, "%s'%s'", sep, sy_name( sste->sy, pg->st ) );
+						charsSent += fl_write( fl, "%s'%s'", sep, sy_name( sste->sy, pg->st ) );
 						sep = " ";
 						}
-					charsSent += fl_write( stderr, " ]\n" );
+					charsSent += fl_write( fl, " ]\n" );
 					}
 				firstIteration = false;
 				bv_copy( curItems, nextItems );
 				}
+			fl_write( fl, "\n" );
 			}
-		fl_write( stderr, "\n" );
 		}
 	check( nextState );
 	sk_push( ps->stateStack, nextState );

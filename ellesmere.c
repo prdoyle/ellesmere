@@ -51,8 +51,6 @@ struct th_struct
 	int                  callStackDepth;
 	OptionSet            os;
 
-	FILE                *interpreterDiagnostics;  // High-level messages describing unusual events in the interpreter
-	FILE                *interpreterTrace;        // Follow interpreter step-by-step
 	FILE                *parserGenDiagnostics;
 	FILE                *conflictLog;
 	} theThread = {0};
@@ -65,7 +63,7 @@ static void addProductionsToMap( Grammar gr, int startIndex, Thread th )
 		Production pn = gr_production( gr, i );
 		if( pn_symbol( pn, gr ) )
 			{
-			TRACE( th->interpreterTrace, "Add to productionMap: %s -> %d\n", sy_name( pn_symbol( pn, gr ), th->st ), i );
+			os_trace( th->os, on_INTERPRETER, "Add to productionMap: %s -> %d\n", sy_name( pn_symbol( pn, gr ), th->st ), i );
 			ob_setIntField( th->productionMap, pn_symbol( pn, gr ), i, th->heap );
 			}
 		}
@@ -86,7 +84,7 @@ static void cf_push()
 	th->callStackDepth += 1;
 	if( th->callStackDepth >= cs_count(th->callStack) )
 		{
-		TRACE( interpreterTrace, "Growing call stack to depth=%d\n", th->callStackDepth );
+		os_trace( th->os, on_INTERPRETER, "Growing call stack to depth=%d\n", th->callStackDepth );
 		cf = cs_nextElement( th->callStack );
 		cf->stack = sk_new( ml_indefinite() );
 		}
@@ -192,24 +190,28 @@ static void dumpStuff( File fl, Thread th )
 
 static void push( Object ob, Thread th )
 	{
-	TRACE( th->interpreterTrace, "push(" );
-	ob_sendTo( ob, th->interpreterTrace, th->heap );
-	TRACE( th->interpreterTrace, ")\n" );
+	File fl = os_traceFile( th->os, on_INTERPRETER );
+	if( fl )
+		{
+		os_trace( th->os, on_INTERPRETER, "push(" );
+		ob_sendTo( ob, fl, th->heap );
+		os_trace( th->os, on_INTERPRETER, ")\n" );
+		}
 	ps_push( th->ps, ob );
-	dumpStuff( th->interpreterTrace, th );
+	dumpStuff( fl, th );
 	}
 
 static Object pop( Thread th )
 	{
 	Object result = ps_pop( th->ps );
-	dumpStuff( th->interpreterTrace, th );
+	dumpStuff( os_traceFile( th->os, on_INTERPRETER ), th );
 	return result;
 	}
 
 static void popN( int n, Thread th )
 	{
 	ps_popN( th->ps, n );
-	dumpStuff( th->interpreterTrace, th );
+	dumpStuff( os_traceFile( th->os, on_INTERPRETER ), th );
 	}
 
 static int popInt( Thread th )
@@ -364,14 +366,13 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 	addNewestProductionsToMap( gr, th );
 	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, parserGenTrace );
 	Parser oldParser = th->ps;
-	th->ps = ps_new( au, ml_indefinite(), parserGenTrace );
-	TRACE( th->interpreterDiagnostics, "    NEW PARSER\n" );
+	th->ps = ps_new( au, ml_indefinite(), os_traceFile( th->os, on_INTERPRETER ) );
 
-	if (th->interpreterDiagnostics)
+	if( os_log( th->os, on_INTERPRETER, "    NEW PARSER\n" ) )
 		{
-		TRACE( th->interpreterDiagnostics, "      Initializing from:\n" );
-		sk_sendTo( ps_operandStack( oldParser ), th->interpreterDiagnostics, th->heap );
-		TRACE( th->interpreterDiagnostics, "\n" );
+		os_log( th->os, on_INTERPRETER, "      Initializing from:\n" );
+		sk_sendTo( ps_operandStack( oldParser ), os_logFile( th->os, on_INTERPRETER ), th->heap );
+		os_log( th->os, on_INTERPRETER, "\n" );
 		}
 
 	// Prime the parser state with the current stack contents
@@ -379,7 +380,8 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 	for( i = sk_depth( ps_operandStack( oldParser ) ) - 1; i >= 0; i-- )
 		ps_push( th->ps, sk_item( ps_operandStack( oldParser ), i ) );
 	ps_close( oldParser );
-	dumpParserState( th->interpreterTrace, th );
+	File interpreterTrace = os_traceFile( th->os, on_INTERPRETER );
+	dumpParserState( interpreterTrace, th );
 
 	// Add bindings with a symbol for each named parameter
 	Object bindings = ob_create( sy_byIndex( SYM_BINDINGS, th->st ), th->heap );
@@ -391,16 +393,16 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 		if( name )
 			{
 			Symbol tag = pn_token( pn, i, gr );
-			TRACE( th->interpreterTrace, "    -- bound %s to token %s\n", sy_name( name, th->st ), sy_name( tag, th->st ) );
+			os_trace( th->os, on_INTERPRETER, "    -- bound %s to token %s\n", sy_name( name, th->st ), sy_name( tag, th->st ) );
 			ob_setField( bindings, name, oh_symbolToken( th->heap, tag ), th->heap );
 			}
 		}
 
-	if( th->interpreterTrace )
+	if( interpreterTrace )
 		{
-		TRACE( th->interpreterTrace, "  New production " );
-		pn_sendTo( pn, th->interpreterTrace, gr, th->st );
-		TRACE( th->interpreterTrace, "\n" );
+		os_trace( th->os, on_INTERPRETER, "  New production " );
+		pn_sendTo( pn, interpreterTrace, gr, th->st );
+		os_trace( th->os, on_INTERPRETER, "\n" );
 		}
 	}
 
@@ -706,14 +708,15 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 
 	int startingDepth = sk_depth( ps_operandStack( th->ps ) );
 
-	if( th->interpreterTrace )
+	File interpreterTrace = os_traceFile( th->os, on_INTERPRETER );
+	if( interpreterTrace )
 		{
-		TRACE( th->interpreterTrace, "Starting mainParsingLoop( " );
+		os_trace( th->os, on_INTERPRETER, "Starting mainParsingLoop( " );
 		if( recording )
-			tb_sendTo( recording, th->interpreterTrace, th->heap );
+			tb_sendTo( recording, interpreterTrace, th->heap );
 		else
-			TRACE( th->interpreterTrace, "NULL" );
-		TRACE( th->interpreterTrace, ", %p ) startingDepth=%d\n", bindings, startingDepth );
+			os_trace( th->os, on_INTERPRETER, "NULL" );
+		os_trace( th->os, on_INTERPRETER, ", %p ) startingDepth=%d\n", bindings, startingDepth );
 		}
 
 	Object raw = NULL;
@@ -740,16 +743,16 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 				int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
 				popN( pn_length( handleProduction, gr ), th );
 				Object lhs = oh_symbolToken( th->heap, pn_lhs( handleProduction, gr ) );
-				if( th->interpreterTrace )
+				if( interpreterTrace )
 					{
-					TRACE( th->interpreterTrace, "Checking %s for concretification in: ", sy_name( ob_toSymbol( lhs, th->heap ), th->st ) );
-					ob_sendDeepTo( th->concretifications, th->interpreterTrace, th->heap );
-					TRACE( th->interpreterTrace, "\n" );
+					os_trace( th->os, on_INTERPRETER, "Checking %s for concretification in: ", sy_name( ob_toSymbol( lhs, th->heap ), th->st ) );
+					ob_sendDeepTo( th->concretifications, interpreterTrace, th->heap );
+					os_trace( th->os, on_INTERPRETER, "\n" );
 					}
 				Object concretified = ob_getFieldIfPresent( th->concretifications, ob_toSymbol( lhs, th->heap ), lhs, th->heap );
 				if( concretified != lhs )
 					{
-					TRACE( th->interpreterTrace, "  %s concretified into %s\n", sy_name( ob_toSymbol( lhs, th->heap ), th->st ), sy_name( ob_toSymbol( concretified, th->heap ), th->st ) );
+					os_trace( th->os, on_INTERPRETER, "  %s concretified into %s\n", sy_name( ob_toSymbol( lhs, th->heap ), th->st ), sy_name( ob_toSymbol( concretified, th->heap ), th->st ) );
 					lhs = concretified;
 					}
 				push( lhs, th );
@@ -759,11 +762,11 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 					assert( functionToCall->body.gl->response.action == stopRecordingTokenBlockAction );
 					if( depthWithoutHandle < startingDepth )
 						{
-						TRACE( th->interpreterTrace, "   Done recording\n" );
+						os_trace( th->os, on_INTERPRETER, "   Done recording\n" );
 						goto done;
 						}
 					else
-						TRACE( th->interpreterTrace, "     Too deep to stop recording yet\n" );
+						os_trace( th->os, on_INTERPRETER, "     Too deep to stop recording yet\n" );
 					}
 				}
 			else if( functionToCall )
@@ -839,48 +842,48 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 			{
 			// This raw token didn't cause the recording to terminate.  Append it.
 			tb_append( recording, raw );
-			if( th->interpreterTrace )
+			if( interpreterTrace )
 				{
-				TRACE( th->interpreterTrace, "   Appended " );
-				ob_sendTo( raw, th->interpreterTrace, th->heap );
-				TRACE( th->interpreterTrace, " to ");
-				tb_sendTo( recording, th->interpreterTrace, th->heap );
-				TRACE( th->interpreterTrace, "\n");
+				os_trace( th->os, on_INTERPRETER, "   Appended " );
+				ob_sendTo( raw, interpreterTrace, th->heap );
+				os_trace( th->os, on_INTERPRETER, " to ");
+				tb_sendTo( recording, interpreterTrace, th->heap );
+				os_trace( th->os, on_INTERPRETER, "\n");
 				}
 			}
 		raw = ts_currentRaw( th->tokenStream );
 		if( !raw )
 			{
-			TRACE( th->interpreterTrace, "   Raw token is NULL\n" );
+			os_trace( th->os, on_INTERPRETER, "   Raw token is NULL\n" );
 			goto done;
 			}
 		Object toPush = ts_current( th->tokenStream );
-		if( th->interpreterTrace )
+		if( interpreterTrace )
 			{
-			TRACE( th->interpreterTrace, "Pushing token from %p: ", ts_curBlock( th->tokenStream ) );
-			ob_sendTo( toPush, th->interpreterTrace, th->heap );
-			TRACE( th->interpreterTrace, "\n" );
+			os_trace( th->os, on_INTERPRETER, "Pushing token from %p: ", ts_curBlock( th->tokenStream ) );
+			ob_sendTo( toPush, interpreterTrace, th->heap );
+			os_trace( th->os, on_INTERPRETER, "\n" );
 			}
 		push( toPush, th );
 		ts_advance( th->tokenStream );
-		if( th->interpreterTrace )
+		if( interpreterTrace )
 			{
-			TRACE( th->interpreterTrace, "Advanced %p: ", ts_curBlock( th->tokenStream ) );
-			ts_sendTo( th->tokenStream, th->interpreterTrace );
-			TRACE( th->interpreterTrace, "\n" );
+			os_trace( th->os, on_INTERPRETER, "Advanced %p: ", ts_curBlock( th->tokenStream ) );
+			ts_sendTo( th->tokenStream, interpreterTrace );
+			os_trace( th->os, on_INTERPRETER, "\n" );
 			}
 		}
 
 	done:
-	if( th->interpreterTrace )
+	if( interpreterTrace )
 		{
-		TRACE( th->interpreterTrace, "Exiting mainParsingLoop" );
+		os_trace( th->os, on_INTERPRETER, "Exiting mainParsingLoop" );
 		if( th->tokenStream && ts_current( th->tokenStream ) )
 			{
-			TRACE( th->interpreterTrace, "; current token on %p is ", ts_curBlock( th->tokenStream ) );
-			ob_sendTo( ts_current( th->tokenStream ), th->interpreterTrace, th->heap );
+			os_trace( th->os, on_INTERPRETER, "; current token on %p is ", ts_curBlock( th->tokenStream ) );
+			ob_sendTo( ts_current( th->tokenStream ), interpreterTrace, th->heap );
 			}
-		TRACE( th->interpreterTrace, "\n" );
+		os_trace( th->os, on_INTERPRETER, "\n" );
 		}
 	}
 
@@ -888,14 +891,15 @@ NATIVE_ACTION void recordTokenBlockAction( Production handle, GrammarLine gl, Th
 	{
 	Grammar gr = ps_grammar( th->ps );
 	TokenBlock tb = ts_skipBlock( th->tokenStream );
+	File interpreterTrace = os_traceFile( th->os, on_INTERPRETER );
 	if( !tb )
 		{
 		tb = ts_beginBlock( th->tokenStream );
-		if( th->interpreterTrace )
+		if( interpreterTrace )
 			{
-			TRACE( th->interpreterTrace, "  Begin recording token block\n" );
-			tb_sendTo( tb, th->interpreterTrace, th->heap );
-			TRACE( th->interpreterTrace, "\n" );
+			os_trace( th->os, on_INTERPRETER, "  Begin recording token block\n" );
+			tb_sendTo( tb, interpreterTrace, th->heap );
+			os_trace( th->os, on_INTERPRETER, "\n" );
 			}
 		nopAction( handle, gl, th );
 
@@ -905,16 +909,17 @@ NATIVE_ACTION void recordTokenBlockAction( Production handle, GrammarLine gl, Th
 		}
 	popN( pn_length( handle, gr ), th );
 	push( ob_fromTokenBlock( tb, th->heap ), th );
-	if( th->interpreterTrace )
+	if( interpreterTrace )
 		{
-		TRACE( th->interpreterTrace, "    Recorded token block: " );
-		tb_sendTo( tb, th->interpreterTrace, th->heap );
-		TRACE( th->interpreterTrace, "\n    Now current: " );
-		ob_sendTo( ts_current( th->tokenStream ), th->interpreterTrace, th->heap );
-		TRACE( th->interpreterTrace, "\n" );
+		os_trace( th->os, on_INTERPRETER, "    Recorded token block: " );
+		tb_sendTo( tb, interpreterTrace, th->heap );
+		os_trace( th->os, on_INTERPRETER, "\n    Now current: " );
+		ob_sendTo( ts_current( th->tokenStream ), interpreterTrace, th->heap );
+		os_trace( th->os, on_INTERPRETER, "\n" );
 		}
 	}
 
+#if 0
 static File openTrace( int fd, char *name )
 	{
 	File result = fdopen( fd, "wt" );
@@ -927,6 +932,7 @@ static File openTrace( int fd, char *name )
 		}
 	return result;
 	}
+#endif
 
 extern FILE *yyin;
 
@@ -994,8 +1000,6 @@ int main( int argc, char **argv )
 	Thread th = &theThread;
 	th->os = processOptions( argc, argv, ml_indefinite() );
 	th->conflictLog = stderr;
-	th->interpreterDiagnostics = openTrace( 4, "4: Ellesmere interpreter diagnostics" );
-	th->interpreterTrace       = openTrace( 5, "5: Ellesmere interpreter trace" );
 	th->parserGenDiagnostics = NULL;
 	th->heap = theObjectHeap();
 	th->st = theSymbolTable( th->heap );
@@ -1008,7 +1012,7 @@ int main( int argc, char **argv )
 	th->productionMap     = ob_create( sy_byName( "PRODUCTION_MAP", th->st ), th->heap );
 	Grammar initialGrammar = populateGrammar( th->st, th );
 	Automaton au = au_new( initialGrammar, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, os_traceFile( th->os, on_PARSER_GEN ) );
-	th->ps = ps_new( au, ml_indefinite(), os_traceFile( th->os, on_PARSER_GEN ) );
+	th->ps = ps_new( au, ml_indefinite(), os_traceFile( th->os, on_INTERPRETER ) );
 	th->tokenStream = theLexTokenStream( th->heap, th->st );
 
 	mainParsingLoop( NULL, th->executionBindings, th );
