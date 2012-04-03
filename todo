@@ -1,3 +1,5 @@
+NOTE -- this file is awfully old and out of date.
+
 NEXT:
 - Debug digressions etc. and understand why I'm getting END_OF_INPUT at a weird time
 - I think I want to do "def foo as bar" as a digression, and "def foo as { bar }" as a call
@@ -56,7 +58,7 @@ DONE
 - Instead of doing subtags on the right-hand side, try supertags on the left-hand side
 - The production symbols don't seem to be copied properly when augmenting a grammar
   - Fixed
-- I was editing an outer grammer.  Whoopsie
+- I was editing an outer grammar.  Whoopsie
 - It's confusing (but not fatal) that "1 <= 24" could be reduced by "Handle 187: FALSE <- INT@left <= INT@right  << PN_0xae80b8_185 >>".
   This production inherited its symbol from BOOLEAN <- INT <= INT, which should be reported as the handle, but at least we always run the right action.
   Likewise, INT <- { TRUE } is a confusing production to report when the real one is ANY <- { ANY }.  (This one also has other problems.  It should be covariant, ie. X <- {X} for any X.)
