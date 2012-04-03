@@ -9,7 +9,8 @@ FUNC TokenStream theLexTokenStream( ObjectHeap heap, SymbolTable st );
 FUNC Object      ts_current    ( TokenStream ts );
 FUNC Object      ts_currentRaw ( TokenStream ts ); // Doesn't apply bindings.  TODO: Is this necessary?
 FUNC void        ts_advance    ( TokenStream ts );
-FUNC void        ts_push       ( TokenStream ts, TokenBlock tb, Object bindings );
+FUNC void        ts_push       ( TokenStream ts, TokenBlock tb, Object bindings ); // Start a new dirgression
+FUNC int         ts_depth      ( TokenStream ts ); // Current number of digressions
 FUNC TokenBlock  ts_curBlock   ( TokenStream ts );
 FUNC Object      ts_getBindings( TokenStream ts );
 FUNC void        ts_setBindings( TokenStream ts, Object bindings );

@@ -157,6 +157,11 @@ static Digression ts_digression( TokenStream ts )
 		return NULL;
 	}
 
+FUNC int ts_depth( TokenStream ts )
+	{
+	return dis_count( ts->digressions );
+	}
+
 FUNC Object ts_currentRaw( TokenStream ts )
 	{
 	Digression di = ts_digression( ts );

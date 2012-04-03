@@ -423,7 +423,7 @@ NATIVE_ACTION void defAction( Production handle, GrammarLine gl, Thread th )
 	fn->kind       = FN_TOKEN_BLOCK;
 	fn->body.tb    = block;
 	ob_setFunctionField( th->executionBindings, pnSymbol, fn, th->heap );
-	if( os_log( th->os, on_EXECUTION, "Defined production %s: ", sy_name( pnSymbol, th->st ) ) )
+	if( os_log( th->os, on_EXECUTION, "   Defined production %s: ", sy_name( pnSymbol, th->st ) ) )
 		{
 		tb_sendTo( block, os_logFile( th->os, on_EXECUTION ), th->heap );
 		os_log( th->os, on_EXECUTION, "\n" );
@@ -719,6 +719,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 		os_trace( th->os, on_INTERPRETER, ", %p ) startingDepth=%d\n", bindings, startingDepth );
 		}
 
+	int itemsAlreadyPrinted = startingDepth;
 	Object raw = NULL;
 	while( 1 )
 		{
@@ -738,9 +739,9 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 			else // abstract!
 				check( recording );
 
+			int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
 			if( recording )
 				{
-				int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
 				popN( pn_length( handleProduction, gr ), th );
 				Object lhs = oh_symbolToken( th->heap, pn_lhs( handleProduction, gr ) );
 				if( interpreterTrace )
@@ -771,19 +772,50 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 				}
 			else if( functionToCall )
 				{
-				bool logThisFunction = true;
-				if( functionToCall->kind == FN_NATIVE )
+				int i;
+				File logFile = os_logFile( th->os, on_EXECUTION );
+				if( logFile && functionToCall->kind == FN_NATIVE && os_traceFile( th->os, on_EXECUTION ) == NULL )
 					{
 					static const NativeAction silentActions[] = { nopAction, passThrough, parseTreeAction, recordTokenBlockAction };
 					NativeAction action = functionToCall->body.gl->response.action;
-					int i;
-					for( i=0; logThisFunction && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
-						logThisFunction = ( action != silentActions[i] );
+					for( i=0; logFile && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
+						if( action == silentActions[i] )
+							logFile = NULL;
 					}
-				if( logThisFunction && os_log( th->os, on_EXECUTION, "%-20s: %s <-", sy_name( handleSymbol, th->st ), sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
+				if( logFile && os_log( th->os, on_EXECUTION, "#  Stack:" ) )
 					{
-					File logFile = os_logFile( th->os, on_EXECUTION );
-					int i;
+					int stackDepth             = sk_depth( ps_operandStack( th->ps ) );
+					int newValues              = stackDepth - itemsAlreadyPrinted;
+					int handleValues           = pn_length( handleProduction, gr );
+					int firstHandleValueIndex  = handleValues - 1;
+					int interestingValues      = ( newValues > handleValues )? newValues : handleValues;
+					int totalValues            = interestingValues + 2;
+					if( totalValues > stackDepth )
+						totalValues = stackDepth;
+
+					int newValuesColumn = 1;
+					int handleColumn    = 1;
+					int currentColumn   = 1; // The %*s thing won't work with zeros
+					for( i = totalValues-1; i >= 0; i-- )
+						{
+						currentColumn += os_log( th->os, on_EXECUTION, " " );
+						if( i == firstHandleValueIndex )
+							handleColumn = currentColumn;
+						if( i == newValues-1 )
+							newValuesColumn = currentColumn;
+						currentColumn += ob_sendTo( sk_item( ps_operandStack( th->ps ), i ), logFile, th->heap );
+						}
+					os_log( th->os, on_EXECUTION, "\n" );
+					if( handleColumn < newValuesColumn )
+						os_log( th->os, on_EXECUTION, "#        %*s%*s\n", handleColumn    , "H", newValuesColumn-handleColumn, "^" );
+					else
+						os_log( th->os, on_EXECUTION, "#        %*s%*s\n", newValuesColumn , "^", handleColumn-newValuesColumn, "H" );
+					itemsAlreadyPrinted = depthWithoutHandle;
+					}
+				//static const char depthStr[] = "----+----+----+----+----+----+----+----+----+----+----?";
+				static const char depthStr[] = "";
+				if( logFile && os_log( th->os, on_EXECUTION, "%-17s: %.*s %s <-", sy_name( handleSymbol, th->st ), ts_depth( th->tokenStream ), depthStr, sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
+					{
 					char *sep = " ";
 					for( i=0; i < pn_length( handleProduction, gr ); i++ )
 						{
@@ -805,7 +837,6 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 					case FN_TOKEN_BLOCK:
 						{
 						assert( handleProduction );
-						int i;
 						Object argBindings = ob_createX( SYM_BINDINGS, th->heap ); // TODO: Recycle?
 						for( i = pn_length( handleProduction, gr ) - 1; i >= 0; i-- )
 							{
@@ -816,15 +847,18 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 							}
 						ts_push( th->tokenStream, functionToCall->body.tb, argBindings );
 						cf_push( th );
-						if( logThisFunction )
-							os_trace( th->os, on_EXECUTION, "   Digressing into token block %p\n", functionToCall->body.tb );
+						if( logFile && os_trace( th->os, on_EXECUTION, "   Digressing into " ) )
+							{
+							tb_sendTo( functionToCall->body.tb, logFile, th->heap );
+							os_trace( th->os, on_EXECUTION, "\n" );
+							}
 						}
 						break;
 					case FN_NATIVE:
 						{
 						GrammarLine line = functionToCall->body.gl;
 						assert( line );
-						if( logThisFunction && os_trace( th->os, on_EXECUTION, "   Calling native action " ) )
+						if( logFile && os_trace( th->os, on_EXECUTION, "   Calling native " ) )
 							{
 							Dl_info nativeInfo;
 							if( dladdr( line->response.action, &nativeInfo ) && nativeInfo.dli_saddr == line->response.action )
