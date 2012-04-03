@@ -719,7 +719,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 		os_trace( th->os, on_INTERPRETER, ", %p ) startingDepth=%d\n", bindings, startingDepth );
 		}
 
-	int itemsAlreadyPrinted = startingDepth;
+	int itemsFromPrevHandle = startingDepth;
 	Object raw = NULL;
 	while( 1 )
 		{
@@ -785,13 +785,27 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 				if( logFile && os_log( th->os, on_EXECUTION, "#  Stack:" ) )
 					{
 					int stackDepth             = sk_depth( ps_operandStack( th->ps ) );
-					int newValues              = stackDepth - itemsAlreadyPrinted;
+					int newValues              = stackDepth - itemsFromPrevHandle;
+					int firstNewValueIndex     = newValues - 1;
 					int handleValues           = pn_length( handleProduction, gr );
 					int firstHandleValueIndex  = handleValues - 1;
 					int interestingValues      = ( newValues > handleValues )? newValues : handleValues;
 					int totalValues            = interestingValues + 2;
 					if( totalValues > stackDepth )
 						totalValues = stackDepth;
+
+					if( 0 && os_log( th->os, on_EXECUTION, "\n# Stack parms:" ) )
+						{
+						os_log( th->os, on_EXECUTION, " stackDepth=%d", stackDepth );
+						os_log( th->os, on_EXECUTION, " depthWithoutHandle=%d", depthWithoutHandle );
+						os_log( th->os, on_EXECUTION, " newValues=%d", newValues );
+						os_log( th->os, on_EXECUTION, " firstNewValueIndex=%d", firstNewValueIndex );
+						os_log( th->os, on_EXECUTION, " handleValues=%d", handleValues );
+						os_log( th->os, on_EXECUTION, " firstHandleValueIndex=%d", firstHandleValueIndex );
+						os_log( th->os, on_EXECUTION, " interestingValues=%d", interestingValues );
+						os_log( th->os, on_EXECUTION, " totalValues=%d", totalValues );
+						os_log( th->os, on_EXECUTION, "\n#  Stack:" );
+						}
 
 					int newValuesColumn = 1;
 					int handleColumn    = 1;
@@ -801,7 +815,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 						currentColumn += os_log( th->os, on_EXECUTION, " " );
 						if( i == firstHandleValueIndex )
 							handleColumn = currentColumn;
-						if( i == newValues-1 )
+						if( i == firstNewValueIndex )
 							newValuesColumn = currentColumn;
 						currentColumn += ob_sendTo( sk_item( ps_operandStack( th->ps ), i ), logFile, th->heap );
 						}
@@ -810,10 +824,9 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 						os_log( th->os, on_EXECUTION, "#        %*s%*s\n", handleColumn    , "H", newValuesColumn-handleColumn, "^" );
 					else
 						os_log( th->os, on_EXECUTION, "#        %*s%*s\n", newValuesColumn , "^", handleColumn-newValuesColumn, "H" );
-					itemsAlreadyPrinted = depthWithoutHandle;
 					}
-				//static const char depthStr[] = "----+----+----+----+----+----+----+----+----+----+----?";
-				static const char depthStr[] = "";
+				itemsFromPrevHandle = depthWithoutHandle;
+				static const char depthStr[] = ""; //"----+----+----+----+----+----+----+----+----+----+----?";
 				if( logFile && os_log( th->os, on_EXECUTION, "%-17s: %.*s %s <-", sy_name( handleSymbol, th->st ), ts_depth( th->tokenStream ), depthStr, sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
 					{
 					char *sep = " ";
