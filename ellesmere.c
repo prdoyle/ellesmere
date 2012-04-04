@@ -361,7 +361,7 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
 	File parserGenTrace = os_traceFile( th->os, on_PARSER_GEN );
-	if ( os_enable( th->os, on_INHERITANCE ) )
+	if ( os_enabled( th->os, on_INHERITANCE ) )
 		gr = gr_augmentedShallow( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), parserGenTrace );
 	addNewestProductionsToMap( gr, th );
 	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, parserGenTrace );
@@ -661,7 +661,7 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 		}
 	gr_stopAdding( gr );
 	Symbol sym_abstract = sy_byName( "ABSTRACT_PRODUCTION", th->st );
-	if ( os_enable( th->os, on_INHERITANCE ) )
+	if ( os_enabled( th->os, on_INHERITANCE ) )
 		gr = gr_augmented( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), os_traceFile( th->os, on_PARSER_GEN ) );
 	addProductionsToMap( gr, 0, th );
 
@@ -677,7 +677,7 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 
 static void initializeInheritanceRelation( ObjectHeap heap, SymbolTable st, MemoryLifetime ml, Thread th )
 	{
-	if ( os_disable( th->os, on_INHERITANCE ) )
+	if ( os_disabled( th->os, on_INHERITANCE ) )
 		return;
 
 	int superIndex, subIndex;
@@ -693,8 +693,8 @@ static void initializeInheritanceRelation( ObjectHeap heap, SymbolTable st, Memo
 			}
 		}
 
-	if(   os_logFile   ( th->os, on_INHERITANCE )
-		|| os_traceFile ( th->os, on_INTERPRETER) )
+	if(   os_logging( th->os, on_INHERITANCE )
+		|| os_tracing( th->os, on_INTERPRETER ) )
 		{
 		File fl = os_getLogFile( th->os );
 		fl_write( fl, "Initial inheritance relation:\n" );
@@ -791,8 +791,14 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 					int firstHandleValueIndex  = handleValues - 1;
 					int interestingValues      = ( newValues > handleValues )? newValues : handleValues;
 					int totalValues            = interestingValues + 2;
-					if( totalValues > stackDepth )
+					if( totalValues < 10 )
+						totalValues = 10;
+
+					int prefixSpaces = 0;
+					if( totalValues >= stackDepth )
 						totalValues = stackDepth;
+					else
+						prefixSpaces += os_log( th->os, on_EXECUTION, "..." );
 
 					if( 0 && os_log( th->os, on_EXECUTION, "\n# Stack parms:" ) )
 						{
@@ -821,11 +827,17 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 						}
 					os_log( th->os, on_EXECUTION, "\n" );
 					if( handleColumn < newValuesColumn )
-						os_log( th->os, on_EXECUTION, "#        %*s%*s\n", handleColumn    , "H", newValuesColumn-handleColumn, "^" );
+						os_log( th->os, on_EXECUTION, "#%*s        %*s%*s\n", prefixSpaces, "", handleColumn    , "H", newValuesColumn-handleColumn, "^" );
 					else
-						os_log( th->os, on_EXECUTION, "#        %*s%*s\n", newValuesColumn , "^", handleColumn-newValuesColumn, "H" );
+						os_log( th->os, on_EXECUTION, "#%*s        %*s%*s\n", prefixSpaces, "", newValuesColumn , "^", handleColumn-newValuesColumn, "H" );
+					itemsFromPrevHandle = depthWithoutHandle;
 					}
-				itemsFromPrevHandle = depthWithoutHandle;
+				else
+					{
+					// Every item should appear newly printed at least once
+					if( itemsFromPrevHandle > depthWithoutHandle )
+						itemsFromPrevHandle = depthWithoutHandle;
+					}
 				static const char depthStr[] = ""; //"----+----+----+----+----+----+----+----+----+----+----?";
 				if( logFile && os_log( th->os, on_EXECUTION, "%-17s: %.*s %s <-", sy_name( handleSymbol, th->st ), ts_depth( th->tokenStream ), depthStr, sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
 					{

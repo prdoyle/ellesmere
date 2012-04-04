@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+typedef signed char OptionLevel;
+
 typedef struct oc_struct
 	{
 	OptionQuery query;
@@ -16,14 +18,17 @@ static const struct verb_struct
 	{
 	char         *abbreviation;
 	char         *name;
-	OptionClause  clause;
+	OptionClause  clauses[2];
 	char         *description1;
 	char         *description2;
 	} verbs[] = {
-	{ "l", "log",      { oq_REPORT_DETAIL,  1 }, "record",    "at a coarse granularity to aid understanding"  },
-	{ "t", "trace",    { oq_REPORT_DETAIL,  2 }, "record",    "at a fine granularity to aid debugging"        },
-	{ "d", "disable",  { oq_DISABLED,       1 }, "prevent",   "from occurring"                                },
-	{ "e", "enable",   { oq_DISABLED,      -1 }, "allow",     "to occur"                                      },
+	{ "l", "log",      {{ oq_LOGGING,    1 }}, "record",  "at a coarse granularity to aid understanding"  },
+	{ "d", "disable",  {{ oq_DISABLED,   1 }}, "prevent", "from occurring"                                },
+	{ "e", "enable",   {{ oq_DISABLED,  -1 }}, "allow",   "to occur"                                      },
+	{ "f", "force",    {{ oq_DISABLED,  -2 }}, "prevent", "from being disabled"                           },
+	{ "k", "kill",     {{ oq_DISABLED,   2 }}, "prevent", "from being enabled"                            },
+	{ "t", "trace",    {{ oq_TRACING,    1 },
+	                    { oq_LOGGING,    1 }}, "record",  "at a fine granularity to aid debugging"        },
 	{ 0 }
 	};
 
@@ -48,8 +53,9 @@ static const struct query_struct
 	OptionQuery  id;
 	char        *name;
 	} queries[] = {
-	{ oq_DISABLED,        "disabled"      },
-	{ oq_REPORT_DETAIL,   "reportDetail"  },
+	{ oq_TRACING,    "tracing"  },
+	{ oq_DISABLED,   "disabled" },
+	{ oq_LOGGING,    "logging"  },
 	{ 0 }
 	};
 
@@ -95,19 +101,51 @@ FUNC void os_setLogFile ( OptionSet os, File newLogFile )
 	os->logFile = newLogFile;
 	}
 
-FUNC OptionLevel os_get( OptionSet os, OptionQuery query, OptionNoun noun ) __attribute__((always_inline));
-FUNC OptionLevel os_get( OptionSet os, OptionQuery query, OptionNoun noun )
+FUNC bool os_isSet( OptionSet os, OptionQuery query, OptionNoun noun ) __attribute__((always_inline));
+FUNC bool os_isSet( OptionSet os, OptionQuery query, OptionNoun noun )
 	{
 	if ( os )
-		return os->optionLevels[ query ][ noun ];
+		return os->optionLevels[ query ][ noun ] > 0;
 	else
 		return 0;
+	}
+
+FUNC bool os_areAllSet( OptionSet os, ... )
+	{
+	OptionQuery query;
+	OptionNoun  noun;
+	va_list args;
+	va_start( args, os );
+	bool result = true;
+	for( query = va_arg( args, OptionQuery ); result && query; query = va_arg( args, OptionQuery ) )
+		{
+		noun = va_arg( args, OptionNoun );
+		result = os_isSet( os, query, noun );
+		}
+	va_end( args );
+	return result;
+	}
+
+FUNC bool os_isAnySet( OptionSet os, ... )
+	{
+	OptionQuery query;
+	OptionNoun  noun;
+	va_list args;
+	va_start( args, os );
+	bool result = false;
+	for( query = va_arg( args, OptionQuery ); !result && query; query = va_arg( args, OptionQuery ) )
+		{
+		noun = va_arg( args, OptionNoun );
+		result = os_isSet( os, query, noun );
+		}
+	va_end( args );
+	return result;
 	}
 
 static void os_set( OptionSet os, OptionQuery query, OptionNoun noun, OptionLevel level )
 	{
 	assert( os );
-	if( abs( level ) >= abs( os_get( os, query, noun ) ) )
+	if( abs( level ) >= abs( os->optionLevels[ query ][ noun ] ) )
 		{
 		os_log( os, on_OPTIONS, "%s.%s %d -> %d\n", nouns[ noun-1 ].name, queries[ query-1 ].name, os->optionLevels[ query ][ noun ], level );
 		os->optionLevels[ query ][ noun ] = level;
@@ -239,9 +277,18 @@ FUNC OptionDelta od_parse( char *start, char *stop, MemoryLifetime ml )
 			if( matches( noun->abbreviation, opt+1, stop ) )
 				break;
 			}
-		OptionClause oc = verb->clause;
-		oc.noun = noun->id;
-		oca_append( clauses, oc );
+		int i;
+		for( i=0; i < sizeof(verb->clauses) / sizeof(verb->clauses[0]); i++ )
+			{
+			OptionClause oc = verb->clauses[ i ];
+			if( oc.query )
+				{
+				oc.noun = noun->id;
+				oca_append( clauses, oc );
+				}
+			else
+				break;
+			}
 		opt += 1 + length + 1; // verb + noun + comma
 		}
 
@@ -250,26 +297,30 @@ FUNC OptionDelta od_parse( char *start, char *stop, MemoryLifetime ml )
 
 FUNC int os_log( OptionSet os, OptionNoun noun, const char *format, ... )
 	{
-	if( !os )
+	if( os && os_logging( os, noun ) )
+		{
+		va_list args;
+		va_start( args, format );
+		int result = fl_vwrite( os_getLogFile( os ), format, args );
+		va_end( args );
+		return result;
+		}
+	else
 		return 0;
-
-	va_list args;
-	va_start( args, format );
-	int result = fl_vwrite( os_logFile( os, noun ), format, args );
-	va_end( args );
-	return result;
 	}
 
 FUNC int os_trace( OptionSet os, OptionNoun noun, const char *format, ... )
 	{
-	if( !os )
+	if( os && os_tracing( os, noun ) )
+		{
+		va_list args;
+		va_start( args, format );
+		int result = fl_vwrite( os_getLogFile( os ), format, args );
+		va_end( args );
+		return result;
+		}
+	else
 		return 0;
-
-	va_list args;
-	va_start( args, format );
-	int result = fl_vwrite( os_traceFile( os, noun ), format, args );
-	va_end( args );
-	return result;
 	}
 
 

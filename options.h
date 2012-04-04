@@ -12,8 +12,11 @@ typedef enum
 	{
 	oq_NULL,
 
+	oq_TRACING,
+	oq_LAST_SLOW_OPTION_QUERY = oq_TRACING,
+
 	oq_DISABLED,
-	oq_REPORT_DETAIL,
+	oq_LOGGING,
 
 	oq_NUM_OPTION_QUERIES
 	} OptionQuery;
@@ -32,31 +35,42 @@ typedef enum
 	on_NUM_OPTION_NOUNS
 	} OptionNoun;
 
-typedef signed char OptionLevel;
-
 FUNC OptionSet os_new ( MemoryLifetime ml );
 
 FUNC OptionDelta od_parse   ( char *start, char *stop, MemoryLifetime ml );
 FUNC void        od_applyTo ( OptionDelta od, OptionSet os, MemoryLifetime ml );
 
-FUNC OptionLevel os_get( OptionSet, OptionQuery query, OptionNoun noun );
+FUNC bool os_isSet( OptionSet, OptionQuery query, OptionNoun noun );
+
+// These take a series of query+noun pairs followed by a 0
+FUNC bool os_areAllSet ( OptionSet os, ... );
+FUNC bool os_isAnySet  ( OptionSet os, ... );
+
 FUNC File os_getLogFile ( OptionSet os );
 FUNC void os_setLogFile ( OptionSet os, File newLogFile );
 
-static inline File os_logFile ( OptionSet os, OptionNoun noun )
-	{ return ( os_get( os, oq_REPORT_DETAIL, noun ) >= 1 )? os_getLogFile( os ) : NULL; }
+static inline bool os_logging  ( OptionSet os, OptionNoun noun ) { return  os_isSet( os, oq_LOGGING,  noun ); }
+static inline bool os_tracing  ( OptionSet os, OptionNoun noun ) { return  os_isSet( os, oq_TRACING,  noun ); }
+static inline bool os_disabled ( OptionSet os, OptionNoun noun ) { return  os_isSet( os, oq_DISABLED, noun ); }
+static inline bool os_enabled  ( OptionSet os, OptionNoun noun ) { return !os_isSet( os, oq_DISABLED, noun ); }
 
-static inline File os_traceFile ( OptionSet os, OptionNoun noun )
-	{ return ( os_get( os, oq_REPORT_DETAIL, noun ) >= 2 )? os_getLogFile( os ) : NULL; }
+#if 0
+static inline bool os_loggingAny  ( OptionSet os, ... );
+static inline bool os_tracingAny  ( OptionSet os, ... );
+static inline bool os_disabledAny ( OptionSet os, ... );
+static inline bool os_enabledAny  ( OptionSet os, ... );
+
+static inline bool os_loggingAll  ( OptionSet os, ... );
+static inline bool os_tracingAll  ( OptionSet os, ... );
+static inline bool os_disabledAll ( OptionSet os, ... );
+static inline bool os_enabledAll  ( OptionSet os, ... );
+#endif
+
+static inline File os_logFile   ( OptionSet os, OptionNoun noun ){ return os_logging( os, noun ) ? os_getLogFile(os) : NULL; }
+static inline File os_traceFile ( OptionSet os, OptionNoun noun ){ return os_tracing( os, noun ) ? os_getLogFile(os) : NULL; }
 
 FUNC int os_log   ( OptionSet os, OptionNoun noun, const char *format, ... );
 FUNC int os_trace ( OptionSet os, OptionNoun noun, const char *format, ... );
-
-static inline bool os_disable( OptionSet os, OptionNoun noun )
-	{ return os_get( os, oq_DISABLED, noun ) >= 1; }
-
-static inline bool os_enable( OptionSet os, OptionNoun noun )
-	{ return !os_disable( os, noun ); }
 
 #endif
 
