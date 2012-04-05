@@ -35,7 +35,8 @@ FUNC int optional(char *format, ...)
 	if( !initialized )
 		{
 		optLimitStr = getenv( "EL_optLimit" );
-		optLimit    = atoi( optLimitStr );
+		if( optLimitStr )
+			optLimit = atoi( optLimitStr );
 		}
 	if( !optLimitStr )
 		return true;

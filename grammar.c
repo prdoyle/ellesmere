@@ -331,6 +331,13 @@ FUNC Production pn_copy( Grammar oldGrammar, Production oldProduction, Grammar g
 	return result;
 	}
 
+FUNC void pn_abort( Production pn, Grammar gr )
+	{
+	assert( pn_index( pn, gr ) == gr_numProductions( gr ) - 1 );
+	gr->numItems -= 1 + pn_length( pn, gr );
+	pra_incCountBy( gr->pra, -1 );
+	}
+
 FUNC int pn_sendItemTo( Production pn, int dotPosition, File fl, Grammar gr, SymbolTable st )
 	{
 	int i;

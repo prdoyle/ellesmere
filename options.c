@@ -39,12 +39,13 @@ static const struct noun_struct
 	char      *name;
 	char      *description;
 	} nouns[] = {
-	{ on_EXECUTION,       "exec", "execution",       "operations performed by the user program"                                     },
-	{ on_INHERITANCE,     "inh",  "inheritance",     "substitution of one symbol for another"                                       },
-	{ on_INTERPRETER,     "int",  "interpreter",     "reading tokens, walking automata, and computing which operations to perform"  },
-	{ on_OPTIONS,         "ops",  "options",         "option parsing and processing"                                                },
-	{ on_PARSER_CONFLICT, "pc",   "parserconflict",  "situations where the automaton to generate is ambiguous"                      },
-	{ on_PARSER_GEN,      "pgen", "parsergen",       "construction of an automaton from a grammar"                                  },
+	{ on_AUGMENTING_GRAMMAR,  "augr", "augmentGrammar",  "adding productions to grammars to handle inheritance"                         },
+	{ on_EXECUTION,           "exec", "execution",       "operations performed by the user program"                                     },
+	{ on_INHERITANCE,         "inh",  "inheritance",     "substitution of one symbol for another"                                       },
+	{ on_INTERPRETER,         "int",  "interpreter",     "reading tokens, walking automata, and computing which operations to perform"  },
+	{ on_OPTIONS,             "ops",  "options",         "option parsing and processing"                                                },
+	{ on_PARSER_CONFLICT,     "pc",   "parserConflict",  "situations where the automaton to generate is ambiguous"                      },
+	{ on_PARSER_GEN,          "pgen", "parsergen",       "construction of an automaton from a grammar"                                  },
 	{ 0 }
 	};
 

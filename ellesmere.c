@@ -360,11 +360,10 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 		}
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
-	File parserGenTrace = os_traceFile( th->os, on_PARSER_GEN );
-	if ( os_enabled( th->os, on_INHERITANCE ) )
-		gr = gr_augmentedShallow( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), parserGenTrace );
+	if ( os_enabled( th->os, on_AUGMENTING_GRAMMAR ) )
+		gr = gr_augmentedShallow( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), os_logFile( th->os, on_AUGMENTING_GRAMMAR ) );
 	addNewestProductionsToMap( gr, th );
-	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, parserGenTrace );
+	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, os_traceFile( th->os, on_PARSER_GEN ) );
 	Parser oldParser = th->ps;
 	th->ps = ps_new( au, ml_indefinite(), os_traceFile( th->os, on_INTERPRETER ) );
 
@@ -661,8 +660,8 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 		}
 	gr_stopAdding( gr );
 	Symbol sym_abstract = sy_byName( "ABSTRACT_PRODUCTION", th->st );
-	if ( os_enabled( th->os, on_INHERITANCE ) )
-		gr = gr_augmented( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), os_traceFile( th->os, on_PARSER_GEN ) );
+	if ( os_enabled( th->os, on_AUGMENTING_GRAMMAR ) )
+		gr = gr_augmented( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), os_logFile( th->os, on_AUGMENTING_GRAMMAR ) );
 	addProductionsToMap( gr, 0, th );
 
 	for( i=0; initialConcretifications[i].abstract; i++)

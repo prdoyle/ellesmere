@@ -109,6 +109,7 @@ FUNC Symbol sy_byName( const char *name, SymbolTable st )
 	sys->name = strdup( name );
 	Symbol result = sys2sy( sys, st );
 	#if 0 // TODO: reinstate automatic inheritance from ANY
+	// TODO: Consider checking os_enabled on on_INHERITANCE
 	if( st_inheritanceRelation( st ) ) // Can be NULL while bootstrapping the InheritanceRelation
 		ir_add( st_inheritanceRelation( st ), sy_byIndex( SYM_ANY, st ), result );
 	#endif

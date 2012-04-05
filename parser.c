@@ -1587,19 +1587,33 @@ static Stack getInheritingTags( Augmenter aug, Symbol tag, InheritanceRelation i
 	return aug->topDownStack;
 	}
 
-static void addAllProductionCombos( Grammar newGrammar, Production newProduction, Grammar oldGrammar, Production oldProduction, int tokenIndex, InheritanceRelation ir, Symbol abstractSymbol, File diagnostics, int recursionDepth )
+static void addAllProductionCombos( Grammar newGrammar, Production newProduction, Grammar oldGrammar, Production oldProduction, int tokenIndex, InheritanceRelation ir, Symbol abstractSymbol, File diagnostics, int recursionDepth, bool unchangedSoFar )
 	{
 	SymbolTable st = oh_symbolTable( ir_nodeHeap(ir) );
 	if( tokenIndex >= pn_length( oldProduction, oldGrammar ) )
 		{
 		// We're done with this production
-		pn_setConflictResolution( newProduction, CR_ABSTRACT, newGrammar );
-		pn_stopAppending( newProduction, newGrammar );
-		if( diagnostics )
+		// TODO: Make this work.  Problem is that it aborts the production which will subsequently be duped.
+		if( 0 && unchangedSoFar && optional("Abort new production %d because it matches one already in the original grammar", pn_index( newProduction, newGrammar ) ) )
 			{
-			TRACE( diagnostics, "      %*s%d done: ", recursionDepth, "", pn_index( newProduction, newGrammar ) );
-			pn_sendTo( newProduction, diagnostics, newGrammar, st );
-			TRACE( diagnostics, "\n" );
+			if( diagnostics )
+				{
+				TRACE( diagnostics, "      %*sdiscarding %d already present: ", recursionDepth, "", pn_index( newProduction, newGrammar ) );
+				pn_sendTo( newProduction, diagnostics, newGrammar, st );
+				TRACE( diagnostics, "\n" );
+				}
+			pn_abort( newProduction, newGrammar );
+			}
+		else
+			{
+			pn_setConflictResolution( newProduction, CR_ABSTRACT, newGrammar );
+			pn_stopAppending( newProduction, newGrammar );
+			if( diagnostics )
+				{
+				TRACE( diagnostics, "      %*sadding %d: ", recursionDepth, "", pn_index( newProduction, newGrammar ) );
+				pn_sendTo( newProduction, diagnostics, newGrammar, st );
+				TRACE( diagnostics, "\n" );
+				}
 			}
 		}
 	else
@@ -1610,7 +1624,7 @@ static void addAllProductionCombos( Grammar newGrammar, Production newProduction
 			pn_name( oldProduction, tokenIndex, oldGrammar ),
 			curToken,
 			newGrammar );
-		addAllProductionCombos( newGrammar, newProduction, oldGrammar, oldProduction, tokenIndex+1, ir, abstractSymbol, diagnostics, recursionDepth+1 );
+		addAllProductionCombos( newGrammar, newProduction, oldGrammar, oldProduction, tokenIndex+1, ir, abstractSymbol, diagnostics, recursionDepth+1, unchangedSoFar );
 
 		SymbolTable st = oh_symbolTable( ir_nodeHeap(ir) );
 		Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
@@ -1629,7 +1643,7 @@ static void addAllProductionCombos( Grammar newGrammar, Production newProduction
 					pn_name  ( oldProduction, tokenIndex, oldGrammar ),
 					tag,
 					newGrammar );
-				addAllProductionCombos( newGrammar, dup, oldGrammar, oldProduction, tokenIndex+1, ir, abstractSymbol, diagnostics, recursionDepth+1 );
+				addAllProductionCombos( newGrammar, dup, oldGrammar, oldProduction, tokenIndex+1, ir, abstractSymbol, diagnostics, recursionDepth+1, false );
 				}
 			}
 
@@ -1648,7 +1662,7 @@ static void addAllProductionCombos( Grammar newGrammar, Production newProduction
 					pn_name  ( oldProduction, tokenIndex, oldGrammar ),
 					tag,
 					newGrammar );
-				addAllProductionCombos( newGrammar, dup, oldGrammar, oldProduction, tokenIndex+1, ir, abstractSymbol, diagnostics, recursionDepth+1 );
+				addAllProductionCombos( newGrammar, dup, oldGrammar, oldProduction, tokenIndex+1, ir, abstractSymbol, diagnostics, recursionDepth+1, false );
 				}
 			}
 #endif
@@ -1696,7 +1710,7 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Sy
 			TRACE( diagnostics, "\n" );
 			}
 		Production newProduction = pn_copy( original, pn, result, pn_lhs( pn, original ), 0 );
-		addAllProductionCombos( result, newProduction, original, pn, 0, ir, abstractSymbol, diagnostics, 0 );
+		addAllProductionCombos( result, newProduction, original, pn, 0, ir, abstractSymbol, diagnostics, 0, true );
 
 		// Subtags of the lhs
 		Augmenter aug = aug_begin( NULL, ir, diagnostics );
@@ -1710,7 +1724,7 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Sy
 				{
 				TRACE( diagnostics, "    Now with lhs=%s\n", sy_name( tag, st ) );
 				newProduction = pn_copy( original, pn, result, tag, 0 );
-				addAllProductionCombos( result, newProduction, original, pn, 0, ir, abstractSymbol, diagnostics, 0 );
+				addAllProductionCombos( result, newProduction, original, pn, 0, ir, abstractSymbol, diagnostics, 0, false );
 				}
 			}
 
@@ -1731,6 +1745,13 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Sy
 			pn_dup( original, gr_production( original, productionIndex ), result );
 
 		gr_stopAdding( result );
+
+		if( diagnostics )
+			{
+			TRACE( diagnostics, "Augmented grammar %p from %p {\n", result, original );
+			gr_sendTo( result, diagnostics, st );
+			TRACE( diagnostics, "}\n\n" );
+			}
 		}
 	return result;
 	}

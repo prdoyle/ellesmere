@@ -42,6 +42,7 @@ FUNC Production pn_new( Grammar gr, Symbol lhs, int lengthEstimate );
 FUNC Production pn_copy( Grammar oldGrammar, Production oldProduction, Grammar gr, Symbol lhs, int numTokensToCopy );
 FUNC void       pn_appendWithName ( Production pn, Symbol name, Symbol token, Grammar gr );
 FUNC void       pn_stopAppending  ( Production pn, Grammar gr );
+FUNC void       pn_abort          ( Production pn, Grammar gr ); // pn must be the last new Production in gr
 FUNC int        pn_index          ( Production pn, Grammar gr );
 FUNC Symbol     pn_lhs            ( Production pn, Grammar gr );
 FUNC int        pn_length         ( Production pn, Grammar gr );
