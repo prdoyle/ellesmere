@@ -1,7 +1,10 @@
 #! /bin/bash
 
-REPS=3
+if [ ! -x ellesmere ]; then
+	make -j fast
+fi
 
+REPS=3
 for (( I=0; I<REPS; I++ )); do
 	echo `./fib.el $*` | awk '{ print $1, $2, 100*log(1.0 * $1 / $2) }'
 done
