@@ -29,6 +29,7 @@ typedef enum
 	on_EXECUTION,
 	on_INHERITANCE,
 	on_INTERPRETER,
+	on_OPTIMIZATIONS,
 	on_OPTIONS,
 	on_PARSER_CONFLICT,
 	on_PARSER_GEN,
@@ -37,6 +38,7 @@ typedef enum
 	} OptionNoun;
 
 FUNC OptionSet os_new ( MemoryLifetime ml );
+FUNC OptionSet os_global();
 
 FUNC OptionDelta od_parse   ( char *start, char *stop, MemoryLifetime ml );
 FUNC void        od_applyTo ( OptionDelta od, OptionSet os, MemoryLifetime ml );

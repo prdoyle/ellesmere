@@ -996,7 +996,7 @@ extern FILE *yyin;
 
 static OptionSet processOptions( int argc, char **argv, MemoryLifetime ml )
 	{
-	OptionSet result = os_new( ml );
+	OptionSet result = os_global();
 	int i;
 	for( i=1; i < argc; i++ )
 		{

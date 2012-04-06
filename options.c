@@ -43,6 +43,7 @@ static const struct noun_struct
 	{ on_EXECUTION,           "exec", "execution",       "operations performed by the user program"                                     },
 	{ on_INHERITANCE,         "inh",  "inheritance",     "substitution of one symbol for another"                                       },
 	{ on_INTERPRETER,         "int",  "interpreter",     "reading tokens, walking automata, and computing which operations to perform"  },
+	{ on_OPTIMIZATIONS,       "opts", "optimizations",   "optional performance enhancements"                                            },
 	{ on_OPTIONS,             "ops",  "options",         "option parsing and processing"                                                },
 	{ on_PARSER_CONFLICT,     "pc",   "parserConflict",  "situations where the automaton to generate is ambiguous"                      },
 	{ on_PARSER_GEN,          "pgen", "parsergen",       "construction of an automaton from a grammar"                                  },
@@ -186,6 +187,14 @@ FUNC OptionSet os_new( MemoryLifetime ml )
 		os_set( result, clause->query, clause->noun, clause->level );
 		}
 	result->logFile = stderr;
+	return result;
+	}
+
+FUNC OptionSet os_global( MemoryLifetime ml )
+	{
+	static OptionSet result = NULL;
+	if( !result )
+		result = os_new( ml_indefinite() );
 	return result;
 	}
 

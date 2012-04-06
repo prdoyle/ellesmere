@@ -1587,14 +1587,17 @@ static Stack getInheritingTags( Augmenter aug, Symbol tag, InheritanceRelation i
 	return aug->topDownStack;
 	}
 
-static void addAllProductionCombos( Grammar newGrammar, Production newProduction, Grammar oldGrammar, Production oldProduction, int tokenIndex, InheritanceRelation ir, Symbol abstractSymbol, File diagnostics, int recursionDepth, bool unchangedSoFar )
+static void addAllProductionCombos(
+	Grammar newGrammar, Production newProduction,
+	Grammar oldGrammar, Production oldProduction,
+	int tokenIndex, InheritanceRelation ir, Symbol abstractSymbol, File diagnostics, int recursionDepth, bool unchangedSoFar )
 	{
 	SymbolTable st = oh_symbolTable( ir_nodeHeap(ir) );
 	if( tokenIndex >= pn_length( oldProduction, oldGrammar ) )
 		{
 		// We're done with this production
 		// TODO: Make this work.  Problem is that it aborts the production which will subsequently be duped.
-		if( 0 && unchangedSoFar && optional("Abort new production %d because it matches one already in the original grammar", pn_index( newProduction, newGrammar ) ) )
+		if( unchangedSoFar && optional("Abort new production %d because it matches one already in the original grammar", pn_index( newProduction, newGrammar ) ) )
 			{
 			if( diagnostics )
 				{
@@ -1619,12 +1622,6 @@ static void addAllProductionCombos( Grammar newGrammar, Production newProduction
 	else
 		{
 		Symbol curToken = pn_token( oldProduction, tokenIndex, oldGrammar );
-		TRACE( diagnostics, "      %*s%d:%d is '%s'\n", recursionDepth, "", pn_index( newProduction, newGrammar ), tokenIndex, sy_name( curToken, st ) );
-		pn_appendWithName( newProduction,
-			pn_name( oldProduction, tokenIndex, oldGrammar ),
-			curToken,
-			newGrammar );
-		addAllProductionCombos( newGrammar, newProduction, oldGrammar, oldProduction, tokenIndex+1, ir, abstractSymbol, diagnostics, recursionDepth+1, unchangedSoFar );
 
 		SymbolTable st = oh_symbolTable( ir_nodeHeap(ir) );
 		Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
@@ -1634,40 +1631,28 @@ static void addAllProductionCombos( Grammar newGrammar, Production newProduction
 		while( sk_depth( tags ) )
 			{
 			Object tagNode = sk_pop( tags );
-			Symbol tag = ob_getTokenField( tagNode, symSymbol, ir_nodeHeap(ir) );
-			if( tag != curToken )
+			Symbol subToken = ob_getTokenField( tagNode, symSymbol, ir_nodeHeap(ir) );
+			if( subToken != curToken )
 				{
-				Production dup = pn_copy( newGrammar, newProduction, newGrammar, pn_lhs( newProduction, newGrammar ), tokenIndex );
-				TRACE( diagnostics, "     %*s|%d dup %d:%d is subtag '%s'\n", recursionDepth, "", pn_index( newProduction, newGrammar ), pn_index( dup, newGrammar ), tokenIndex, sy_name( tag, st ) );
-				pn_appendWithName( dup,
+				Production subProduction = newProduction;
+				newProduction = pn_copy( newGrammar, newProduction, newGrammar, pn_lhs( newProduction, newGrammar ), tokenIndex );
+				TRACE( diagnostics, "     %*s%d:%d sub %s for %s\n", recursionDepth, "", pn_index( subProduction, newGrammar ), tokenIndex, sy_name( subToken, st ), sy_name( curToken, st ) );
+				pn_appendWithName( subProduction,
 					pn_name  ( oldProduction, tokenIndex, oldGrammar ),
-					tag,
+					subToken,
 					newGrammar );
-				addAllProductionCombos( newGrammar, dup, oldGrammar, oldProduction, tokenIndex+1, ir, abstractSymbol, diagnostics, recursionDepth+1, false );
+				addAllProductionCombos( newGrammar, subProduction, oldGrammar, oldProduction, tokenIndex+1, ir, abstractSymbol, diagnostics, recursionDepth+1, false );
 				}
 			}
-
-#if 0
-		tags = getInheritingTags( aug, curToken, ir, SYM_SUPERTAGS );
-		while( sk_depth( tags ) )
-			{
-			Object tagNode = sk_pop( tags );
-			Symbol tag = ob_getTokenField( tagNode, symSymbol, ir_nodeHeap(ir) );
-			if( tag != curToken )
-				{
-				Production dup = pn_copy( newGrammar, newProduction, newGrammar, pn_lhs( newProduction, newGrammar ), tokenIndex );
-				pn_setSymbol( dup, abstractSymbol, newGrammar );
-				TRACE( diagnostics, "     %*s|%d dup %d:%d is super '%s'\n", recursionDepth, "", pn_index( newProduction, newGrammar ), pn_index( dup, newGrammar ), tokenIndex, sy_name( tag, st ) );
-				pn_appendWithName( dup,
-					pn_name  ( oldProduction, tokenIndex, oldGrammar ),
-					tag,
-					newGrammar );
-				addAllProductionCombos( newGrammar, dup, oldGrammar, oldProduction, tokenIndex+1, ir, abstractSymbol, diagnostics, recursionDepth+1, false );
-				}
-			}
-#endif
 
 		aug_end( aug );
+
+		TRACE( diagnostics, "      %*s%d:%d use %s\n", recursionDepth, "", pn_index( newProduction, newGrammar ), tokenIndex, sy_name( curToken, st ) );
+		pn_appendWithName( newProduction,
+			pn_name( oldProduction, tokenIndex, oldGrammar ),
+			curToken,
+			newGrammar );
+		addAllProductionCombos( newGrammar, newProduction, oldGrammar, oldProduction, tokenIndex+1, ir, abstractSymbol, diagnostics, recursionDepth+1, unchangedSoFar );
 		}
 	}
 
@@ -1681,7 +1666,7 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Sy
 		{
 		Grammar outer = gr_outer( original );
 		if( recursive )
-			outer = gr_augmentedRecursive( outer, ir, abstractSymbol, ml, diagnostics, true );
+			outer = gr_augmentedRecursive( outer, ir, abstractSymbol, ml, diagnostics, recursive );
 		result = gr_nested( outer, gr_numProductions( original ) - gr_numOuterProductions( original ), ml );
 		}
 	else
@@ -1719,11 +1704,11 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Sy
 		while( sk_depth( tags ) )
 			{
 			Object tagNode = sk_pop( tags );
-			Symbol tag = ob_getTokenField( tagNode, symSymbol, ir_nodeHeap(ir) );
-			if( tag != pn_lhs( pn, original ) )
+			Symbol subLhs = ob_getTokenField( tagNode, symSymbol, ir_nodeHeap(ir) );
+			if( subLhs != pn_lhs( pn, original ) )
 				{
-				TRACE( diagnostics, "    Now with lhs=%s\n", sy_name( tag, st ) );
-				newProduction = pn_copy( original, pn, result, tag, 0 );
+				TRACE( diagnostics, "    Now with lhs=%s\n", sy_name( subLhs, st ) );
+				newProduction = pn_copy( original, pn, result, subLhs, 0 );
 				addAllProductionCombos( result, newProduction, original, pn, 0, ir, abstractSymbol, diagnostics, 0, false );
 				}
 			}

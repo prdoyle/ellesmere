@@ -1,5 +1,6 @@
 
 #include "file.h"
+#include "options.h"
 #include <stdlib.h>
 
 FUNC int fl_write( File fl, const char *format, ... )
@@ -38,17 +39,21 @@ FUNC int optional(char *format, ...)
 		if( optLimitStr )
 			optLimit = atoi( optLimitStr );
 		}
-	if( !optLimitStr )
-		return true;
-	if( optCount >= optLimit ) // haven't incremented it yet, so this is actually checking the previous opt's number
+	if( optLimitStr && optCount >= optLimit ) // haven't incremented it yet, so this is actually checking the previous opt's number
 		return false;
+
 	optCount++;
-	va_list args;
-	va_start( args, format );
-	fl_write( stderr, "OPT %d: ", optCount );
-	fl_vwrite( stderr, format, args );
-	fl_write( stderr, "\n" );
-	va_end( args );
+
+	File logFile = os_logFile( os_global(), on_OPTIMIZATIONS );
+	if( logFile )
+		{
+		va_list args;
+		va_start( args, format );
+		fl_write  ( logFile, "OPT %d: ", optCount );
+		fl_vwrite ( logFile, format, args );
+		fl_write  ( logFile, "\n" );
+		va_end( args );
+		}
 	return true;
 	}
 
