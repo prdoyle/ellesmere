@@ -1,11 +1,7 @@
 #! /bin/bash
 
-#./ellesmere < fib.el 2>stderr.out 3>program.out 4>interpreter.out 5>&4 6>parserGenTrace.out
+REPS=3
 
-WHICH=${1:-default}
-if [ -n "$1" ]; then
-	export EL_optLimit="$WHICH"
-fi
-shift
-
-./ellesmere < fib.el 2>$WHICH.out 3>&2 4>&3 5>&3 6>&3
+for (( I=0; I<REPS; I++ )); do
+	echo `./fib.el $*` | awk '{ print $1, $2, 100*log(1.0 * $1 / $2) }'
+done

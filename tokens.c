@@ -288,7 +288,7 @@ FUNC TokenBlock ts_beginBlock( TokenStream ts )
 	if( os_enabled( os_global(), on_TOKEN_BLOCK_RECYCLING ) )
 		{
 		result->subBlocks = tba_new( 1, ml );
-		if( di )
+		if( di && optional( "Store new TOKEN_BLOCK_%p of length %d for later reuse", result, tb_length( result ) ) )
 			tba_append( di->tb->subBlocks, result ); // FIXME: Could make a cached block visible before it's complete
 		}
 	return result;

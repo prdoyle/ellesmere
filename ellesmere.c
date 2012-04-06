@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <dlfcn.h>
+#include <sys/time.h>
 
 typedef struct cf_struct *CallFrame;
 struct cf_struct
@@ -53,6 +54,7 @@ struct th_struct
 
 	FILE                *parserGenDiagnostics;
 	FILE                *conflictLog;
+	long                 timeBasis;
 	} theThread = {0};
 
 static void addProductionsToMap( Grammar gr, int startIndex, Thread th )
@@ -514,6 +516,22 @@ NATIVE_ACTION void optimizeAction( Production handle, GrammarLine gl, Thread th 
 	nopAction( handle, gl, th );
 	}
 
+static int64_t currentTimeMillis()
+	{
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	int64_t sec  = tv.tv_sec;
+	int64_t usec = tv.tv_usec;
+	return ( sec*1000 ) + ( usec/1000 );
+	}
+
+NATIVE_ACTION void timeAction( Production handle, GrammarLine gl, Thread th )
+	{
+	popToken( th );
+	int delta = (int)( currentTimeMillis() - th->timeBasis );
+	push( ob_fromInt( delta, th->heap ), th );
+	}
+
 NATIVE_ACTION void createAction( Production handle, GrammarLine gl, Thread th )
 	{
 	popToken( th );
@@ -572,6 +590,7 @@ static struct gl_struct grammar1[] =
 	{ { "VOID",            "def", "PRODUCTION", "as", "TOKEN_BLOCK"                 }, { defAction } },
 
 	{ { "VOID",     "optimize!"                                                     }, { optimizeAction, 1 } },
+	{ { "INT",      "time!"                                                         }, { timeAction } },
 
 	{ { "CREATABLE", "TOKEN@tag", "create!"                                         }, { createAction } },
 	{ { "OBJECT",    "WITH_FIELDS@receiver", "TOKEN@field", "getfield!"             }, { getFieldAction } },
@@ -1076,6 +1095,7 @@ int main( int argc, char **argv )
 	Automaton au = au_new( initialGrammar, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, os_traceFile( th->os, on_PARSER_GEN ) );
 	th->ps = ps_new( au, ml_indefinite(), os_logFile( th->os, on_INTERPRETER ) );
 	th->tokenStream = theLexTokenStream( th->heap, th->st );
+	th->timeBasis = currentTimeMillis();
 
 	mainParsingLoop( NULL, th->executionBindings, th );
 
