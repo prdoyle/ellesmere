@@ -1,3 +1,5 @@
+#! ellesmere
+
 def INT
 	n:INT double!
 as

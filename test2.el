@@ -1,3 +1,5 @@
+# A really ancient dialect of Ellesmere here...
+
 def + 1 blockto
 	|
 	pop right
