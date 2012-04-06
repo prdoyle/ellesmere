@@ -148,7 +148,7 @@ FUNC Symbol pn_autoSymbol( Production pn, SymbolTable st, Grammar gr )
 		fl_write( stderr, "ERROR: Tried to autoSymbol production %s\n", sy_name( pn_symbol( pn, gr ), st ) );
 	assert( !pn_symbol( pn, gr ) );
 	char *buf = alloca( 40 );
-	sprintf(buf, "PN_%p_%d", gr, pn_index( pn, gr ) );
+	sprintf(buf, "PN_%d_%p", pn_index( pn, gr ), gr );
 	Symbol result = sy_byName( buf, st );
 	pn_setSymbol( pn, result, gr );
 	return result;

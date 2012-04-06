@@ -1596,7 +1596,6 @@ static void addAllProductionCombos(
 	if( tokenIndex >= pn_length( oldProduction, oldGrammar ) )
 		{
 		// We're done with this production
-		// TODO: Make this work.  Problem is that it aborts the production which will subsequently be duped.
 		if( unchangedSoFar && optional("Abort new production %d because it matches one already in the original grammar", pn_index( newProduction, newGrammar ) ) )
 			{
 			if( diagnostics )

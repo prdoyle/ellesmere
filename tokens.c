@@ -3,6 +3,7 @@
 #include "memory.h"
 #include "lex.h"
 #include "lex.l.h"
+#include "options.h"
 
 typedef enum
 	{
@@ -253,26 +254,26 @@ enum { DEFAULT_TOKEN_BLOCK_LENGTH=29 };
 
 FUNC TokenBlock ts_skipBlock( TokenStream ts )
 	{
-	return NULL;  // I think I need to treat this more formally, rather than as just a handy caching operation
-#if 0
 	TokenBlock result = NULL;
-	Digression di = ts_digression( ts );
-	if( di )
+	if( os_enabled( os_global(), on_TOKEN_BLOCK_RECYCLING ) )
 		{
-		int i;
-		for( i = 0; !result && i < tba_count( di->tb->subBlocks ); i++ )
+		Digression di = ts_digression( ts );
+		if( di )
 			{
-			TokenBlock candidate = tba_get( di->tb->subBlocks, i );
-			if( candidate->startIndex == di->index )
-				result = candidate;
+			int i;
+			for( i = 0; !result && i < tba_count( di->tb->subBlocks ); i++ )
+				{
+				TokenBlock candidate = tba_get( di->tb->subBlocks, i );
+				if( candidate->startIndex == di->index )
+					result = candidate;
+				}
+			if( result && optional( "Use existing TOKEN_BLOCK_%p of length %d", result, tb_length( result ) ) )
+				di->index += tb_length( result ) + 1; // +1 for the end-curly-brace
+			else
+				result = NULL;
 			}
-		if( result && optional( "Use existing TOKEN_BLOCK_%p of length %d", result, tb_length( result ) ) )
-			di->index += tb_length( result ) - 1; // why -1?  Not sure.  Seems gross but it works out better
-		else
-			result = NULL;
 		}
 	return result;
-#endif
 	}
 
 FUNC TokenBlock ts_beginBlock( TokenStream ts )
@@ -284,11 +285,12 @@ FUNC TokenBlock ts_beginBlock( TokenStream ts )
 	result->tag = SYM_TOKEN_BLOCK;
 	result->tokens  = oba_new( DEFAULT_TOKEN_BLOCK_LENGTH, ml );
 	result->startIndex = di? di->index : 0;
-#if 0
-	result->subBlocks = tba_new( 1, ml );
-	if( di )
-		tba_append( di->tb->subBlocks, result ); // FIXME: Could make a cached block visible before it's complete
-#endif
+	if( os_enabled( os_global(), on_TOKEN_BLOCK_RECYCLING ) )
+		{
+		result->subBlocks = tba_new( 1, ml );
+		if( di )
+			tba_append( di->tb->subBlocks, result ); // FIXME: Could make a cached block visible before it's complete
+		}
 	return result;
 	}
 
@@ -309,7 +311,7 @@ FUNC void tb_stopAppending( TokenBlock tb )
 
 FUNC int ts_sendTo( TokenStream ts, File fl )
 	{
-	int charsSent = fl_write( fl, "TokenStream_%p: ", ts );
+	int charsSent = fl_write( fl, "TOKEN_STREAM_%p: ", ts );
 	int i;
 	int lengthLimit = 8;
 	for( i = dis_count( ts->digressions )-1; i >= 0; i--, lengthLimit >>= 1 )
@@ -343,7 +345,7 @@ FUNC int tb_sendNTo( TokenBlock tb, int tokenLimit, File fl, ObjectHeap heap )
 
 FUNC int tb_sendTo( TokenBlock tb, File fl, ObjectHeap heap )
 	{
-	int charsSent = fl_write( fl, "TokenBlock_%p length %d:", tb, oba_count( tb->tokens ) );
+	int charsSent = fl_write( fl, "TOKEN_BLOCK_%p length %d:", tb, oba_count( tb->tokens ) );
 	charsSent += tb_sendNTo( tb, oba_count( tb->tokens ), fl, heap );
 	return charsSent;
 	}

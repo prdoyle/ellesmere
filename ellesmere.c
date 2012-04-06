@@ -360,12 +360,12 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 		}
 	pn_stopAppending( pn, gr );
 	gr_stopAdding( gr );
-	if ( os_enabled( th->os, on_AUGMENTING_GRAMMAR ) )
-		gr = gr_augmentedShallow( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), os_logFile( th->os, on_AUGMENTING_GRAMMAR ) );
+	if ( os_enabled( th->os, on_GRAMMAR_AUGMENTATION ) )
+		gr = gr_augmentedShallow( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), os_logFile( th->os, on_GRAMMAR_AUGMENTATION ) );
 	addNewestProductionsToMap( gr, th );
 	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, os_traceFile( th->os, on_PARSER_GEN ) );
 	Parser oldParser = th->ps;
-	th->ps = ps_new( au, ml_indefinite(), os_traceFile( th->os, on_INTERPRETER ) );
+	th->ps = ps_new( au, ml_indefinite(), os_logFile( th->os, on_INTERPRETER ) );
 
 	if( os_log( th->os, on_INTERPRETER, "    NEW PARSER\n" ) )
 		{
@@ -660,8 +660,8 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 		}
 	gr_stopAdding( gr );
 	Symbol sym_abstract = sy_byName( "ABSTRACT_PRODUCTION", th->st );
-	if ( os_enabled( th->os, on_AUGMENTING_GRAMMAR ) )
-		gr = gr_augmented( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), os_logFile( th->os, on_AUGMENTING_GRAMMAR ) );
+	if ( os_enabled( th->os, on_GRAMMAR_AUGMENTATION ) )
+		gr = gr_augmented( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), os_logFile( th->os, on_GRAMMAR_AUGMENTATION ) );
 	addProductionsToMap( gr, 0, th );
 
 	for( i=0; initialConcretifications[i].abstract; i++)
@@ -762,7 +762,11 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 					assert( functionToCall->body.gl->response.action == stopRecordingTokenBlockAction );
 					if( depthWithoutHandle < startingDepth )
 						{
-						os_trace( th->os, on_INTERPRETER, "   Done recording\n" );
+						if( os_trace( th->os, on_INTERPRETER, "   Done recording " ) )
+							{
+							tb_sendTo( recording, os_traceFile( th->os, on_INTERPRETER ), th->heap );
+							os_trace( th->os, on_INTERPRETER, "\n" );
+							}
 						goto done;
 						}
 					else
@@ -1070,7 +1074,7 @@ int main( int argc, char **argv )
 	th->productionMap     = ob_create( sy_byName( "PRODUCTION_MAP", th->st ), th->heap );
 	Grammar initialGrammar = populateGrammar( th->st, th );
 	Automaton au = au_new( initialGrammar, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, os_traceFile( th->os, on_PARSER_GEN ) );
-	th->ps = ps_new( au, ml_indefinite(), os_traceFile( th->os, on_INTERPRETER ) );
+	th->ps = ps_new( au, ml_indefinite(), os_logFile( th->os, on_INTERPRETER ) );
 	th->tokenStream = theLexTokenStream( th->heap, th->st );
 
 	mainParsingLoop( NULL, th->executionBindings, th );

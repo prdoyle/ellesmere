@@ -39,14 +39,15 @@ static const struct noun_struct
 	char      *name;
 	char      *description;
 	} nouns[] = {
-	{ on_AUGMENTING_GRAMMAR,  "augr", "augmentGrammar",  "adding productions to grammars to handle inheritance"                         },
-	{ on_EXECUTION,           "exec", "execution",       "operations performed by the user program"                                     },
-	{ on_INHERITANCE,         "inh",  "inheritance",     "substitution of one symbol for another"                                       },
-	{ on_INTERPRETER,         "int",  "interpreter",     "reading tokens, walking automata, and computing which operations to perform"  },
-	{ on_OPTIMIZATIONS,       "opts", "optimizations",   "optional performance enhancements"                                            },
-	{ on_OPTIONS,             "ops",  "options",         "option parsing and processing"                                                },
-	{ on_PARSER_CONFLICT,     "pc",   "parserConflict",  "situations where the automaton to generate is ambiguous"                      },
-	{ on_PARSER_GEN,          "pgen", "parsergen",       "construction of an automaton from a grammar"                                  },
+	{ on_EXECUTION,             "exec",  "execution",            "operations performed by the user program"                                     },
+	{ on_GRAMMAR_AUGMENTATION,  "grau",  "grammarAugmentation",  "adding productions to grammars to handle inheritance"                         },
+	{ on_INHERITANCE,           "inh",   "inheritance",          "substitution of one symbol for another"                                       },
+	{ on_INTERPRETER,           "int",   "interpreter",          "reading tokens, walking automata, and computing which operations to perform"  },
+	{ on_OPTIMIZATIONS,         "opts",  "optimizations",        "optional performance enhancements"                                            },
+	{ on_OPTIONS,               "ops",   "options",              "option parsing and processing"                                                },
+	{ on_PARSER_CONFLICT,       "pc",    "parserConflict",       "situations where the automaton to generate is ambiguous"                      },
+	{ on_PARSER_GEN,            "pgen",  "parserGen",            "construction of an automaton from a grammar"                                  },
+	{ on_TOKEN_BLOCK_RECYCLING, "tbr",   "TBRecycling",          "reuse of existing equivalent token blocks"                                    },
 	{ 0 }
 	};
 
@@ -171,6 +172,7 @@ FUNC void od_applyTo( OptionDelta od, OptionSet os, MemoryLifetime ml )
 
 static OptionClause defaultSettings[] =
 	{
+	//{ oq_DISABLED, 1, on_TOKEN_BLOCK_RECYCLING },
 	{ 0 }
 	};
 
@@ -190,7 +192,7 @@ FUNC OptionSet os_new( MemoryLifetime ml )
 	return result;
 	}
 
-FUNC OptionSet os_global( MemoryLifetime ml )
+FUNC OptionSet os_global()
 	{
 	static OptionSet result = NULL;
 	if( !result )
