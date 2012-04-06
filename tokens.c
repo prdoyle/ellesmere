@@ -257,6 +257,21 @@ FUNC TokenBlock ts_skipBlock( TokenStream ts )
 	TokenBlock result = NULL;
 	if( os_enabled( os_global(), on_TOKEN_BLOCK_RECYCLING ) )
 		{
+		// Note that token block recycling is generally not valid at the moment,
+		// since parsing (with the current parser) is used to locate token block
+		// boundaries, and therefore the length of token block starting at a
+		// particular token depends on the parser's automaton and state.
+		//
+		// I have yet to decide whether this is a useful degree of flexibility I
+		// want to support, or whether the token-block-boundary rules should be
+		// independent of the parser.  In either case, the current caching is
+		// invalid: either the cache must consider the parser and make no
+		// assumptions about brace delimiters; or else the cache can go away
+		// because I'll replace it with a well-defined token block storage that
+		// is part of the language semantics.
+		//
+		// In the mean time, caching gives a whopper of a speed boost.
+
 		Digression di = ts_digression( ts );
 		if( di )
 			{
