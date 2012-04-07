@@ -41,4 +41,10 @@ typedef struct sk_struct *Stack;
 typedef struct tb_struct *TokenBlock;
 typedef struct ts_struct *TokenStream;
 
+static inline int min(int a, int b)
+	{ return a<b? a : b; }
+
+static inline int max(int a, int b)
+	{ return a>b? a : b; }
+
 #endif

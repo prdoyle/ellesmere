@@ -39,15 +39,16 @@ static const struct noun_struct
 	char      *name;
 	char      *description;
 	} nouns[] = {
-	{ on_EXECUTION,             "exec",  "execution",            "operations performed by the user program"                                     },
-	{ on_GRAMMAR_AUGMENTATION,  "grau",  "grammarAugmentation",  "adding productions to grammars to handle inheritance"                         },
-	{ on_INHERITANCE,           "inh",   "inheritance",          "substitution of one symbol for another"                                       },
-	{ on_INTERPRETER,           "int",   "interpreter",          "reading tokens, walking automata, and computing which operations to perform"  },
-	{ on_OPTIMIZATIONS,         "opts",  "optimizations",        "optional performance enhancements"                                            },
-	{ on_OPTIONS,               "ops",   "options",              "option parsing and processing"                                                },
-	{ on_PARSER_CONFLICT,       "pc",    "parserConflict",       "situations where the automaton to generate is ambiguous"                      },
-	{ on_PARSER_GEN,            "pgen",  "parserGen",            "construction of an automaton from a grammar"                                  },
-	{ on_TOKEN_BLOCK_RECYCLING, "tbr",   "TBRecycling",          "reuse of existing equivalent token blocks"                                    },
+	{ on_CONCRETIFICATION,      "ccfn",  "concretification",     "substituting arbitrary subtags to make parsing succeed for token block recording"     },
+	{ on_EXECUTION,             "exec",  "execution",            "operations performed by the user program"                                             },
+	{ on_GRAMMAR_AUGMENTATION,  "grau",  "grammarAugmentation",  "adding productions to grammars to handle inheritance"                                 },
+	{ on_INHERITANCE,           "inh",   "inheritance",          "substitution of one symbol for another"                                               },
+	{ on_INTERPRETER,           "int",   "interpreter",          "reading tokens, walking automata, and computing which operations to perform"          },
+	{ on_OPTIMIZATIONS,         "opts",  "optimizations",        "optional performance enhancements"                                                    },
+	{ on_OPTIONS,               "ops",   "options",              "option parsing and processing"                                                        },
+	{ on_PARSER_CONFLICT,       "pc",    "parserConflict",       "situations where the automaton to generate is ambiguous"                              },
+	{ on_PARSER_GEN,            "pgen",  "parserGen",            "construction of an automaton from a grammar"                                          },
+	{ on_TOKEN_BLOCK_RECYCLING, "tbr",   "TBRecycling",          "reuse of existing equivalent token blocks"                                            },
 	{ 0 }
 	};
 
@@ -241,7 +242,7 @@ static void dumpHelpAndTerminate()
 	for( noun = nouns; noun->abbreviation; noun++)
 		fprintf( stderr, "  %5s: %s ('%s')\n", noun->abbreviation, noun->description, noun->name );
 	const struct verb_struct *exampleVerb = verbs;
-	const struct noun_struct *exampleNoun = nouns;
+	const struct noun_struct *exampleNoun = nouns-1 + on_EXECUTION;
 	fprintf( stderr, "\nFor example, '%s%s' means '%s %s'", exampleVerb->abbreviation, exampleNoun->abbreviation, exampleVerb->name, exampleNoun->name );
 	fprintf( stderr, ", which would %s\n%s %s", exampleVerb->description1, exampleNoun->description, exampleVerb->description2 );
 	fprintf( stderr, "\n" );

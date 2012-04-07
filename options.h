@@ -25,6 +25,7 @@ typedef enum
 	{
 	on_NULL,
 
+	on_CONCRETIFICATION,
 	on_EXECUTION,
 	on_GRAMMAR_AUGMENTATION,
 	on_INHERITANCE,

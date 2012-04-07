@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <dlfcn.h>
 #include <sys/time.h>
+#include <limits.h>
 
 typedef struct cf_struct *CallFrame;
 struct cf_struct
@@ -679,15 +680,18 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 		}
 	gr_stopAdding( gr );
 	Symbol sym_abstract = sy_byName( "ABSTRACT_PRODUCTION", th->st );
-	if ( os_enabled( th->os, on_GRAMMAR_AUGMENTATION ) )
+	if( os_enabled( th->os, on_GRAMMAR_AUGMENTATION ) )
 		gr = gr_augmented( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), os_logFile( th->os, on_GRAMMAR_AUGMENTATION ) );
 	addProductionsToMap( gr, 0, th );
 
-	for( i=0; initialConcretifications[i].abstract; i++)
+	if( os_enabled( th->os, on_CONCRETIFICATION ) )
 		{
-		Symbol abstract = sy_byName( initialConcretifications[i].abstract, th->st );
-		Symbol concrete = sy_byName( initialConcretifications[i].concrete, th->st );
-		ob_setTokenField( th->concretifications, abstract, concrete, th->heap );
+		for( i=0; initialConcretifications[i].abstract; i++)
+			{
+			Symbol abstract = sy_byName( initialConcretifications[i].abstract, th->st );
+			Symbol concrete = sy_byName( initialConcretifications[i].concrete, th->st );
+			ob_setTokenField( th->concretifications, abstract, concrete, th->heap );
+			}
 		}
 
 	return gr;
@@ -762,17 +766,20 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 				{
 				popN( pn_length( handleProduction, gr ), th );
 				Object lhs = oh_symbolToken( th->heap, pn_lhs( handleProduction, gr ) );
-				if( interpreterTrace )
+				if( os_enabled( th->os, on_CONCRETIFICATION ) )
 					{
-					os_trace( th->os, on_INTERPRETER, "Checking %s for concretification in: ", sy_name( ob_toSymbol( lhs, th->heap ), th->st ) );
-					ob_sendDeepTo( th->concretifications, interpreterTrace, th->heap );
-					os_trace( th->os, on_INTERPRETER, "\n" );
-					}
-				Object concretified = ob_getFieldIfPresent( th->concretifications, ob_toSymbol( lhs, th->heap ), lhs, th->heap );
-				if( concretified != lhs )
-					{
-					os_trace( th->os, on_INTERPRETER, "  %s concretified into %s\n", sy_name( ob_toSymbol( lhs, th->heap ), th->st ), sy_name( ob_toSymbol( concretified, th->heap ), th->st ) );
-					lhs = concretified;
+					if( interpreterTrace )
+						{
+						os_trace( th->os, on_INTERPRETER, "Checking %s for concretification in: ", sy_name( ob_toSymbol( lhs, th->heap ), th->st ) );
+						ob_sendDeepTo( th->concretifications, interpreterTrace, th->heap );
+						os_trace( th->os, on_INTERPRETER, "\n" );
+						}
+					Object concretified = ob_getFieldIfPresent( th->concretifications, ob_toSymbol( lhs, th->heap ), lhs, th->heap );
+					if( concretified != lhs )
+						{
+						os_trace( th->os, on_INTERPRETER, "  %s concretified into %s\n", sy_name( ob_toSymbol( lhs, th->heap ), th->st ), sy_name( ob_toSymbol( concretified, th->heap ), th->st ) );
+						lhs = concretified;
+						}
 					}
 				push( lhs, th );
 				Object ob = ob_getField( bindings, handleSymbol, th->heap );
@@ -811,10 +818,8 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 					int firstNewValueIndex     = newValues - 1;
 					int handleValues           = pn_length( handleProduction, gr );
 					int firstHandleValueIndex  = handleValues - 1;
-					int interestingValues      = ( newValues > handleValues )? newValues : handleValues;
-					int totalValues            = interestingValues + 2;
-					if( totalValues < 10 )
-						totalValues = 10;
+					int interestingValues      = max( newValues, handleValues );
+					int totalValues            = max( interestingValues + 2, 10 );
 
 					int prefixSpaces = 0;
 					if( totalValues >= stackDepth )
@@ -835,8 +840,8 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 						os_log( th->os, on_EXECUTION, "\n#  Stack:" );
 						}
 
-					int newValuesColumn = 1;
-					int handleColumn    = 1;
+					int newValuesColumn = INT_MAX;
+					int handleColumn    = INT_MAX;
 					int currentColumn   = 1; // The %*s thing won't work with zeros
 					for( i = totalValues-1; i >= 0; i-- )
 						{
@@ -847,6 +852,8 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 							newValuesColumn = currentColumn;
 						currentColumn += ob_sendTo( sk_item( ps_operandStack( th->ps ), i ), logFile, th->heap );
 						}
+					newValuesColumn = min( newValuesColumn, currentColumn );
+					handleColumn    = min( handleColumn,    currentColumn );
 					os_log( th->os, on_EXECUTION, "\n" );
 					if( handleColumn < newValuesColumn )
 						os_log( th->os, on_EXECUTION, "#%*s        %*s%*s\n", prefixSpaces, "", handleColumn    , "H", newValuesColumn-handleColumn, "^" );

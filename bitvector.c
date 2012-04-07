@@ -15,9 +15,6 @@ struct bv_struct
 	MemoryLifetime ml;
 	};
 
-static int min(int a, int b)
-	{ return a<b? a : b; }
-
 static int bit2word( int bitNum )
 	{
 	return bitNum / BITS_PER_WORD;
