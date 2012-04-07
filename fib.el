@@ -82,6 +82,6 @@ optimize!
 #fibs( 2 )
 #fibs( 12 )
 #fibs( 24 )
-#fib( 12 ) print!
+#fib( 0 ) print! # To measure parser-gen performance
 fib( 26 ) print!
 time! print!
