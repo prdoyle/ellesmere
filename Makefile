@@ -22,7 +22,7 @@ fast:  CFLAGS    += -O3 -DNDEBUG -Winline
 fast:  LEXFLAGS  += --Fast
 
 prof:  CFLAGS    += -pg -fprofile-arcs
-#prof:  CFLAGS    += -DNDEBUG
+prof:  CFLAGS    += -DNDEBUG
 #prof:  CFLAGS    += -O3
 prof:  LDFLAGS   += -pg -fprofile-arcs
 prof:  LEXFLAGS  += --Fast
@@ -90,6 +90,7 @@ tokens.o: lex.l.h
 # flex and bison commands should be run on the .c files, not the .h files
 $(GEN_H_FILES): %.h: %.c
 
+lex.l.c: CFLAGS += -Wno-conversion
 lex.l.c: lex.l
 	flex -o $@ --header-file=lex.l.h $<
 

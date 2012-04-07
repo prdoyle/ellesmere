@@ -160,10 +160,9 @@ static FieldList fdl_new( SymbolIndex si, Object value, FieldList tail, ObjectHe
 
 static FieldList fdl_bySymbol( SymbolIndex si, FieldList fdl )
 	{
-	if( fdl && fdl->si != si )
-		return fdl_bySymbol( si, fdl->tail );
-	else
-		return fdl;
+	FieldList i;
+	for( i = fdl; i && i->si != si; i = i->tail );
+	return i;
 	}
 
 #undef WRAP_TOKEN_BLOCKS

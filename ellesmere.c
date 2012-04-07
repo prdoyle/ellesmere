@@ -761,7 +761,6 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 			else // abstract!
 				check( recording );
 
-			int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
 			if( recording )
 				{
 				popN( pn_length( handleProduction, gr ), th );
@@ -786,6 +785,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 				if( ob )
 					{
 					assert( functionToCall->body.gl->response.action == stopRecordingTokenBlockAction );
+					int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
 					if( depthWithoutHandle < startingDepth )
 						{
 						if( os_trace( th->os, on_INTERPRETER, "   Done recording " ) )
@@ -811,61 +811,65 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 						if( action == silentActions[i] )
 							logFile = NULL;
 					}
-				if( logFile && os_log( th->os, on_EXECUTION, "#  Stack:" ) )
+				if( os_log( th->os, on_EXECUTION, "#  Stack:" ) )
 					{
-					int stackDepth             = sk_depth( ps_operandStack( th->ps ) );
-					int newValues              = stackDepth - itemsFromPrevHandle;
-					int firstNewValueIndex     = newValues - 1;
-					int handleValues           = pn_length( handleProduction, gr );
-					int firstHandleValueIndex  = handleValues - 1;
-					int interestingValues      = max( newValues, handleValues );
-					int totalValues            = max( interestingValues + 2, 10 );
-
-					int prefixSpaces = 0;
-					if( totalValues >= stackDepth )
-						totalValues = stackDepth;
-					else
-						prefixSpaces += os_log( th->os, on_EXECUTION, "..." );
-
-					if( 0 && os_log( th->os, on_EXECUTION, "\n# Stack parms:" ) )
+					int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
+					if( logFile )
 						{
-						os_log( th->os, on_EXECUTION, " stackDepth=%d", stackDepth );
-						os_log( th->os, on_EXECUTION, " depthWithoutHandle=%d", depthWithoutHandle );
-						os_log( th->os, on_EXECUTION, " newValues=%d", newValues );
-						os_log( th->os, on_EXECUTION, " firstNewValueIndex=%d", firstNewValueIndex );
-						os_log( th->os, on_EXECUTION, " handleValues=%d", handleValues );
-						os_log( th->os, on_EXECUTION, " firstHandleValueIndex=%d", firstHandleValueIndex );
-						os_log( th->os, on_EXECUTION, " interestingValues=%d", interestingValues );
-						os_log( th->os, on_EXECUTION, " totalValues=%d", totalValues );
-						os_log( th->os, on_EXECUTION, "\n#  Stack:" );
-						}
+						int stackDepth             = sk_depth( ps_operandStack( th->ps ) );
+						int newValues              = stackDepth - itemsFromPrevHandle;
+						int firstNewValueIndex     = newValues - 1;
+						int handleValues           = pn_length( handleProduction, gr );
+						int firstHandleValueIndex  = handleValues - 1;
+						int interestingValues      = max( newValues, handleValues );
+						int totalValues            = max( interestingValues + 2, 10 );
 
-					int newValuesColumn = INT_MAX;
-					int handleColumn    = INT_MAX;
-					int currentColumn   = 1; // The %*s thing won't work with zeros
-					for( i = totalValues-1; i >= 0; i-- )
-						{
-						currentColumn += os_log( th->os, on_EXECUTION, " " );
-						if( i == firstHandleValueIndex )
-							handleColumn = currentColumn;
-						if( i == firstNewValueIndex )
-							newValuesColumn = currentColumn;
-						currentColumn += ob_sendTo( sk_item( ps_operandStack( th->ps ), i ), logFile, th->heap );
-						}
-					newValuesColumn = min( newValuesColumn, currentColumn );
-					handleColumn    = min( handleColumn,    currentColumn );
-					os_log( th->os, on_EXECUTION, "\n" );
-					if( handleColumn < newValuesColumn )
-						os_log( th->os, on_EXECUTION, "#%*s        %*s%*s\n", prefixSpaces, "", handleColumn    , "H", newValuesColumn-handleColumn, "^" );
-					else
-						os_log( th->os, on_EXECUTION, "#%*s        %*s%*s\n", prefixSpaces, "", newValuesColumn , "^", handleColumn-newValuesColumn, "H" );
-					itemsFromPrevHandle = depthWithoutHandle;
-					}
-				else
-					{
-					// Every item should appear newly printed at least once
-					if( itemsFromPrevHandle > depthWithoutHandle )
+						int prefixSpaces = 0;
+						if( totalValues >= stackDepth )
+							totalValues = stackDepth;
+						else
+							prefixSpaces += os_log( th->os, on_EXECUTION, "..." );
+
+						if( 0 && os_log( th->os, on_EXECUTION, "\n# Stack parms:" ) )
+							{
+							os_log( th->os, on_EXECUTION, " stackDepth=%d", stackDepth );
+							os_log( th->os, on_EXECUTION, " depthWithoutHandle=%d", depthWithoutHandle );
+							os_log( th->os, on_EXECUTION, " newValues=%d", newValues );
+							os_log( th->os, on_EXECUTION, " firstNewValueIndex=%d", firstNewValueIndex );
+							os_log( th->os, on_EXECUTION, " handleValues=%d", handleValues );
+							os_log( th->os, on_EXECUTION, " firstHandleValueIndex=%d", firstHandleValueIndex );
+							os_log( th->os, on_EXECUTION, " interestingValues=%d", interestingValues );
+							os_log( th->os, on_EXECUTION, " totalValues=%d", totalValues );
+							os_log( th->os, on_EXECUTION, "\n#  Stack:" );
+							}
+
+						int newValuesColumn = INT_MAX;
+						int handleColumn    = INT_MAX;
+						int currentColumn   = 1; // The %*s thing won't work with zeros
+						for( i = totalValues-1; i >= 0; i-- )
+							{
+							currentColumn += os_log( th->os, on_EXECUTION, " " );
+							if( i == firstHandleValueIndex )
+								handleColumn = currentColumn;
+							if( i == firstNewValueIndex )
+								newValuesColumn = currentColumn;
+							currentColumn += ob_sendTo( sk_item( ps_operandStack( th->ps ), i ), logFile, th->heap );
+							}
+						newValuesColumn = min( newValuesColumn, currentColumn );
+						handleColumn    = min( handleColumn,    currentColumn );
+						os_log( th->os, on_EXECUTION, "\n" );
+						if( handleColumn < newValuesColumn )
+							os_log( th->os, on_EXECUTION, "#%*s        %*s%*s\n", prefixSpaces, "", handleColumn    , "H", newValuesColumn-handleColumn, "^" );
+						else
+							os_log( th->os, on_EXECUTION, "#%*s        %*s%*s\n", prefixSpaces, "", newValuesColumn , "^", handleColumn-newValuesColumn, "H" );
 						itemsFromPrevHandle = depthWithoutHandle;
+						}
+					else
+						{
+						// Every item should appear newly printed at least once
+						if( itemsFromPrevHandle > depthWithoutHandle )
+							itemsFromPrevHandle = depthWithoutHandle;
+						}
 					}
 				static const char depthStr[] = ""; //"----+----+----+----+----+----+----+----+----+----+----?";
 				if( logFile && os_log( th->os, on_EXECUTION, "%-17s: %.*s %s <-", sy_name( handleSymbol, th->st ), ts_depth( th->tokenStream ), depthStr, sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
