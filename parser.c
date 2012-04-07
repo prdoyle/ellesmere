@@ -398,15 +398,19 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 		ItemVector itemsLeft = bv_new( itemCount, ml );
 
 		bv_copy( itemsLeft, curItemSet->items );
-		TRACE( traceFile, "  Expanding " ITEM_STATE_PREFIX "%d\n    stateNode: %s_%p\n         items left: ",
-			its_index( curItemSet, pg ), sy_name( ob_tag( curItemSet->stateNode, pg->heap ), st ), curItemSet->stateNode );
-		traceBVX( itemsLeft, traceFile, sendBitNumber, "i%d" );
-		TRACE( traceFile, "\n" );
+		if( TRACE( traceFile, "  Expanding " ITEM_STATE_PREFIX "%d\n    stateNode: %s_%p\n         items left: ",
+			its_index( curItemSet, pg ), sy_name( ob_tag( curItemSet->stateNode, pg->heap ), st ), curItemSet->stateNode ) )
+			{
+			traceBVX( itemsLeft, traceFile, sendBitNumber, "i%d" );
+			TRACE( traceFile, "\n" );
+			}
 
 		bv_minus( itemsLeft, pg->rightmostItems );
-		TRACE( traceFile, "    minus rightmost: " );
-		traceBVX( itemsLeft, traceFile, sendBitNumber, "i%d" );
-		TRACE( traceFile, "\n" );
+		if( TRACE( traceFile, "    minus rightmost: " ) )
+			{
+			traceBVX( itemsLeft, traceFile, sendBitNumber, "i%d" );
+			TRACE( traceFile, "\n" );
+			}
 
 		assert( !its_isExpanded( curItemSet ) );
 		int size = sst_count(pg->sst) * sizeof(curItemSet->edgePriorities[0]);
@@ -416,14 +420,18 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 			{
 			Item it = ita_element( pg->items, i ); ItemSet nextItemSet;
 			Symbol expected = pn_token( it->pn, it->dot, pg->gr );
-			TRACE( traceFile, "    i%d is expecting '%s':  ", i, sy_name( expected, st ) );
-			pn_sendItemTo( it->pn, it->dot, traceFile, pg->gr, st );
-			TRACE( traceFile, "\n" );
+			if( TRACE( traceFile, "    i%d is expecting '%s':  ", i, sy_name( expected, st ) ) )
+				{
+				pn_sendItemTo( it->pn, it->dot, traceFile, pg->gr, st );
+				TRACE( traceFile, "\n" );
+				}
 
 			pg_computeItemsExpectingToken( pg, nextItems, itemsLeft, expected, traceFile );
-			TRACE( traceFile, "      similar items: " );
-			traceBVX( nextItems, traceFile, sendBitNumber, "i%d" );
-			TRACE( traceFile, "\n" );
+			if( TRACE( traceFile, "      similar items: " ) )
+				{
+				traceBVX( nextItems, traceFile, sendBitNumber, "i%d" );
+				TRACE( traceFile, "\n" );
+				}
 
 			Item shallowestItem = ita_element( pg->items, bv_lastBit( nextItems ) );
 			int highestPriority = 1 + pn_nestDepth( shallowestItem->pn, pg->gr );
@@ -432,26 +440,34 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 			TRACE( traceFile, "      edgePriorities['%s'] = %d\n", sy_name( expected, st ), highestPriority );
 
 			bv_minus( itemsLeft, nextItems );
-			TRACE( traceFile, "          itemsLeft: " );
-			traceBVX( itemsLeft, traceFile, sendBitNumber, "i%d" );
-			TRACE( traceFile, "\n" );
+			if( TRACE( traceFile, "          itemsLeft: " ) )
+				{
+				traceBVX( itemsLeft, traceFile, sendBitNumber, "i%d" );
+				TRACE( traceFile, "\n" );
+				}
 
 			bv_shift( nextItems );
-			TRACE( traceFile, "            shifted: " );
-			traceBVX( nextItems, traceFile, sendBitNumber, "i%d" );
-			TRACE( traceFile, "\n" );
+			if( TRACE( traceFile, "            shifted: " ) )
+				{
+				traceBVX( nextItems, traceFile, sendBitNumber, "i%d" );
+				TRACE( traceFile, "\n" );
+				}
 
 			pg_closeItemVector( pg, nextItems, traceFile );
-			TRACE( traceFile, "             closed: " );
-			traceBVX( nextItems, traceFile, sendBitNumber, "i%d" );
-			TRACE( traceFile, "\n" );
+			if( TRACE( traceFile, "             closed: " ) )
+				{
+				traceBVX( nextItems, traceFile, sendBitNumber, "i%d" );
+				TRACE( traceFile, "\n" );
+				}
 
 			nextItemSet = pg_findItemSet( pg, nextItems );
 			if( nextItemSet )
 				{
-				TRACE( traceFile, "      Found existing " ITEM_STATE_PREFIX "%d with items: ", its_index( nextItemSet, pg ) );
-				traceBVX( nextItems, traceFile, sendBitNumber, "i%d" );
-				TRACE( traceFile, "\n" );
+				if( TRACE( traceFile, "      Found existing " ITEM_STATE_PREFIX "%d with items: ", its_index( nextItemSet, pg ) ) )
+					{
+					traceBVX( nextItems, traceFile, sendBitNumber, "i%d" );
+					TRACE( traceFile, "\n" );
+					}
 				}
 			else
 				{
@@ -654,26 +670,32 @@ static void it_getFollow( Item it, SymbolVector result, ParserGenerator pg, File
 	{
 	// TODO: There's probably an efficient way to pre-compute these
 	int i;
-	TRACE( traceFile, "          Computing follow for: " );
-	pn_sendItemTo( it->pn, it->dot, traceFile, pg->gr, pg->st );
-	TRACE( traceFile, "\n" );
+	if( TRACE( traceFile, "          Computing follow for: " ) )
+		{
+		pn_sendItemTo( it->pn, it->dot, traceFile, pg->gr, pg->st );
+		TRACE( traceFile, "\n" );
+		}
 	for( i = it->dot; i < pn_length( it->pn, pg->gr ); i++ )
 		{
 		int curIndex = pg_symbolSideTableIndex( pg, pn_token( it->pn, i, pg->gr ) );
 		SymbolVector curFirst = sst_element( pg->sst, curIndex )->first;
 		bv_or( result, curFirst );
-		TRACE( traceFile, "            Symbol '%s' at %d adds ", sy_name( sst_element( pg->sst, curIndex )->sy, pg->st ), i );
-		bv_sendFormattedTo( curFirst, traceFile, sendSymBySSTIndex, pg );
-		TRACE( traceFile, "\n" );
+		if( TRACE( traceFile, "            Symbol '%s' at %d adds ", sy_name( sst_element( pg->sst, curIndex )->sy, pg->st ), i ) )
+			{
+			bv_sendFormattedTo( curFirst, traceFile, sendSymBySSTIndex, pg );
+			TRACE( traceFile, "\n" );
+			}
 		if( !bv_isSet( pg->nullableSymbols, curIndex ) )
 			break;
 		}
 	if( i == pn_length( it->pn, pg->gr ) )
 		{
 		bv_or( result, it->lookahead );
-		TRACE( traceFile, "            Adding lookahead " );
-		bv_sendFormattedTo( it->lookahead, traceFile, sendSymBySSTIndex, pg );
-		TRACE( traceFile, "\n" );
+		if( TRACE( traceFile, "            Adding lookahead " ) )
+			{
+			bv_sendFormattedTo( it->lookahead, traceFile, sendSymBySSTIndex, pg );
+			TRACE( traceFile, "\n" );
+			}
 		}
 	}
 
@@ -728,23 +750,31 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 		Object stateNode = its->stateNode;
 		bv_copy ( reduceItems, pg->rightmostItems );
 		bv_and  ( reduceItems, its->items );
-		TRACE( traceFile, "    Items: " );
-		bv_sendFormattedTo( its->items, traceFile, sendBitNumber, "i%d" );
-		TRACE( traceFile, "\n" );
-		TRACE( traceFile, "    ReduceItems: " );
-		bv_sendFormattedTo( reduceItems, traceFile, sendBitNumber, "i%d" );
-		TRACE( traceFile, "\n" );
+		if( TRACE( traceFile, "    Items: " ) )
+			{
+			bv_sendFormattedTo( its->items, traceFile, sendBitNumber, "i%d" );
+			TRACE( traceFile, "\n" );
+			}
+		if( TRACE( traceFile, "    ReduceItems: " ) )
+			{
+			bv_sendFormattedTo( reduceItems, traceFile, sendBitNumber, "i%d" );
+			TRACE( traceFile, "\n" );
+			}
 		for( j = bv_firstBit( reduceItems ); j != bv_END; j = bv_nextBit( reduceItems, j ) )
 			{
 			Item it = ita_element( pg->items, j );
 			Production pn = it->pn;
-			TRACE( traceFile, "    Item i%d: ", j );
-			pn_sendItemTo( pn, it->dot, traceFile, pg->gr, pg->st );
-			TRACE( traceFile, "\n" );
+			if( TRACE( traceFile, "    Item i%d: ", j ) )
+				{
+				pn_sendItemTo( pn, it->dot, traceFile, pg->gr, pg->st );
+				TRACE( traceFile, "\n" );
+				}
 			bv_copy( reduceSymbols, it->lookahead );
-			TRACE( traceFile, "      Original ReduceSymbols: " );
-			bv_sendFormattedTo( reduceSymbols, traceFile, sendSymBySSTIndex, pg );
-			TRACE( traceFile, "\n" );
+			if( TRACE( traceFile, "      Original ReduceSymbols: " ) )
+				{
+				bv_sendFormattedTo( reduceSymbols, traceFile, sendSymBySSTIndex, pg );
+				TRACE( traceFile, "\n" );
+				}
 
 			// Scan down for the last item of lower priority
 			//
@@ -769,22 +799,32 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 				bv_clear( competitorSymbols );
 				if( pg_itemIsRightmost( pg, k ) )
 					{
-					TRACE( traceFile, "      Checking reduce item i%d: ", k );
-					pn_sendItemTo( competitor->pn, competitor->dot, traceFile, pg->gr, pg->st );
-					TRACE( traceFile, "\n        follow: " );
+					if( TRACE( traceFile, "      Checking reduce item i%d: ", k ) )
+						{
+						pn_sendItemTo( competitor->pn, competitor->dot, traceFile, pg->gr, pg->st );
+						TRACE( traceFile, "\n" );
+						}
 					it_getFollow( competitor, competitorSymbols, pg, NULL );
-					bv_sendFormattedTo( competitorSymbols, traceFile, sendSymBySSTIndex, pg );
-					TRACE( traceFile, "\n" );
+					if( TRACE( traceFile, "        follow: " ) )
+						{
+						bv_sendFormattedTo( competitorSymbols, traceFile, sendSymBySSTIndex, pg );
+						TRACE( traceFile, "\n" );
+						}
 					}
 				else
 					{
-					TRACE( traceFile, "      Checking shift item i%d: ", k );
-					pn_sendItemTo( competitor->pn, competitor->dot, traceFile, pg->gr, pg->st );
-					TRACE( traceFile, "\n        first: " );
+					if( TRACE( traceFile, "      Checking shift item i%d: ", k ) )
+						{
+						pn_sendItemTo( competitor->pn, competitor->dot, traceFile, pg->gr, pg->st );
+						TRACE( traceFile, "\n" );
+						}
 					SymbolSideTableEntry expected = pg_sideTableEntry( pg, pn_token( competitor->pn, competitor->dot, pg->gr ), traceFile );
 					bv_or( competitorSymbols, expected->first );
-					bv_sendFormattedTo( competitorSymbols, traceFile, sendSymBySSTIndex, pg );
-					TRACE( traceFile, "\n" );
+					if( TRACE( traceFile, "        first: " ) )
+						{
+						bv_sendFormattedTo( competitorSymbols, traceFile, sendSymBySSTIndex, pg );
+						TRACE( traceFile, "\n" );
+						}
 					}
 				if( !bv_intersects( reduceSymbols, competitorSymbols ) )
 					{
@@ -850,13 +890,17 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 					}
 
 				bv_minus( reduceSymbols, competitorSymbols );
-				TRACE( traceFile, "        Removed lookaheads for i%d: ", j );
-				bv_sendFormattedTo( competitorSymbols, traceFile, sendSymBySSTIndex, pg );
+				if( TRACE( traceFile, "        Removed lookaheads for i%d: ", j ) )
+					{
+					bv_sendFormattedTo( competitorSymbols, traceFile, sendSymBySSTIndex, pg );
+					TRACE( traceFile, "\n" );
+					}
+				}
+			if( TRACE( traceFile, "      Filtered ReduceSymbols: " ) )
+				{
+				bv_sendFormattedTo( reduceSymbols, traceFile, sendSymBySSTIndex, pg );
 				TRACE( traceFile, "\n" );
 				}
-			TRACE( traceFile, "      Filtered ReduceSymbols: " );
-			bv_sendFormattedTo( reduceSymbols, traceFile, sendSymBySSTIndex, pg );
-			TRACE( traceFile, "\n" );
 
 			// Add reduce edges
 			//
