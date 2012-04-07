@@ -44,7 +44,7 @@ FUNC OptionSet os_global();
 FUNC OptionDelta od_parse   ( char *start, char *stop, MemoryLifetime ml );
 FUNC void        od_applyTo ( OptionDelta od, OptionSet os, MemoryLifetime ml );
 
-FUNC bool os_isSet( OptionSet, OptionQuery query, OptionNoun noun );
+FUNC bool os_isSet( OptionSet os, OptionQuery query, OptionNoun noun );
 
 // These take a series of query+noun pairs followed by a 0
 FUNC bool os_areAllSet ( OptionSet os, ... );

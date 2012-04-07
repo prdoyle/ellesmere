@@ -5,29 +5,29 @@
 
 #include "objects_walk_backdoor.h"
 
-static int recurseIntoField( Object head, Symbol edgeSymbol, Object tail, Stack workList, CheckList alreadyPushed, ObjectHeap heap, EdgePredicate ep, void *context )
+static int recurseIntoField( Object tail, Symbol edgeSymbol, Object head, Stack workList, CheckList alreadyPushed, ObjectHeap heap, EdgePredicate ep, void *context )
 	{
-	if( !tail )
+	if( !head )
 		return 0;
-	if( cl_isChecked( alreadyPushed, tail ) )
+	if( cl_isChecked( alreadyPushed, head ) )
 		return 0;
-	if( !ep( context, head, edgeSymbol, 0, tail ) )
+	if( !ep( context, tail, edgeSymbol, 0, head ) )
 		return 0;
-	cl_check( alreadyPushed, tail );
-	sk_push( workList, tail );
+	cl_check( alreadyPushed, head );
+	sk_push( workList, head );
 	return 1;
 	}
 
-static int recurseIntoArrayElement( Object head, int index, Object tail, Stack workList, CheckList alreadyPushed, ObjectHeap heap, EdgePredicate ep, void *context )
+static int recurseIntoArrayElement( Object tail, int index, Object head, Stack workList, CheckList alreadyPushed, ObjectHeap heap, EdgePredicate ep, void *context )
 	{
-	if( !tail )
+	if( !head )
 		return 0;
-	if( cl_isChecked( alreadyPushed, tail ) )
+	if( cl_isChecked( alreadyPushed, head ) )
 		return 0;
-	if( !ep( context, head, NULL, index, tail ) )
+	if( !ep( context, tail, NULL, index, head ) )
 		return 0;
-	cl_check( alreadyPushed, tail );
-	sk_push( workList, tail );
+	cl_check( alreadyPushed, head );
+	sk_push( workList, head );
 	return 1;
 	}
 
@@ -70,7 +70,7 @@ FUNC void postorderWalk( Stack workList, EdgePredicate recurseIntoEdge, VertexPr
 	cl_close( alreadyPushed );
 	}
 
-FUNC bool everyEdge( void *context, Object head, Symbol edgeSymbol, int edgeIndex, Object tail ){ return true; }
+FUNC bool everyEdge( void *context, Object tail, Symbol edgeSymbol, int edgeIndex, Object head ){ return true; }
 
 //MERGE:60
 

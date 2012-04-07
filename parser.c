@@ -1018,10 +1018,10 @@ static void printSubtags( void *printerArg, Object node )
 	p->charsSent += fl_write( fl, "\n" );
 	}
 
-static bool subtagPredicate( void *printerArg, Object head, Symbol edgeSymbol, int edgeIndex, Object tail )
+static bool subtagPredicate( void *printerArg, Object xxxx, Symbol edgeSymbol, int edgeIndex, Object head )
 	{
 	Printer p = (Printer)printerArg; InheritanceRelation ir = p->ir;
-	if( ob_tag( tail, ir_nodeHeap(ir) ) == ir_nodeTag(ir) )
+	if( ob_tag( head, ir_nodeHeap(ir) ) == ir_nodeTag(ir) )
 		return true;
 	if( sy_index( edgeSymbol, ir_symbolTable(ir) ) == SYM_SUBTAGS )
 		return true;
@@ -1389,34 +1389,34 @@ static void findTerminalNodes( void *augArg, Object node )
 		sk_push( aug->terminalNodes, node );
 	}
 
-static bool propagationPredicate( void *augArg, Object head, Symbol edgeSymbol, int edgeIndex, Object tail )
+static bool propagationPredicate( void *augArg, Object tail, Symbol edgeSymbol, int edgeIndex, Object head )
 	{
 	bool result;
 	Augmenter aug = (Augmenter)augArg;
 	ObjectHeap heap = ir_nodeHeap( aug->ir );
 	char *reason;
-	if( ob_tag( head, heap ) == ir_nodeTag(aug->ir) ) // Coming from an IR node
+	if( ob_tag( tail, heap ) == ir_nodeTag(aug->ir) ) // Coming from an IR node
 		{
 		result = edgeSymbol == aug->direction; // Proceed only with the successor array that points the right way
 		reason = "successor array";
 		}
 	else if( aug->onlyProcessRelatedNodes )
 		{
-		result = cl_isChecked( aug->related, tail ); // Proceed only with related nodes
+		result = cl_isChecked( aug->related, head ); // Proceed only with related nodes
 		reason = "related node";
 		}
 	else 
 		{
-		result = ob_tag( tail, heap ) == ir_nodeTag(aug->ir); // Proceed with any IR node
+		result = ob_tag( head, heap ) == ir_nodeTag(aug->ir); // Proceed with any IR node
 		reason = "successor node";
 		}
 	File diagnostics = aug->diagnostics;
 	if( 0 && diagnostics )
 		{
 		TRACE( diagnostics, "      propagationPredicate( " );
-		ob_sendTo( head, diagnostics, heap );
-		TRACE( diagnostics, ", '%s', %d, ", edgeSymbol?( sy_name( edgeSymbol, theSymbolTable( theObjectHeap() /*cheat!*/) ) ): "(null)", edgeIndex );
 		ob_sendTo( tail, diagnostics, heap );
+		TRACE( diagnostics, ", '%s', %d, ", edgeSymbol?( sy_name( edgeSymbol, theSymbolTable( theObjectHeap() /*cheat!*/) ) ): "(null)", edgeIndex );
+		ob_sendTo( head, diagnostics, heap );
 		TRACE( diagnostics, " ) = %s %s\n", result? "is":"is not", reason );
 		}
 	return result;

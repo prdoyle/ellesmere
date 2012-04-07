@@ -120,7 +120,7 @@ parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvect
 records.t: records.t.o records.o $(records_DEPS)
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
-objects.t: objects.t.o objects.o $(objects_DEPS)
+objects.t: objects.t.o objects.o stack.o options.o walk.o $(objects_DEPS)
 	$(LD) $(LDFLAGS) $^ -o $@ -lefence
 
 %.pdf: %.dot
