@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <limits.h>
 
-enum { BUCKET_SIZE=3 };
+enum { BUCKET_SIZE=4 };
 
 typedef struct hb_struct *HashBucket;
 struct hb_struct
@@ -49,10 +49,12 @@ static int computeLog2numBuckets( int numFields )
 	{
 	// Get an approximate result, erring on the low side
 	int result = flog2( numFields ) * ( BUCKET_SIZE+1 ) / BUCKET_SIZE;
+	//TRACE( stdout, "computeLog2numBuckets( %d ): initial result: %d\n", numFields, result );
 	// Increment until it's big enough
 	long long threshold = power( numFields, BUCKET_SIZE+1 );
 	while( power( 1LL<<result, BUCKET_SIZE ) < threshold )
 		result++;
+	//TRACE( stdout, "computeLog2numBuckets( %d ): final result: %d, 2^%d^%d == %lld >= %lld\n", numFields, result, result, BUCKET_SIZE, power( 1LL<<result, BUCKET_SIZE ), threshold );
 	return result;
 	}
 
