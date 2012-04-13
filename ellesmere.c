@@ -811,11 +811,13 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 						if( action == silentActions[i] )
 							logFile = NULL;
 					}
-				if( os_log( th->os, on_EXECUTION, "#  Stack:" ) )
+				if( os_logging( th->os, on_EXECUTION ) )
 					{
 					int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
 					if( logFile )
 						{
+						os_log( th->os, on_EXECUTION, "#  Stack:" );
+
 						int stackDepth             = sk_depth( ps_operandStack( th->ps ) );
 						int newValues              = stackDepth - itemsFromPrevHandle;
 						int firstNewValueIndex     = newValues - 1;
