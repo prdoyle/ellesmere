@@ -196,7 +196,7 @@ FUNC void ts_advance( TokenStream ts )
 		di->index++;
 		while( di && !ts_currentRaw( ts ) )
 			{
-			ts_pop( ts );
+			ts_cancelDigression( ts );
 			di = ts_digression( ts );
 			}
 		}
@@ -204,7 +204,7 @@ FUNC void ts_advance( TokenStream ts )
 		ts->lex.current = getLexToken( ts );
 	}
 
-FUNC void ts_push( TokenStream ts, TokenBlock tb, Object bindings )
+FUNC void ts_digress( TokenStream ts, TokenBlock tb, Object bindings )
 	{
 	Digression di = dis_nextElement( ts->digressions );
 	di->tb       = tb;
@@ -244,7 +244,7 @@ FUNC void ts_setBindings( TokenStream ts, Object bindings )
 		ts->bindings = bindings;
 	}
 
-FUNC void ts_pop( TokenStream ts )
+FUNC void ts_cancelDigression( TokenStream ts )
 	{
 	assert( ts_digression( ts ) );
 	dis_incCountBy( ts->digressions, -1 );

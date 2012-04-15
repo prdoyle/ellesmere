@@ -439,7 +439,7 @@ NATIVE_ACTION void returnAction( Production handle, GrammarLine gl, Thread th )
 	int depth = gl->response.parm1;
 	Object result = sk_item( ps_operandStack( th->ps ), depth );
 	popN( pn_length( handle, gr ), th );
-	ts_pop( th->tokenStream );
+	ts_cancelDigression( th->tokenStream );
 	push( oh_symbolToken( th->heap, pn_lhs( handle, ps_grammar(th->ps) ) ), th );
 	cf_pop( th );
 	os_trace( th->os, on_EXECUTION, "Returned to TokenBlock %p\n", ts_curBlock( th->tokenStream ) );
@@ -901,7 +901,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 							if( nameSymbol )
 								ob_setField( argBindings, nameSymbol, value, th->heap );
 							}
-						ts_push( th->tokenStream, functionToCall->body.tb, argBindings );
+						ts_digress( th->tokenStream, functionToCall->body.tb, argBindings );
 						cf_push( th );
 						if( logFile && os_trace( th->os, on_EXECUTION, "   Digressing into " ) )
 							{
