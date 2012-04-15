@@ -206,16 +206,16 @@ static ItemSet pg_createItemSet( ParserGenerator pg, ItemVector items )
 	result->items = items;
 	result->stateNode = ob_create( pg->stateNodeTag, pg->heap );
 #ifdef ITEM_SET_NUMS
-	ob_setField(
+	ob_setFieldX(
 		result->stateNode,
-		sy_byIndex( SYM_ITEM_SET_NUM, pg->st ),
+		SYM_ITEM_SET_NUM,
 		ob_fromInt( its_index( result, pg ), pg->heap ),
 		pg->heap );
 #endif
 #ifdef REDUCE_CONTEXT_LENGTH
-	ob_setField(
+	ob_setFieldX(
 		result->stateNode,
-		sy_byIndex( SYM_REDUCE_CONTEXT_LENGTH, pg->st ),
+		SYM_REDUCE_CONTEXT_LENGTH,
 		ob_fromInt( its_maxDot( result, pg ), pg->heap ),
 		pg->heap );
 #endif
@@ -1013,7 +1013,7 @@ static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 		ItemSet its = itst_element( pg->itemSets, i );
 		charsSent += fl_write( dotFile, "n%p [label=\"%d %s\\n", its->stateNode, i, LR0StateKindNames[ its_LR0StateKind( its, pg ) ] );
 #ifdef REDUCE_CONTEXT_LENGTH
-		charsSent += fl_write( dotFile, "(reduce context: %d)\\n", ob_getIntField( its->stateNode, sy_byIndex( SYM_REDUCE_CONTEXT_LENGTH, pg->st ), pg->heap ) );
+		charsSent += fl_write( dotFile, "(reduce context: %d)\\n", ob_getIntFieldX( its->stateNode, SYM_REDUCE_CONTEXT_LENGTH, pg->heap ) );
 #endif
 #if 0
 		int j;
@@ -1168,7 +1168,7 @@ static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, Fi
 								}
 							}
 						}
-					Object superArray = ob_getField( node, sy_byIndex( SYM_SUPERTAGS, st ), ir_nodeHeap(ir) );
+					Object superArray = ob_getFieldX( node, SYM_SUPERTAGS, ir_nodeHeap(ir) );
 					if( superArray )
 						{
 						Object abstractState = targetState;
@@ -1403,7 +1403,7 @@ static void aug_end( Augmenter aug )
 
 static Symbol irNodeSymbol( Object node, InheritanceRelation ir )
 	{
-	return ob_getTokenField( node, sy_byIndex( SYM_SYMBOL, ir_symbolTable(ir) ), ir_nodeHeap(ir) );
+	return ob_getTokenFieldX( node, SYM_SYMBOL, ir_nodeHeap(ir) );
 	}
 
 static int irNodeSideTableIndex( Object node, InheritanceRelation ir, ParserGenerator pg )
@@ -1665,7 +1665,6 @@ static void addAllProductionCombos(
 	else
 		{
 		Symbol curToken = pn_token( oldProduction, tokenIndex, oldGrammar );
-
 		SymbolTable st = oh_symbolTable( ir_nodeHeap(ir) );
 		Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
 		Augmenter aug = aug_begin( NULL, ir, diagnostics );
@@ -1836,8 +1835,7 @@ static int au_sendReportTo( Automaton au, File fl, ParserGenerator pg )
 			}
 		for( edge = bv_firstBit( edgeSymbols ); edge != bv_END; edge = bv_nextBit( edgeSymbols, edge ) )
 			{
-			Symbol edgeSymbol   = sy_byIndex( edge, st );
-			Symbol reduceSymbol = ob_getTokenField( state, edgeSymbol, heap );
+			Symbol reduceSymbol = ob_getTokenFieldX( state, edge, heap );
 			fl_write( fl, "    Reduce %s:", sy_name( reduceSymbol, st ) );
 			int equivalentEdge;
 			for( equivalentEdge = edge; equivalentEdge != bv_END; equivalentEdge = bv_nextBit( edgeSymbols, equivalentEdge ) )

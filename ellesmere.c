@@ -386,7 +386,7 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 	dumpParserState( interpreterTrace, th );
 
 	// Add bindings with a symbol for each named parameter
-	Object bindings = ob_create( sy_byIndex( SYM_BINDINGS, th->st ), th->heap );
+	Object bindings = ob_createX( SYM_BINDINGS, th->heap );
 	ob_setFieldX( bindings, SYM_DELEGATE, ts_getBindings( th->tokenStream ), th->heap );
 	ts_setBindings( th->tokenStream, bindings );
 	for( i = 0; i < pn_length( pn, gr ); i++ )
@@ -495,10 +495,7 @@ static Object recordified( Object ob, Thread th )
 	Object result = ob_create( tag, th->heap );
 	int fieldID;
 	for( fieldID = bv_firstBit( fieldIDs ); fieldID != bv_END; fieldID = bv_nextBit( fieldIDs, fieldID ) )
-		{
-		Symbol field = sy_byIndex( fieldID, th->st );
-		ob_setField( result, field, ob_getField( ob, field, th->heap ), th->heap );
-		}
+		ob_setFieldX( result, fieldID, ob_getFieldX( ob, fieldID, th->heap ), th->heap );
 
 	ml_end( ml );
 	return result;
@@ -1099,9 +1096,9 @@ int main( int argc, char **argv )
 	th->callStack = cs_new( 30, ml_indefinite() );
 	cs_setCount( th->callStack, 1 );
 	initializeInheritanceRelation( th->heap, th->st, ml_indefinite(), th );
-	th->executionBindings = ob_create( sy_byIndex( SYM_BINDINGS, th->st ), th->heap );
-	th->recordingBindings = ob_create( sy_byIndex( SYM_BINDINGS, th->st ), th->heap );
-	th->concretifications = ob_create( sy_byIndex( SYM_BINDINGS, th->st ), th->heap );
+	th->executionBindings = ob_createX( SYM_BINDINGS, th->heap );
+	th->recordingBindings = ob_createX( SYM_BINDINGS, th->heap );
+	th->concretifications = ob_createX( SYM_BINDINGS, th->heap );
 	th->productionMap     = ob_create( sy_byName( "PRODUCTION_MAP", th->st ), th->heap );
 	Grammar initialGrammar = populateGrammar( th->st, th );
 	Automaton au = au_new( initialGrammar, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, os_traceFile( th->os, on_PARSER_GEN ) );

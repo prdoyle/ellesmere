@@ -602,8 +602,7 @@ static int sendDeepTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 			Record rd = sy_instanceShape( ob_tag(ob,heap), heap );
 			for( fieldID = rd_firstField(rd); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
 				{
-				Symbol sy = sy_byIndex( fieldID, heap->st );
-				Object target = ob_getField( ob, sy, heap );
+				Object target = ob_getFieldX( ob, fieldID, heap );
 				if( target )
 					charsSent += sendEdgeTo( fieldID, target, heap, fl );
 				}
@@ -612,8 +611,7 @@ static int sendDeepTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 			fl_write( fl, "  }\n" );
 			for( fieldID = rd_firstField(rd); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
 				{
-				Symbol sy = sy_byIndex( fieldID, heap->st );
-				Object target = ob_getField( ob, sy, heap );
+				Object target = ob_getFieldX( ob, fieldID, heap );
 				if( target )
 					charsSent += sendDeepTo( target, fl, heap, cl );
 				}
