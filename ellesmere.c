@@ -781,7 +781,6 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 						}
 					}
 				push( lhs, th );
-				Object ob = ob_getField( bindings, handleSymbol, th->heap );
 				if( ob )
 					{
 					assert( functionToCall->body.gl->response.action == stopRecordingTokenBlockAction );
