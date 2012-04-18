@@ -68,8 +68,10 @@ def VOID
 	fibs( n:INT )
 as
 	{
+	bindings nMinus1 n-1 setfield!
 	if 1 <= n then
 		{ fibs( n-1 ) }
+#		{ fibs( nMinus1 ) } # I'd like to do this here, but recording mode doesn't apply bindings, so it can't parse nMinus1
 	else
 		{ }
 	end
@@ -77,11 +79,11 @@ as
 	print( fib(n) )
 	}
 
-optimize!
+optimize
 
 #fibs( 2 )
 #fibs( 12 )
 #fibs( 24 )
 #fib( 0 ) print! # To measure parser-gen performance
 fib( 26 ) print!
-time! print!
+print( time )

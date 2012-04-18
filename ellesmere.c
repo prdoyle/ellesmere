@@ -385,7 +385,7 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 	File interpreterTrace = os_traceFile( th->os, on_INTERPRETER );
 	dumpParserState( interpreterTrace, th );
 
-	// Add bindings with a symbol for each named parameter
+	// Add bindings with a symbol for each named parameter during recording
 	Object bindings = ob_createX( SYM_BINDINGS, th->heap );
 	ob_setFieldX( bindings, SYM_DELEGATE, ts_getBindings( th->tokenStream ), th->heap );
 	ts_setBindings( th->tokenStream, bindings );
@@ -530,6 +530,12 @@ NATIVE_ACTION void timeAction( Production handle, GrammarLine gl, Thread th )
 	push( ob_fromInt( delta, th->heap ), th );
 	}
 
+NATIVE_ACTION void bindingsAction( Production handle, GrammarLine gl, Thread th )
+	{
+	popToken( th );
+	push( ts_getBindings( th->tokenStream ), th );
+	}
+
 NATIVE_ACTION void createAction( Production handle, GrammarLine gl, Thread th )
 	{
 	popToken( th );
@@ -587,8 +593,8 @@ static struct gl_struct grammar1[] =
 	{ { "TB_START",        "{",                                                     }, { recordTokenBlockAction } },
 	{ { "VOID",            "def", "PRODUCTION", "as", "TOKEN_BLOCK"                 }, { defAction } },
 
-	{ { "VOID",     "optimize!"                                                     }, { optimizeAction, 1 } },
-	{ { "INT",      "time!"                                                         }, { timeAction } },
+	{ { "VOID",     "optimize"                                                      }, { optimizeAction } },
+	{ { "INT",      "time"                                                          }, { timeAction } },
 
 	{ { "CREATABLE", "TOKEN@tag", "create!"                                         }, { createAction } },
 	{ { "OBJECT",    "WITH_FIELDS@receiver", "TOKEN@field", "getfield!"             }, { getFieldAction } },
@@ -602,6 +608,8 @@ static struct gl_struct grammar1[] =
 	{ { "BOOLEAN",   "INT", "nz!"                                                   }, { nonzeroAction } },
 	{ { "BOOLEAN",   "INT", "INT", "le!"                                            }, { leAction } },
 
+	{ { "BINDINGS",  "bindings"                                                     }, { bindingsAction } },
+
 	{{NULL}},
 	};
 
@@ -611,8 +619,14 @@ static struct gl_struct inheritance[] =
 	{
 	{{ "OBJECT",      "IMMUTABLE", "WITH_FIELDS" }},          // OBJECT includes any sym that can be an object tag
 	{{ "IMMUTABLE",   "INT", "BOOLEAN", "STRING" }},
-	{{ "WITH_FIELDS", "CREATABLE", "MUTABLE" }},
 	{{ "BOOLEAN",     "FALSE", "TRUE" }},
+	{{ "WITH_FIELDS", "CREATABLE", "MUTABLE" }},
+	{{ "MUTABLE",     "BINDINGS" }},
+
+	// "FABRICABLE" means "ordinary objects that can be created and modified"
+	{{ "CREATABLE",   "FABRICABLE" }},
+	{{ "MUTABLE",     "FABRICABLE" }},
+
 
 	{{NULL}},
 	};
@@ -734,7 +748,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 		if( recording )
 			tb_sendTo( recording, interpreterTrace, th->heap );
 		else
-			os_trace( th->os, on_INTERPRETER, "NULL" );
+			os_trace( th->os, on_INTERPRETER, "(not recording)" );
 		os_trace( th->os, on_INTERPRETER, ", %p ) startingDepth=%d\n", bindings, startingDepth );
 		}
 
