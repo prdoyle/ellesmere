@@ -794,15 +794,20 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 			Object boundObject = ob_getField( bindings, handleSymbol, th->heap );
 			Function functionToCall = boundObject? ob_toFunction( boundObject, th->heap ) : NULL;
 			File logThisFunction = functionToCall? os_logFile( th->os, on_EXECUTION ) : NULL;
-			if( logThisFunction && functionToCall->kind == FN_NATIVE && os_traceFile( th->os, on_EXECUTION ) == NULL )
+			if( logThisFunction )
 				{
-				// Some native actions are pretty boring.  If we're logging (not tracing), skip the boring ones.
-				int i;
-				static const NativeAction silentActions[] = { nopAction, passThrough, parseTreeAction, recordTokenBlockAction };
-				NativeAction action = functionToCall->body.gl->response.action;
-				for( i=0; logThisFunction && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
-					if( action == silentActions[i] )
-						logThisFunction = NULL;
+				if( functionToCall->kind == FN_NATIVE && os_traceFile( th->os, on_EXECUTION ) == NULL )
+					{
+					// Some native actions are pretty boring.  If we're logging (not tracing), skip the boring ones.
+					int i;
+					static const NativeAction silentActions[] = { nopAction, passThrough, parseTreeAction, recordTokenBlockAction };
+					NativeAction action = functionToCall->body.gl->response.action;
+					for( i=0; logThisFunction && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
+						if( action == silentActions[i] )
+							logThisFunction = NULL;
+					}
+				else if( functionToCall->kind == FN_STOP_RECORDING )
+					logThisFunction = NULL; // This is pretty boring too
 				}
 			if( os_logging( th->os, on_EXECUTION ) )
 				{
@@ -995,18 +1000,19 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 					if( kind == FN_STOP_RECORDING )
 						{
 						assert( functionToCall->body.gl->response.action == stopRecordingTokenBlockAction );
+						OptionNoun noun = on_INTERPRETER;
 						int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
 						if( depthWithoutHandle < startingDepth )
 							{
-							if( os_trace( th->os, on_INTERPRETER, "   Done recording " ) )
+							if( os_log( th->os, noun, "   Done recording " ) )
 								{
-								tb_sendTo( recording, os_traceFile( th->os, on_INTERPRETER ), th->heap );
-								os_trace( th->os, on_INTERPRETER, "\n" );
+								tb_sendTo( recording, os_logFile( th->os, noun ), th->heap );
+								os_log( th->os, noun, "\n" );
 								}
 							goto done;
 							}
 						else
-							os_trace( th->os, on_INTERPRETER, "     Too deep to stop recording yet\n" );
+							os_trace( th->os, noun, "     Too deep to stop recording yet\n" );
 						}
 					}
 					break;

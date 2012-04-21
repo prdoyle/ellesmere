@@ -44,7 +44,7 @@ as
 	{
 	# Perfornance-critical so we use postfix form
 	if n 1 le! then
-		{ 1 }
+		{ 1 0 add! } # Partial evaluation opportunity!
 	else
 		{
 		n 1 sub! fib!
