@@ -751,6 +751,10 @@ FUNC Object oh_symbolPlaceholder( ObjectHeap heap, Symbol sy )
 	return result;
 	}
 
+FUNC bool ob_isPlaceholder( Object ob, ObjectHeap heap )
+	{
+	return ob_tagX( ob, heap ) == SYM_PLACEHOLDER;
+	}
 
 //MERGE:40
 

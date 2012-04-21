@@ -118,7 +118,7 @@ typedef void (*NativeAction)( Production handle, GrammarLine gl, Thread th );
 
 typedef enum
 	{
-	FN_NULL,
+	FN_UNKNOWN,
 	FN_NATIVE,
 	FN_TOKEN_BLOCK,
 	FN_STOP_RECORDING, // weird special case... perhaps can be handled more elegantly?
@@ -241,6 +241,13 @@ static Symbol popToken( Thread th )
 	return ob_toSymbol( popped, th->heap );
 	}
 
+typedef enum
+	{
+	PE_UNSAFE,
+	PE_SAFE,
+	PE_ABSTRACT, // Can even tolerate placeholders
+	} PartialEvaluationSafety;
+
 struct gl_struct
 	{
 	char *tokens[10];
@@ -249,7 +256,8 @@ struct gl_struct
 		NativeAction action;
 		int parm1;
 		} response;
-	ConflictResolutions cr;
+	PartialEvaluationSafety peSafe;
+	ConflictResolutions     cr;
 	};
 	 
 NATIVE_ACTION void nopAction( Production handle, GrammarLine gl, Thread th )
@@ -400,8 +408,13 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 		if( name )
 			{
 			Symbol tag = pn_token( pn, i, gr );
-			os_trace( th->os, on_INTERPRETER, "    -- bound %s to token %s\n", sy_name( name, th->st ), sy_name( tag, th->st ) );
-			ob_setField( bindings, name, oh_symbolToken( th->heap, tag ), th->heap );
+			Object value = oh_symbolPlaceholder( th->heap, tag );
+			if( os_trace( th->os, on_INTERPRETER, "    -- bound %s to ", sy_name( name, th->st ) ) )
+				{
+				ob_sendTo( value, os_traceFile( th->os, on_INTERPRETER ), th->heap );
+				os_trace( th->os, on_INTERPRETER, "\n" );
+				}
+			ob_setField( bindings, name, value, th->heap );
 			}
 		}
 
@@ -568,15 +581,15 @@ NATIVE_ACTION void setFieldAction( Production handle, GrammarLine gl, Thread th 
 
 static struct gl_struct grammar1[] =
 	{
-	{ { "PROGRAM",   "VOIDS", "END_OF_INPUT"                                        }, { nopAction } },
-	{ { "VOIDS",     "VOID",                                                        }, { nopAction } },
-	{ { "VOIDS",     "VOIDS", "VOID"                                                }, { nopAction } },
+	{ { "PROGRAM",   "VOIDS", "END_OF_INPUT"                                        }, { nopAction }, PE_SAFE },
+	{ { "VOIDS",     "VOID",                                                        }, { nopAction }, PE_SAFE },
+	{ { "VOIDS",     "VOIDS", "VOID"                                                }, { nopAction }, PE_SAFE },
 
 	{ { "INT",      "{", "VOIDS", "INT",   "}"                                      }, { passThrough, 1 } },
 	{ { "INT",      "{",          "INT",   "}"                                      }, { passThrough, 1 } },
 
-	{ { "VOID",     "{", "VOIDS", "}"                                               }, { nopAction } },
-	{ { "VOID",     "{",          "}"                                               }, { nopAction } },
+	{ { "VOID",     "{", "VOIDS", "}"                                               }, { nopAction }, PE_SAFE },
+	{ { "VOID",     "{",          "}"                                               }, { nopAction }, PE_SAFE },
 
 	{ { "VOID",     "OBJECT", "print!"                                              }, { printAction, 1 } },
 
@@ -591,10 +604,10 @@ static struct gl_struct grammar1[] =
 	{ { "PARAMETER_LIST",  "TOKEN@name", ":", "TOKEN@tag",  "PARAMETER_LIST@next"   }, { parseTreeAction } },
 	{ { "PRODUCTION",      "TOKEN@result", "PARAMETER_LIST@parms"                   }, { addProductionAction } },
 	{ { "PRODUCTION",      "l2r", "TOKEN@result", "PARAMETER_LIST@parms"            }, { addProductionAction, CR_REDUCE_BEATS_SHIFT } },
-	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "}"                                 }, { stopRecordingTokenBlockAction } },
-	{ { "TOKEN_BLOCK",     "TB_START",          "}"                                 }, { stopRecordingTokenBlockAction } },
-	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "OBJECT", "}"                       }, { stopRecordingTokenBlockAction } },
-	{ { "TOKEN_BLOCK",     "TB_START", "OBJECT", "}"                                }, { stopRecordingTokenBlockAction } },
+	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "}"                                 }, { stopRecordingTokenBlockAction }, PE_SAFE },
+	{ { "TOKEN_BLOCK",     "TB_START",          "}"                                 }, { stopRecordingTokenBlockAction }, PE_SAFE },
+	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "OBJECT", "}"                       }, { stopRecordingTokenBlockAction }, PE_SAFE },
+	{ { "TOKEN_BLOCK",     "TB_START", "OBJECT", "}"                                }, { stopRecordingTokenBlockAction }, PE_SAFE },
 	{ { "TB_START",        "{",                                                     }, { recordTokenBlockAction } },
 	{ { "VOID",            "def", "PRODUCTION", "as", "TOKEN_BLOCK"                 }, { defAction } },
 
@@ -605,13 +618,13 @@ static struct gl_struct grammar1[] =
 	{ { "OBJECT",    "WITH_FIELDS@receiver", "TOKEN@field", "getfield!"             }, { getFieldAction } },
 	{ { "VOID",      "MUTABLE@receiver", "TOKEN@field", "OBJECT@value", "setfield!" }, { setFieldAction } },
 
-	{ { "INT",   "INT", "INT", "add!"                                               }, { addAction } },
-	{ { "INT",   "INT", "INT", "sub!"                                               }, { subAction, 2 } },
-	{ { "INT",   "INT", "INT", "mul!"                                               }, { mulAction } },
-	{ { "INT",   "INT", "INT", "div!"                                               }, { divAction } },
+	{ { "INT",   "INT", "INT", "add!"                                               }, { addAction },    PE_SAFE },
+	{ { "INT",   "INT", "INT", "sub!"                                               }, { subAction, 2 }, PE_SAFE },
+	{ { "INT",   "INT", "INT", "mul!"                                               }, { mulAction },    PE_SAFE },
+	{ { "INT",   "INT", "INT", "div!"                                               }, { divAction },    PE_SAFE },
 
-	{ { "BOOLEAN",   "INT", "nz!"                                                   }, { nonzeroAction } },
-	{ { "BOOLEAN",   "INT", "INT", "le!"                                            }, { leAction } },
+	{ { "BOOLEAN",   "INT", "nz!"                                                   }, { nonzeroAction }, PE_SAFE },
+	{ { "BOOLEAN",   "INT", "INT", "le!"                                            }, { leAction },      PE_SAFE },
 
 	{ { "BINDINGS",  "bindings"                                                     }, { bindingsAction } },
 
@@ -697,6 +710,8 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 				{
 				fn->kind = FN_NATIVE;
 				ob_setFunctionField( th->executionBindings, pnSymbol, fn, th->heap );
+				if( line->peSafe )
+					ob_setFunctionField( th->recordingBindings, pnSymbol, fn, th->heap );
 				}
 			}
 		}
@@ -872,7 +887,37 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 					os_log( th->os, on_EXECUTION, "\n" );
 					}
 				}
-			FunctionKind kind = functionToCall? functionToCall->kind : FN_NULL;
+			FunctionKind kind = functionToCall? functionToCall->kind : FN_UNKNOWN;
+			bool atLeastOneArgumentIsPlaceholder = false;
+				{
+				int i;
+				for( i = pn_length( handleProduction, gr ) - 1; i >= 0 && !atLeastOneArgumentIsPlaceholder; i-- )
+					{
+					if( ob_isPlaceholder( sk_item( ps_operandStack( th->ps ), i ), th->heap) )
+						atLeastOneArgumentIsPlaceholder = true;
+					}
+				}
+			if( atLeastOneArgumentIsPlaceholder )
+				{
+				switch( kind )
+					{
+					case FN_TOKEN_BLOCK:
+						kind = FN_UNKNOWN; // TODO: Expand token blocks with placeholders.  Need to evaluate arguments before executing the block.
+						break;
+					case FN_NATIVE:
+						{
+						kind = FN_UNKNOWN; // TODO: Just for now
+						GrammarLine line = functionToCall->body.gl;
+						if( line->peSafe == PE_UNSAFE )
+							kind = FN_UNKNOWN;
+						}
+						break;
+					case FN_UNKNOWN:
+					case FN_STOP_RECORDING:
+						break;
+					}
+				}
+
 			switch( kind )
 				{
 				case FN_TOKEN_BLOCK:
@@ -911,28 +956,28 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 					line->response.action( handleProduction, line, th );
 					}
 					break;
-				case FN_NULL:
+				case FN_UNKNOWN:
 				case FN_STOP_RECORDING:
 					{
 					check( recording );
 					popN( pn_length( handleProduction, gr ), th );
-					Object lhs = oh_symbolToken( th->heap, pn_lhs( handleProduction, gr ) );
+					Symbol lhs = pn_lhs( handleProduction, gr );
 					if( os_enabled( th->os, on_CONCRETIFICATION ) )
 						{
 						if( interpreterTrace )
 							{
-							os_trace( th->os, on_INTERPRETER, "Checking %s for concretification in: ", sy_name( ob_toSymbol( lhs, th->heap ), th->st ) );
+							os_trace( th->os, on_INTERPRETER, "Checking %s for concretification in: ", sy_name( lhs, th->st ) );
 							ob_sendDeepTo( th->concretifications, interpreterTrace, th->heap );
 							os_trace( th->os, on_INTERPRETER, "\n" );
 							}
-						Object concretified = ob_getFieldIfPresent( th->concretifications, ob_toSymbol( lhs, th->heap ), lhs, th->heap );
-						if( concretified != lhs )
+						Object concretified = ob_getFieldIfPresent( th->concretifications, lhs, NULL, th->heap );
+						if( concretified )
 							{
-							os_trace( th->os, on_INTERPRETER, "  %s concretified into %s\n", sy_name( ob_toSymbol( lhs, th->heap ), th->st ), sy_name( ob_toSymbol( concretified, th->heap ), th->st ) );
-							lhs = concretified;
+							os_trace( th->os, on_INTERPRETER, "  %s concretified into %s\n", sy_name( lhs, th->st ), sy_name( ob_toSymbol( concretified, th->heap ), th->st ) );
+							lhs = ob_toSymbol( concretified, th->heap );
 							}
 						}
-					push( lhs, th );
+					push( oh_symbolPlaceholder( th->heap, lhs ), th );
 					if( kind == FN_STOP_RECORDING )
 						{
 						assert( functionToCall->body.gl->response.action == stopRecordingTokenBlockAction );
