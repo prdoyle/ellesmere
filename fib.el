@@ -68,7 +68,7 @@ def VOID
 	fibs( n:INT )
 as
 	{
-	bindings nMinus1 n-1 setfield!
+#	bindings nMinus1 n-1 setfield!
 	if 1 <= n then
 		{ fibs( n-1 ) }
 #		{ fibs( nMinus1 ) } # I'd like to do this here, but recording mode doesn't apply bindings, so it can't parse nMinus1

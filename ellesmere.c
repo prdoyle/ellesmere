@@ -116,12 +116,17 @@ static void cf_pop()
 
 typedef void (*NativeAction)( Production handle, GrammarLine gl, Thread th );
 
+typedef enum
+	{
+	FN_NULL,
+	FN_NATIVE,
+	FN_TOKEN_BLOCK,
+	FN_STOP_RECORDING, // weird special case... perhaps can be handled more elegantly?
+	} FunctionKind;
+
 struct fn_struct
 	{
-	enum {
-		FN_NATIVE,
-		FN_TOKEN_BLOCK,
-	} kind;
+	FunctionKind kind;
 	union {
 		GrammarLine gl;
 		TokenBlock  tb;
@@ -682,11 +687,17 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 				}
 			pn_stopAppending( pn, gr );
 			Function fn = (Function)ml_alloc( ml_indefinite(), sizeof(*fn) );
-			fn->kind       = FN_NATIVE;
-			fn->body.gl    = line;
-			ob_setFunctionField( th->executionBindings, pnSymbol, fn, th->heap );
+			fn->body.gl = line;
 			if( line->response.action == stopRecordingTokenBlockAction )
+				{
+				fn->kind = FN_STOP_RECORDING;
 				ob_setFunctionField( th->recordingBindings, pnSymbol, fn, th->heap );
+				}
+			else
+				{
+				fn->kind = FN_NATIVE;
+				ob_setFunctionField( th->executionBindings, pnSymbol, fn, th->heap );
+				}
 			}
 		}
 	gr_stopAdding( gr );
@@ -770,19 +781,19 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 			if( functionToCall && functionToCall->body.gl->response.action != stopRecordingTokenBlockAction )
 				{
 				int i;
-				File logFile = os_logFile( th->os, on_EXECUTION );
-				if( logFile && functionToCall->kind == FN_NATIVE && os_traceFile( th->os, on_EXECUTION ) == NULL )
+				File logThisFunction = os_logFile( th->os, on_EXECUTION );
+				if( logThisFunction && functionToCall->kind == FN_NATIVE && os_traceFile( th->os, on_EXECUTION ) == NULL )
 					{
 					static const NativeAction silentActions[] = { nopAction, passThrough, parseTreeAction, recordTokenBlockAction };
 					NativeAction action = functionToCall->body.gl->response.action;
-					for( i=0; logFile && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
+					for( i=0; logThisFunction && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
 						if( action == silentActions[i] )
-							logFile = NULL;
+							logThisFunction = NULL;
 					}
+					int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
 				if( os_logging( th->os, on_EXECUTION ) )
 					{
-					int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
-					if( logFile )
+					if( logThisFunction )
 						{
 						os_log( th->os, on_EXECUTION, "#  Stack:" );
 
@@ -823,7 +834,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 								handleColumn = currentColumn;
 							if( i == firstNewValueIndex )
 								newValuesColumn = currentColumn;
-							currentColumn += ob_sendTo( sk_item( ps_operandStack( th->ps ), i ), logFile, th->heap );
+							currentColumn += ob_sendTo( sk_item( ps_operandStack( th->ps ), i ), logThisFunction, th->heap );
 							}
 						newValuesColumn = min( newValuesColumn, currentColumn );
 						handleColumn    = min( handleColumn,    currentColumn );
@@ -840,27 +851,28 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 						if( itemsFromPrevHandle > depthWithoutHandle )
 							itemsFromPrevHandle = depthWithoutHandle;
 						}
-					}
-				static const char depthStr[] = ""; //"----+----+----+----+----+----+----+----+----+----+----?";
-				if( logFile && os_log( th->os, on_EXECUTION, "%-17s: %.*s %s <-", sy_name( handleSymbol, th->st ), ts_depth( th->tokenStream ), depthStr, sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
-					{
-					char *sep = " ";
-					for( i=0; i < pn_length( handleProduction, gr ); i++ )
+					static const char depthStr[] = ""; //"----+----+----+----+----+----+----+----+----+----+----?";
+					if( logThisFunction && os_log( th->os, on_EXECUTION, "%-17s: %.*s %s <-", sy_name( handleSymbol, th->st ), ts_depth( th->tokenStream ), depthStr, sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
 						{
-						Symbol tokenSymbol = pn_token( handleProduction, i, gr );
-						os_log( th->os, on_EXECUTION, "%s%s", sep, sy_name( tokenSymbol, th->st ) );
-						Symbol nameSymbol = pn_name( handleProduction, i, gr );
-						if( nameSymbol )
+						char *sep = " ";
+						for( i=0; i < pn_length( handleProduction, gr ); i++ )
 							{
-							os_log( th->os, on_EXECUTION, "@%s=", sy_name( nameSymbol, th->st ) );
-							Object value = sk_item( ps_operandStack( th->ps ), pn_length( handleProduction, gr ) - i - 1 );
-							ob_sendTo( value, logFile, th->heap );
+							Symbol tokenSymbol = pn_token( handleProduction, i, gr );
+							os_log( th->os, on_EXECUTION, "%s%s", sep, sy_name( tokenSymbol, th->st ) );
+							Symbol nameSymbol = pn_name( handleProduction, i, gr );
+							if( nameSymbol )
+								{
+								os_log( th->os, on_EXECUTION, "@%s=", sy_name( nameSymbol, th->st ) );
+								Object value = sk_item( ps_operandStack( th->ps ), pn_length( handleProduction, gr ) - i - 1 );
+								ob_sendTo( value, logThisFunction, th->heap );
+								}
+							sep = " ";
 							}
-						sep = " ";
+						os_log( th->os, on_EXECUTION, "\n" );
 						}
-					os_log( th->os, on_EXECUTION, "\n" );
 					}
-				switch( functionToCall->kind )
+				FunctionKind kind = functionToCall? functionToCall->kind : FN_NULL;
+				switch( kind )
 					{
 					case FN_TOKEN_BLOCK:
 						{
@@ -875,9 +887,9 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 							}
 						ts_digress( th->tokenStream, functionToCall->body.tb, argBindings );
 						cf_push( th );
-						if( logFile && os_trace( th->os, on_EXECUTION, "   Digressing into " ) )
+						if( logThisFunction && os_trace( th->os, on_EXECUTION, "   Digressing into " ) )
 							{
-							tb_sendTo( functionToCall->body.tb, logFile, th->heap );
+							tb_sendTo( functionToCall->body.tb, logThisFunction, th->heap );
 							os_trace( th->os, on_EXECUTION, "\n" );
 							}
 						}
@@ -886,7 +898,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 						{
 						GrammarLine line = functionToCall->body.gl;
 						assert( line );
-						if( logFile && os_trace( th->os, on_EXECUTION, "   Calling native " ) )
+						if( logThisFunction && os_trace( th->os, on_EXECUTION, "   Calling native " ) )
 							{
 							Dl_info nativeInfo;
 							if( dladdr( line->response.action, &nativeInfo ) && nativeInfo.dli_saddr == line->response.action )
@@ -896,6 +908,10 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 							}
 						line->response.action( handleProduction, line, th );
 						}
+						break;
+					case FN_NULL:
+						break;
+					case FN_STOP_RECORDING:
 						break;
 					}
 				}
