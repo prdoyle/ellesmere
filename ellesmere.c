@@ -894,7 +894,11 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 				for( i = pn_length( handleProduction, gr ) - 1; i >= 0 && !atLeastOneArgumentIsPlaceholder; i-- )
 					{
 					if( ob_isPlaceholder( sk_item( ps_operandStack( th->ps ), i ), th->heap) )
+						{
 						atLeastOneArgumentIsPlaceholder = true;
+						if( logThisFunction )
+							os_trace( th->os, on_EXECUTION, "   Argument at depth %d is a placeholder\n", i );
+						}
 					}
 				}
 			if( atLeastOneArgumentIsPlaceholder )
@@ -902,14 +906,24 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 				switch( kind )
 					{
 					case FN_TOKEN_BLOCK:
-						kind = FN_UNKNOWN; // TODO: Expand token blocks with placeholders.  Need to evaluate arguments before executing the block.
+						if( 1 ) // TODO: Expand token blocks with placeholders.  Need to evaluate arguments before executing the block.
+							{
+							kind = FN_UNKNOWN;
+							if( logThisFunction )
+								os_log( th->os, on_EXECUTION, "   An argument is a placeholder; dont execute\n" );
+							}
 						break;
 					case FN_NATIVE:
 						{
-						kind = FN_UNKNOWN; // TODO: Just for now
 						GrammarLine line = functionToCall->body.gl;
-						if( line->peSafe == PE_UNSAFE )
+						if( line->peSafe == PE_ABSTRACT && optional( "Execute native despite placeholders" ) )
+							{
+							// go for it
+							}
+						else
+							{
 							kind = FN_UNKNOWN;
+							}
 						}
 						break;
 					case FN_UNKNOWN:

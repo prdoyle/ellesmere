@@ -570,7 +570,8 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 				}
 			case SYM_PLACEHOLDER:
 				{
-				charsSent += fl_write( fl, "%s_%p:%s", sy_name( ob_tag(ob,heap), heap->st ), ob, sy_name( ob_getTokenFieldX( ob, SYM_TAG, heap ), heap->st ) );
+				//charsSent += fl_write( fl, "%s_%p:%s", sy_name( ob_tag(ob,heap), heap->st ), ob, sy_name( ob_getTokenFieldX( ob, SYM_TAG, heap ), heap->st ) );
+				charsSent += fl_write( fl, "?%s?", sy_name( ob_getTokenFieldX( ob, SYM_TAG, heap ), heap->st ) );
 				break;
 				}
 			default:

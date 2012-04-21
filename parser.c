@@ -1901,7 +1901,7 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, ObjectHeap heap, MemoryLifeti
 			pg_sendDotTo( pg, diagnostics );
 		TRACE( diagnostics, "\n\n" );
 		}
-	if( os_log( os, on_PARSER_GEN, "Finished automaton %p " ), result )
+	if( os_log( os, on_PARSER_GEN, "Finished automaton %p ", result ) )
 		{
 		au_sendReportTo( result, os_logFile( os, on_PARSER_GEN ), pg );
 		os_log( os, on_PARSER_GEN, "\n" );
