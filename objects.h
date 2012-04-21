@@ -83,6 +83,9 @@ FUNC Symbol      ob_toSymbol( Object ob, ObjectHeap heap );
 static inline Symbol ob_getTokenField( Object ob, Symbol field, ObjectHeap heap ){ return ob_toSymbol( ob_getField( ob, field, heap ), heap ); }
 static inline void   ob_setTokenField( Object ob, Symbol field, Symbol value, ObjectHeap heap ){ ob_setField( ob, field, oh_symbolToken( heap, value ), heap ); }
 
+FUNC Object      oh_symbolPlaceholder( ObjectHeap heap, Symbol sy );
+FUNC bool        ob_isPlaceholder( Object ob, ObjectHeap heap );
+
 // Reflected data structures (mostly temporary until parts of the interpreter can be rewritten in Ellesmere)
 
 FUNC Object       ob_fromFunction( Function fn, ObjectHeap heap );
@@ -125,6 +128,8 @@ static inline void ob_setFieldX( Object ob, SymbolIndex fieldIndex, Object value
 
 static inline Symbol ob_getTokenFieldX( Object ob, SymbolIndex fieldIndex, ObjectHeap heap )
 	{ return ob_getTokenField( ob, sy_byIndex( fieldIndex, oh_symbolTable( heap ) ), heap ); }
+
+FUNC SymbolIndex ob_tagX( Object ob, ObjectHeap heap );
 
 // Miscellaneous handy functions
 

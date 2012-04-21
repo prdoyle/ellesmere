@@ -8,6 +8,7 @@
 typedef struct syd_struct
 	{
 	Object  token;
+	Object  placeholder; // A simple information-free placeholder.  Nothing more than a token really.
 	Record  instanceShape;
 	} *SymbolDescriptor;
 
@@ -343,16 +344,21 @@ FUNC Grammar ob_toGrammar( Object ob, ObjectHeap heap )
 	return ob->data.grammar;
 	}
 
-FUNC Symbol ob_tag( Object ob, ObjectHeap heap )
+FUNC SymbolIndex ob_tagX( Object ob, ObjectHeap heap )
 	{
 	switch ( ob_kind( ob ) )
 		{
 		case OB_INT:
-			return sy_byIndex( SYM_INT, heap->st );
+			return SYM_INT;
 		case OB_STRUCT:
 			break;
 		}
-	return sy_byIndex( ob->tag, heap->st );
+	return ob->tag;
+	}
+
+FUNC Symbol ob_tag( Object ob, ObjectHeap heap )
+	{
+	return sy_byIndex( ob_tagX( ob, heap ), heap->st );
 	}
 
 FUNC bool ob_hasFields( Object ob )
@@ -729,6 +735,18 @@ FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy )
 		result = ob_createX( SYM_TOKEN, heap );
 		result->data.symbol = sy;
 		sy_descriptor( sy, heap )->token = result;
+		}
+	return result;
+	}
+
+FUNC Object oh_symbolPlaceholder( ObjectHeap heap, Symbol sy )
+	{
+	Object result = sy_descriptor( sy, heap )->placeholder;
+	if( !result )
+		{
+		result = ob_createX( SYM_PLACEHOLDER, heap );
+		ob_setFieldX( result, SYM_TAG, oh_symbolToken( heap, sy ), heap );
+		sy_descriptor( sy, heap )->placeholder = result;
 		}
 	return result;
 	}
