@@ -562,6 +562,11 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 				charsSent += fl_write( fl, "TOKEN_STREAM_%p", ts );
 				break;
 				}
+			case SYM_PLACEHOLDER:
+				{
+				charsSent += fl_write( fl, "%s_%p:%s", sy_name( ob_tag(ob,heap), heap->st ), ob, sy_name( ob_getTokenFieldX( ob, SYM_TAG, heap ), heap->st ) );
+				break;
+				}
 			default:
 				{
 				charsSent += fl_write( fl, "%s_%p", sy_name( ob_tag(ob,heap), heap->st ), ob );

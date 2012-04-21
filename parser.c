@@ -1998,8 +1998,9 @@ static int ps_itemSetNumX( Parser ps, int depth, SymbolIndex isnIndex )
 static Object ps_nextState( Parser ps, Object ob )
 	{
 	ObjectHeap oh = ps->au->stateHeap;
+	SymbolTable st = oh_symbolTable( oh );
 	Object curState = sk_top( ps->stateStack );
-	Symbol token = ob_tag( ob, oh );
+	Symbol tag = ob_tag( ob, oh );
 	if( ps->detailedDiagnostics )
 		{
 		TRACE( ps->detailedDiagnostics, "NEXT STATE from %d ob: ", ps_itemSetNumX( ps, 0, SYM_ITEM_SET_NUM ) );
@@ -2007,13 +2008,26 @@ static Object ps_nextState( Parser ps, Object ob )
 		TRACE( ps->detailedDiagnostics, "\n" );
 		}
 	Object result = NULL;
-	if( ob_isToken( ob, oh ) )
+	switch( sy_index( tag, st ) )
 		{
-		Symbol literalToken = ob_toSymbol( ob, oh );
-		result = ob_getField( curState, literalToken, oh );
+		case SYM_TOKEN:
+			// If the symbol represented by this token object is expected, use that in preference to SYM_TOKEN
+			result = ob_getField( curState, ob_toSymbol( ob, oh ), oh );
+			break;
+		default:
+			break;
 		}
 	if( !result )
-		result = ob_getField( curState, token, oh );
+		result = ob_getField( curState, tag, oh );
+	if( !result ) switch( sy_index( tag, st ) )
+		{
+		case SYM_PLACEHOLDER:
+			// If SYM_PLACEHOLDER is not expected, try the placeholder's TAG field
+			result = ob_getField( curState, ob_getTokenFieldX( ob, SYM_TAG, oh ), oh );
+			break;
+		default:
+			break;
+		}
 	if( ps->detailedDiagnostics )
 		{
 		TRACE( ps->detailedDiagnostics, "  result: " );
