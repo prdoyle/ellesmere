@@ -84,6 +84,7 @@ optimize
 #fibs( 2 )
 #fibs( 12 )
 #fibs( 24 )
-#fib( 0 ) print! # To measure parser-gen performance
-fib( 26 ) print!
+#fib( 0 ) print!  # To measure parser-gen performance
+#fib( 2 ) print!  # Confirm it's still working and get reasonable-sized log files
+ fib( 26 ) print! # For performance measurements
 print( time )

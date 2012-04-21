@@ -764,52 +764,10 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 			){
 			Grammar gr = ps_grammar( th->ps ); // Grammar can change as the program proceeds
 			Production handleProduction = gr_production( gr, ob_getIntField( th->productionMap, handleSymbol, th->heap ) );
-			Function functionToCall = NULL;
 
-			Object ob = ob_getField( bindings, handleSymbol, th->heap );
-			if( ob )
-				functionToCall = ob_toFunction( ob, th->heap );
-			else // abstract!
-				check( recording );
-
-			if( recording )
-				{
-				popN( pn_length( handleProduction, gr ), th );
-				Object lhs = oh_symbolToken( th->heap, pn_lhs( handleProduction, gr ) );
-				if( os_enabled( th->os, on_CONCRETIFICATION ) )
-					{
-					if( interpreterTrace )
-						{
-						os_trace( th->os, on_INTERPRETER, "Checking %s for concretification in: ", sy_name( ob_toSymbol( lhs, th->heap ), th->st ) );
-						ob_sendDeepTo( th->concretifications, interpreterTrace, th->heap );
-						os_trace( th->os, on_INTERPRETER, "\n" );
-						}
-					Object concretified = ob_getFieldIfPresent( th->concretifications, ob_toSymbol( lhs, th->heap ), lhs, th->heap );
-					if( concretified != lhs )
-						{
-						os_trace( th->os, on_INTERPRETER, "  %s concretified into %s\n", sy_name( ob_toSymbol( lhs, th->heap ), th->st ), sy_name( ob_toSymbol( concretified, th->heap ), th->st ) );
-						lhs = concretified;
-						}
-					}
-				push( lhs, th );
-				if( ob )
-					{
-					assert( functionToCall->body.gl->response.action == stopRecordingTokenBlockAction );
-					int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
-					if( depthWithoutHandle < startingDepth )
-						{
-						if( os_trace( th->os, on_INTERPRETER, "   Done recording " ) )
-							{
-							tb_sendTo( recording, os_traceFile( th->os, on_INTERPRETER ), th->heap );
-							os_trace( th->os, on_INTERPRETER, "\n" );
-							}
-						goto done;
-						}
-					else
-						os_trace( th->os, on_INTERPRETER, "     Too deep to stop recording yet\n" );
-					}
-				}
-			else if( functionToCall )
+			Object boundObject = ob_getField( bindings, handleSymbol, th->heap );
+			Function functionToCall = boundObject? ob_toFunction( boundObject, th->heap ) : NULL;
+			if( functionToCall && functionToCall->body.gl->response.action != stopRecordingTokenBlockAction )
 				{
 				int i;
 				File logFile = os_logFile( th->os, on_EXECUTION );
@@ -939,6 +897,44 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 						line->response.action( handleProduction, line, th );
 						}
 						break;
+					}
+				}
+			else
+				{
+				check( recording );
+				popN( pn_length( handleProduction, gr ), th );
+				Object lhs = oh_symbolToken( th->heap, pn_lhs( handleProduction, gr ) );
+				if( os_enabled( th->os, on_CONCRETIFICATION ) )
+					{
+					if( interpreterTrace )
+						{
+						os_trace( th->os, on_INTERPRETER, "Checking %s for concretification in: ", sy_name( ob_toSymbol( lhs, th->heap ), th->st ) );
+						ob_sendDeepTo( th->concretifications, interpreterTrace, th->heap );
+						os_trace( th->os, on_INTERPRETER, "\n" );
+						}
+					Object concretified = ob_getFieldIfPresent( th->concretifications, ob_toSymbol( lhs, th->heap ), lhs, th->heap );
+					if( concretified != lhs )
+						{
+						os_trace( th->os, on_INTERPRETER, "  %s concretified into %s\n", sy_name( ob_toSymbol( lhs, th->heap ), th->st ), sy_name( ob_toSymbol( concretified, th->heap ), th->st ) );
+						lhs = concretified;
+						}
+					}
+				push( lhs, th );
+				if( functionToCall )
+					{
+					assert( functionToCall->body.gl->response.action == stopRecordingTokenBlockAction );
+					int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
+					if( depthWithoutHandle < startingDepth )
+						{
+						if( os_trace( th->os, on_INTERPRETER, "   Done recording " ) )
+							{
+							tb_sendTo( recording, os_traceFile( th->os, on_INTERPRETER ), th->heap );
+							os_trace( th->os, on_INTERPRETER, "\n" );
+							}
+						goto done;
+						}
+					else
+						os_trace( th->os, on_INTERPRETER, "     Too deep to stop recording yet\n" );
 					}
 				}
 			}
