@@ -790,9 +790,9 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 						if( action == silentActions[i] )
 							logThisFunction = NULL;
 					}
-					int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
 				if( os_logging( th->os, on_EXECUTION ) )
 					{
+					int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
 					if( logThisFunction )
 						{
 						os_log( th->os, on_EXECUTION, "#  Stack:" );
