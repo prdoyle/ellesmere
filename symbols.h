@@ -28,7 +28,6 @@ typedef enum
 	// Other symbols used internally
 	//
 	SYM_END_OF_INPUT             = NUM_FIELDLESS_OBJECT_TAGS,
-	SYM_STATE_NODE,
 	SYM_ITEM_SET_NUM,
 	SYM_REDUCE_CONTEXT_LENGTH,
 	SYM_BOOLEAN,
@@ -41,6 +40,8 @@ typedef enum
 	SYM_SUBTAGS,
 	SYM_BINDINGS,
 	SYM_DELEGATE,
+	SYM_PLACEHOLDER,
+	SYM_TAG,
 
 	NUM_PREDEFINED_SYMBOLS
 	} SymbolIndex;

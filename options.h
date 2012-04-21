@@ -77,5 +77,13 @@ static inline File os_traceFile ( OptionSet os, OptionNoun noun ){ return os_tra
 FUNC int os_log   ( OptionSet os, OptionNoun noun, const char *format, ... );
 FUNC int os_trace ( OptionSet os, OptionNoun noun, const char *format, ... );
 
+#if 1
+	#define TRACE    fl_write
+	FUNC int optional(char *format, ...);
+#else
+	#define TRACE(...)
+	static inline int optional(char *format, ...) { return true; }
+#endif
+
 #endif
 

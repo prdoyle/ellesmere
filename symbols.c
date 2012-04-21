@@ -26,28 +26,29 @@ typedef struct sys_struct
 static struct sys_struct predefinedSymbols[] =
 	{
 	{ "NULL_SYMBOL" },
-	{ "ANY" },
-	{ "INT" },
-	{ "STRING" },
-	{ "TOKEN" },
-	{ "FUNCTION" },
-	{ "TOKEN_BLOCK" },
+	{ "ANY" },                         // Everything inherits this
+	{ "INT" },                         // Small-magnitude integer with efficient representation
+	{ "STRING" },                      // Sequence of characters
+	{ "TOKEN" },                       // Singleton object representing a symbol
+	{ "FUNCTION" },                    // Action to be performed in response to a reduce action in the parser
+	{ "TOKEN_BLOCK" },                 // Sequence of objects (called "tokens" for historical reasons; I should probably change this)
 	{ "TOKEN_STREAM" },
 	{ "GRAMMAR" },
 	{ "END_OF_INPUT" },
-	{ "STATE_NODE" },
-	{ "ITEM_SET_NUM" },
-	{ "REDUCE_CONTEXT_LENGTH" },
+	{ "ITEM_SET_NUM" },                // Automaton state node field containing a diagnostic reference number 
+	{ "REDUCE_CONTEXT_LENGTH" },       // Automaton state node field used to help in formatting diagnostic messages
 	{ "BOOLEAN" },
 	{ "FALSE" },
 	{ "TRUE" },
-	{ "SYMBOL" },
-	{ "ARRAY" },
-	{ "ELEMENT_COUNT" },
-	{ "SUPERTAGS" },
-	{ "SUBTAGS" },
-	{ "BINDINGS" },
-	{ "DELEGATE" },
+	{ "SYMBOL" },                      // InheritanceRelation node field indicating the symbol represented by that node
+	{ "ARRAY" },                       // Tag for array objects
+	{ "ELEMENT_COUNT" },               // Length field for array objects
+	{ "SUPERTAGS" },                   // InheritanceRelation node field indicating the array of InheritanceRelation nodes of the parent symbols
+	{ "SUBTAGS" },                     // InheritanceRelation node field indicating the array of InheritanceRelation nodes of the child symbols
+	{ "BINDINGS" },                    // Object mapping symbols to their values during interpretation
+	{ "DELEGATE" },                    // Standard field symbol pointing at another object to handle requests that this one can't.  Used by BINDINGS.
+	{ "PLACEHOLDER" },                 // Object representing an unknown value during partial evaluation
+	{ "TAG" },                         // PLACEHOLDER field indicating the tag of the unknown value, for parsing purposes
 	};
 
 struct st_struct
