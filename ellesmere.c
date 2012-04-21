@@ -778,180 +778,179 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 
 			Object boundObject = ob_getField( bindings, handleSymbol, th->heap );
 			Function functionToCall = boundObject? ob_toFunction( boundObject, th->heap ) : NULL;
-			if( functionToCall && functionToCall->body.gl->response.action != stopRecordingTokenBlockAction )
+			File logThisFunction = functionToCall? os_logFile( th->os, on_EXECUTION ) : NULL;
+			if( logThisFunction && functionToCall->kind == FN_NATIVE && os_traceFile( th->os, on_EXECUTION ) == NULL )
 				{
+				// Some native actions are pretty boring.  If we're logging (not tracing), skip the boring ones.
 				int i;
-				File logThisFunction = os_logFile( th->os, on_EXECUTION );
-				if( logThisFunction && functionToCall->kind == FN_NATIVE && os_traceFile( th->os, on_EXECUTION ) == NULL )
+				static const NativeAction silentActions[] = { nopAction, passThrough, parseTreeAction, recordTokenBlockAction };
+				NativeAction action = functionToCall->body.gl->response.action;
+				for( i=0; logThisFunction && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
+					if( action == silentActions[i] )
+						logThisFunction = NULL;
+				}
+			if( os_logging( th->os, on_EXECUTION ) )
+				{
+				int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
+				if( logThisFunction )
 					{
-					static const NativeAction silentActions[] = { nopAction, passThrough, parseTreeAction, recordTokenBlockAction };
-					NativeAction action = functionToCall->body.gl->response.action;
-					for( i=0; logThisFunction && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
-						if( action == silentActions[i] )
-							logThisFunction = NULL;
-					}
-				if( os_logging( th->os, on_EXECUTION ) )
-					{
-					int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
-					if( logThisFunction )
-						{
-						os_log( th->os, on_EXECUTION, "#  Stack:" );
+					os_log( th->os, on_EXECUTION, "#  Stack:" );
 
-						int stackDepth             = sk_depth( ps_operandStack( th->ps ) );
-						int newValues              = stackDepth - itemsFromPrevHandle;
-						int firstNewValueIndex     = newValues - 1;
-						int handleValues           = pn_length( handleProduction, gr );
-						int firstHandleValueIndex  = handleValues - 1;
-						int interestingValues      = max( newValues, handleValues );
-						int totalValues            = max( interestingValues + 2, 10 );
+					int stackDepth             = sk_depth( ps_operandStack( th->ps ) );
+					int newValues              = stackDepth - itemsFromPrevHandle;
+					int firstNewValueIndex     = newValues - 1;
+					int handleValues           = pn_length( handleProduction, gr );
+					int firstHandleValueIndex  = handleValues - 1;
+					int interestingValues      = max( newValues, handleValues );
+					int totalValues            = max( interestingValues + 2, 10 );
 
-						int prefixSpaces = 0;
-						if( totalValues >= stackDepth )
-							totalValues = stackDepth;
-						else
-							prefixSpaces += os_log( th->os, on_EXECUTION, "..." );
-
-						if( 0 && os_log( th->os, on_EXECUTION, "\n# Stack parms:" ) )
-							{
-							os_log( th->os, on_EXECUTION, " stackDepth=%d", stackDepth );
-							os_log( th->os, on_EXECUTION, " depthWithoutHandle=%d", depthWithoutHandle );
-							os_log( th->os, on_EXECUTION, " newValues=%d", newValues );
-							os_log( th->os, on_EXECUTION, " firstNewValueIndex=%d", firstNewValueIndex );
-							os_log( th->os, on_EXECUTION, " handleValues=%d", handleValues );
-							os_log( th->os, on_EXECUTION, " firstHandleValueIndex=%d", firstHandleValueIndex );
-							os_log( th->os, on_EXECUTION, " interestingValues=%d", interestingValues );
-							os_log( th->os, on_EXECUTION, " totalValues=%d", totalValues );
-							os_log( th->os, on_EXECUTION, "\n#  Stack:" );
-							}
-
-						int newValuesColumn = INT_MAX;
-						int handleColumn    = INT_MAX;
-						int currentColumn   = 1; // The %*s thing won't work with zeros
-						for( i = totalValues-1; i >= 0; i-- )
-							{
-							currentColumn += os_log( th->os, on_EXECUTION, " " );
-							if( i == firstHandleValueIndex )
-								handleColumn = currentColumn;
-							if( i == firstNewValueIndex )
-								newValuesColumn = currentColumn;
-							currentColumn += ob_sendTo( sk_item( ps_operandStack( th->ps ), i ), logThisFunction, th->heap );
-							}
-						newValuesColumn = min( newValuesColumn, currentColumn );
-						handleColumn    = min( handleColumn,    currentColumn );
-						os_log( th->os, on_EXECUTION, "\n" );
-						if( handleColumn < newValuesColumn )
-							os_log( th->os, on_EXECUTION, "#%*s        %*s%*s\n", prefixSpaces, "", handleColumn    , "H", newValuesColumn-handleColumn, "^" );
-						else
-							os_log( th->os, on_EXECUTION, "#%*s        %*s%*s\n", prefixSpaces, "", newValuesColumn , "^", handleColumn-newValuesColumn, "H" );
-						itemsFromPrevHandle = depthWithoutHandle;
-						}
+					int prefixSpaces = 0;
+					if( totalValues >= stackDepth )
+						totalValues = stackDepth;
 					else
+						prefixSpaces += os_log( th->os, on_EXECUTION, "..." );
+
+					if( 0 && os_log( th->os, on_EXECUTION, "\n# Stack parms:" ) )
 						{
-						// Every item should appear newly printed at least once
-						if( itemsFromPrevHandle > depthWithoutHandle )
-							itemsFromPrevHandle = depthWithoutHandle;
+						os_log( th->os, on_EXECUTION, " stackDepth=%d", stackDepth );
+						os_log( th->os, on_EXECUTION, " depthWithoutHandle=%d", depthWithoutHandle );
+						os_log( th->os, on_EXECUTION, " newValues=%d", newValues );
+						os_log( th->os, on_EXECUTION, " firstNewValueIndex=%d", firstNewValueIndex );
+						os_log( th->os, on_EXECUTION, " handleValues=%d", handleValues );
+						os_log( th->os, on_EXECUTION, " firstHandleValueIndex=%d", firstHandleValueIndex );
+						os_log( th->os, on_EXECUTION, " interestingValues=%d", interestingValues );
+						os_log( th->os, on_EXECUTION, " totalValues=%d", totalValues );
+						os_log( th->os, on_EXECUTION, "\n#  Stack:" );
 						}
-					static const char depthStr[] = ""; //"----+----+----+----+----+----+----+----+----+----+----?";
-					if( logThisFunction && os_log( th->os, on_EXECUTION, "%-17s: %.*s %s <-", sy_name( handleSymbol, th->st ), ts_depth( th->tokenStream ), depthStr, sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
+
+					int newValuesColumn = INT_MAX;
+					int handleColumn    = INT_MAX;
+					int currentColumn   = 1; // The %*s thing won't work with zeros
+					int i;
+					for( i = totalValues-1; i >= 0; i-- )
 						{
-						char *sep = " ";
-						for( i=0; i < pn_length( handleProduction, gr ); i++ )
-							{
-							Symbol tokenSymbol = pn_token( handleProduction, i, gr );
-							os_log( th->os, on_EXECUTION, "%s%s", sep, sy_name( tokenSymbol, th->st ) );
-							Symbol nameSymbol = pn_name( handleProduction, i, gr );
-							if( nameSymbol )
-								{
-								os_log( th->os, on_EXECUTION, "@%s=", sy_name( nameSymbol, th->st ) );
-								Object value = sk_item( ps_operandStack( th->ps ), pn_length( handleProduction, gr ) - i - 1 );
-								ob_sendTo( value, logThisFunction, th->heap );
-								}
-							sep = " ";
-							}
-						os_log( th->os, on_EXECUTION, "\n" );
+						currentColumn += os_log( th->os, on_EXECUTION, " " );
+						if( i == firstHandleValueIndex )
+							handleColumn = currentColumn;
+						if( i == firstNewValueIndex )
+							newValuesColumn = currentColumn;
+						currentColumn += ob_sendTo( sk_item( ps_operandStack( th->ps ), i ), logThisFunction, th->heap );
 						}
+					newValuesColumn = min( newValuesColumn, currentColumn );
+					handleColumn    = min( handleColumn,    currentColumn );
+					os_log( th->os, on_EXECUTION, "\n" );
+					if( handleColumn < newValuesColumn )
+						os_log( th->os, on_EXECUTION, "#%*s        %*s%*s\n", prefixSpaces, "", handleColumn    , "H", newValuesColumn-handleColumn, "^" );
+					else
+						os_log( th->os, on_EXECUTION, "#%*s        %*s%*s\n", prefixSpaces, "", newValuesColumn , "^", handleColumn-newValuesColumn, "H" );
+					itemsFromPrevHandle = depthWithoutHandle;
 					}
-				FunctionKind kind = functionToCall? functionToCall->kind : FN_NULL;
-				switch( kind )
+				else
 					{
-					case FN_TOKEN_BLOCK:
+					// Every item should appear newly printed at least once
+					if( itemsFromPrevHandle > depthWithoutHandle )
+						itemsFromPrevHandle = depthWithoutHandle;
+					}
+				static const char depthStr[] = ""; //"----+----+----+----+----+----+----+----+----+----+----?";
+				if( logThisFunction && os_log( th->os, on_EXECUTION, "%-17s: %.*s %s <-", sy_name( handleSymbol, th->st ), ts_depth( th->tokenStream ), depthStr, sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
+					{
+					char *sep = " ";
+					int i;
+					for( i=0; i < pn_length( handleProduction, gr ); i++ )
 						{
-						assert( handleProduction );
-						Object argBindings = ob_createX( SYM_BINDINGS, th->heap ); // TODO: Recycle?
-						for( i = pn_length( handleProduction, gr ) - 1; i >= 0; i-- )
+						Symbol tokenSymbol = pn_token( handleProduction, i, gr );
+						os_log( th->os, on_EXECUTION, "%s%s", sep, sy_name( tokenSymbol, th->st ) );
+						Symbol nameSymbol = pn_name( handleProduction, i, gr );
+						if( nameSymbol )
 							{
-							Symbol nameSymbol = pn_name( handleProduction, i, gr );
-							Object value = pop( th );
-							if( nameSymbol )
-								ob_setField( argBindings, nameSymbol, value, th->heap );
+							os_log( th->os, on_EXECUTION, "@%s=", sy_name( nameSymbol, th->st ) );
+							Object value = sk_item( ps_operandStack( th->ps ), pn_length( handleProduction, gr ) - i - 1 );
+							ob_sendTo( value, logThisFunction, th->heap );
 							}
-						ts_digress( th->tokenStream, functionToCall->body.tb, argBindings );
-						cf_push( th );
-						if( logThisFunction && os_trace( th->os, on_EXECUTION, "   Digressing into " ) )
-							{
-							tb_sendTo( functionToCall->body.tb, logThisFunction, th->heap );
-							os_trace( th->os, on_EXECUTION, "\n" );
-							}
+						sep = " ";
 						}
-						break;
-					case FN_NATIVE:
-						{
-						GrammarLine line = functionToCall->body.gl;
-						assert( line );
-						if( logThisFunction && os_trace( th->os, on_EXECUTION, "   Calling native " ) )
-							{
-							Dl_info nativeInfo;
-							if( dladdr( line->response.action, &nativeInfo ) && nativeInfo.dli_saddr == line->response.action )
-								os_trace( th->os, on_EXECUTION, "%s\n", nativeInfo.dli_sname );
-							else
-								os_trace( th->os, on_EXECUTION, "%p\n", line->response.action );
-							}
-						line->response.action( handleProduction, line, th );
-						}
-						break;
-					case FN_NULL:
-						break;
-					case FN_STOP_RECORDING:
-						break;
+					os_log( th->os, on_EXECUTION, "\n" );
 					}
 				}
-			else
+			FunctionKind kind = functionToCall? functionToCall->kind : FN_NULL;
+			switch( kind )
 				{
-				check( recording );
-				popN( pn_length( handleProduction, gr ), th );
-				Object lhs = oh_symbolToken( th->heap, pn_lhs( handleProduction, gr ) );
-				if( os_enabled( th->os, on_CONCRETIFICATION ) )
+				case FN_TOKEN_BLOCK:
 					{
-					if( interpreterTrace )
+					assert( handleProduction );
+					Object argBindings = ob_createX( SYM_BINDINGS, th->heap ); // TODO: Recycle?
+					int i;
+					for( i = pn_length( handleProduction, gr ) - 1; i >= 0; i-- )
 						{
-						os_trace( th->os, on_INTERPRETER, "Checking %s for concretification in: ", sy_name( ob_toSymbol( lhs, th->heap ), th->st ) );
-						ob_sendDeepTo( th->concretifications, interpreterTrace, th->heap );
-						os_trace( th->os, on_INTERPRETER, "\n" );
+						Symbol nameSymbol = pn_name( handleProduction, i, gr );
+						Object value = pop( th );
+						if( nameSymbol )
+							ob_setField( argBindings, nameSymbol, value, th->heap );
 						}
-					Object concretified = ob_getFieldIfPresent( th->concretifications, ob_toSymbol( lhs, th->heap ), lhs, th->heap );
-					if( concretified != lhs )
+					ts_digress( th->tokenStream, functionToCall->body.tb, argBindings );
+					cf_push( th );
+					if( logThisFunction && os_trace( th->os, on_EXECUTION, "   Digressing into " ) )
 						{
-						os_trace( th->os, on_INTERPRETER, "  %s concretified into %s\n", sy_name( ob_toSymbol( lhs, th->heap ), th->st ), sy_name( ob_toSymbol( concretified, th->heap ), th->st ) );
-						lhs = concretified;
+						tb_sendTo( functionToCall->body.tb, logThisFunction, th->heap );
+						os_trace( th->os, on_EXECUTION, "\n" );
 						}
 					}
-				push( lhs, th );
-				if( functionToCall )
+					break;
+				case FN_NATIVE:
 					{
-					assert( functionToCall->body.gl->response.action == stopRecordingTokenBlockAction );
-					int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
-					if( depthWithoutHandle < startingDepth )
+					GrammarLine line = functionToCall->body.gl;
+					assert( line );
+					if( logThisFunction && os_trace( th->os, on_EXECUTION, "   Calling native " ) )
 						{
-						if( os_trace( th->os, on_INTERPRETER, "   Done recording " ) )
+						Dl_info nativeInfo;
+						if( dladdr( line->response.action, &nativeInfo ) && nativeInfo.dli_saddr == line->response.action )
+							os_trace( th->os, on_EXECUTION, "%s\n", nativeInfo.dli_sname );
+						else
+							os_trace( th->os, on_EXECUTION, "%p\n", line->response.action );
+						}
+					line->response.action( handleProduction, line, th );
+					}
+					break;
+				case FN_NULL:
+				case FN_STOP_RECORDING:
+					{
+					check( recording );
+					popN( pn_length( handleProduction, gr ), th );
+					Object lhs = oh_symbolToken( th->heap, pn_lhs( handleProduction, gr ) );
+					if( os_enabled( th->os, on_CONCRETIFICATION ) )
+						{
+						if( interpreterTrace )
 							{
-							tb_sendTo( recording, os_traceFile( th->os, on_INTERPRETER ), th->heap );
+							os_trace( th->os, on_INTERPRETER, "Checking %s for concretification in: ", sy_name( ob_toSymbol( lhs, th->heap ), th->st ) );
+							ob_sendDeepTo( th->concretifications, interpreterTrace, th->heap );
 							os_trace( th->os, on_INTERPRETER, "\n" );
 							}
-						goto done;
+						Object concretified = ob_getFieldIfPresent( th->concretifications, ob_toSymbol( lhs, th->heap ), lhs, th->heap );
+						if( concretified != lhs )
+							{
+							os_trace( th->os, on_INTERPRETER, "  %s concretified into %s\n", sy_name( ob_toSymbol( lhs, th->heap ), th->st ), sy_name( ob_toSymbol( concretified, th->heap ), th->st ) );
+							lhs = concretified;
+							}
 						}
-					else
-						os_trace( th->os, on_INTERPRETER, "     Too deep to stop recording yet\n" );
+					push( lhs, th );
+					if( kind == FN_STOP_RECORDING )
+						{
+						assert( functionToCall->body.gl->response.action == stopRecordingTokenBlockAction );
+						int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
+						if( depthWithoutHandle < startingDepth )
+							{
+							if( os_trace( th->os, on_INTERPRETER, "   Done recording " ) )
+								{
+								tb_sendTo( recording, os_traceFile( th->os, on_INTERPRETER ), th->heap );
+								os_trace( th->os, on_INTERPRETER, "\n" );
+								}
+							goto done;
+							}
+						else
+							os_trace( th->os, on_INTERPRETER, "     Too deep to stop recording yet\n" );
+						}
 					}
+					break;
 				}
 			}
 		if( recording && raw )
