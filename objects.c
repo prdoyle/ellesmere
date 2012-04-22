@@ -574,6 +574,13 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 				charsSent += fl_write( fl, "?%s?", sy_name( ob_getTokenFieldX( ob, SYM_TAG, heap ), heap->st ) );
 				break;
 				}
+			case SYM_VALUE_PLACEHOLDER:
+				{
+				charsSent += fl_write( fl, "?%s=", sy_name( ob_getTokenFieldX( ob, SYM_TAG, heap ), heap->st ) );
+				charsSent += ob_sendTo( ob_getFieldX( ob, SYM_VALUE, heap ), fl, heap );
+				charsSent += fl_write( fl, "?" );
+				break;
+				}
 			default:
 				{
 				charsSent += fl_write( fl, "%s_%p", sy_name( ob_tag(ob,heap), heap->st ), ob );
@@ -740,21 +747,30 @@ FUNC Object oh_symbolToken( ObjectHeap heap, Symbol sy )
 	return result;
 	}
 
-FUNC Object oh_symbolPlaceholder( ObjectHeap heap, Symbol sy )
+FUNC Object oh_valuePlaceholder( ObjectHeap heap, Symbol tag, Object value )
 	{
-	Object result = sy_descriptor( sy, heap )->placeholder;
+	Object result = ob_createX( SYM_VALUE_PLACEHOLDER, heap );
+	ob_setFieldX      ( result, SYM_VALUE, value, heap );
+	ob_setTokenFieldX ( result, SYM_TAG,   ob_tag( value, heap ), heap );
+	return result;
+	}
+
+FUNC Object oh_recordedPlaceholder( ObjectHeap heap, Symbol tag )
+	{
+	Object result = sy_descriptor( tag, heap )->placeholder;
 	if( !result )
 		{
-		result = ob_createX( SYM_PLACEHOLDER, heap );
-		ob_setFieldX( result, SYM_TAG, oh_symbolToken( heap, sy ), heap );
-		sy_descriptor( sy, heap )->placeholder = result;
+		result = ob_createX( SYM_RECORDED_PLACEHOLDER, heap );
+		ob_setTokenFieldX ( result, SYM_TAG, tag, heap );
+		sy_descriptor( tag, heap )->placeholder = result;
 		}
 	return result;
 	}
 
 FUNC bool ob_isPlaceholder( Object ob, ObjectHeap heap )
 	{
-	return ob_tagX( ob, heap ) == SYM_PLACEHOLDER;
+	SymbolIndex tag = ob_tagX( ob, heap );
+	return SYM_PLACEHOLDER <= tag && tag < NUM_PREDEFINED_SYMBOLS;
 	}
 
 //MERGE:40

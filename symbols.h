@@ -40,8 +40,15 @@ typedef enum
 	SYM_SUBTAGS,
 	SYM_BINDINGS,
 	SYM_DELEGATE,
-	SYM_PLACEHOLDER,
+	SYM_VALUE,
 	SYM_TAG,
+
+	// Placeholders go at the end, unless you want to change ob_isPlaceholder
+	//
+	SYM_PLACEHOLDER,
+	SYM_VALUE_PLACEHOLDER,
+	SYM_TOKEN_BLOCK_PLACEHOLDER,
+	SYM_RECORDED_PLACEHOLDER,
 
 	NUM_PREDEFINED_SYMBOLS
 	} SymbolIndex;

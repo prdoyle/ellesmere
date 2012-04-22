@@ -47,8 +47,12 @@ static struct sys_struct predefinedSymbols[] =
 	{ "SUBTAGS" },                     // InheritanceRelation node field indicating the array of InheritanceRelation nodes of the child symbols
 	{ "BINDINGS" },                    // Object mapping symbols to their values during interpretation
 	{ "DELEGATE" },                    // Standard field symbol pointing at another object to handle requests that this one can't.  Used by BINDINGS.
+	{ "VALUE" },                       // General field symbol pointing at another object to be considered this one's "value".  Used by VALUE_PLACEHOLDER.
+	{ "TAG" },                         // The "datatype" of a value being represented by a PLACEHOLDER
 	{ "PLACEHOLDER" },                 // Object representing an unknown value during partial evaluation
-	{ "TAG" },                         // PLACEHOLDER field indicating the tag of the unknown value, for parsing purposes
+	{ "VALUE_PLACEHOLDER" },           // PLACEHOLDER subtype where the expression is a single object
+	{ "TOKEN_BLOCK_PLACEHOLDER" },     // PLACEHOLDER subtype where the expression is captured by a token block
+	{ "RECORDED_PLACEHOLDER" },        // PLACEHOLDER subtype where the expression has already been stored in a token block
 	};
 
 struct st_struct

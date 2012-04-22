@@ -9,13 +9,15 @@ FUNC int    sk_depth  ( Stack sk );
 FUNC void   sk_push   ( Stack sk, Object ob );
 FUNC Object sk_item   ( Stack sk, int depth );
 FUNC void   sk_popN   ( Stack sk, int count );
-FUNC Stack  sk_dup( Stack other, MemoryLifetime ml );
-FUNC Stack  sk_mirror( Stack other, MemoryLifetime ml );
+FUNC void   sk_dupN   ( Stack target, int count, Stack source );
+FUNC void   sk_mirrorN( Stack target, int count, Stack source );
 
 static inline Object sk_top    ( Stack sk ){ return sk_item( sk, 0 ); }
 static inline Object sk_pop    ( Stack sk ){ Object result = sk_top(sk); sk_popN( sk, 1 ); return result; }
 static inline void   sk_popAll ( Stack sk ){ sk_popN( sk, sk_depth( sk ) ); }
 static inline bool   sk_isEmpty( Stack sk ){ return sk_depth( sk ) == 0; }
+static inline Stack  sk_dup    ( Stack sk, MemoryLifetime ml ){ Stack result = sk_new( ml ); sk_dupN    ( result, sk_depth( sk ), sk ); return result; }
+static inline Stack  sk_mirror ( Stack sk, MemoryLifetime ml ){ Stack result = sk_new( ml ); sk_mirrorN ( result, sk_depth( sk ), sk ); return result; }
 
 FUNC int sk_sendNTo( Stack sk, int numElements, File fl, ObjectHeap heap );
 

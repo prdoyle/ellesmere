@@ -291,6 +291,16 @@ FUNC TokenBlock ts_skipBlock( TokenStream ts )
 	return result;
 	}
 
+FUNC TokenBlock tb_new( MemoryLifetime ml )
+	{
+	TokenBlock result = (TokenBlock)ml_alloc( ml, sizeof(*result) );
+	result->tag        = SYM_TOKEN_BLOCK;
+	result->tokens     = oba_new( DEFAULT_TOKEN_BLOCK_LENGTH, ml );
+	result->startIndex = 0;
+	result->subBlocks  = (TokenBlockArray)0xdead0300;
+	return result;
+	}
+
 FUNC TokenBlock ts_beginBlock( TokenStream ts )
 	{
 	TokenBlock result = NULL;
@@ -317,6 +327,13 @@ FUNC int tb_length( TokenBlock tb )
 FUNC void tb_append( TokenBlock tb, Object token )
 	{
 	oba_append( tb->tokens, token );
+	}
+
+FUNC void tb_appendBlock( TokenBlock tb, TokenBlock suffix )
+	{
+	int i;
+	for( i=0; i < tb_length( suffix ); i++ )
+		tb_append( tb, oba_get( suffix->tokens, i ) );
 	}
 
 FUNC void tb_stopAppending( TokenBlock tb )

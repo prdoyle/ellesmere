@@ -20,8 +20,10 @@ FUNC ObjectHeap  ts_heap       ( TokenStream ts );
 FUNC int         ts_sendTo     ( TokenStream ts, File fl );
 FUNC void        ts_cancelDigression ( TokenStream ts ); // Abort an unfinished digression and resume original stream
 
+FUNC TokenBlock tb_new           ( MemoryLifetime ml );  // Also consider ts_beginBlock
 FUNC int        tb_length        ( TokenBlock tb );
 FUNC void       tb_append        ( TokenBlock tb, Object token );
+FUNC void       tb_appendBlock   ( TokenBlock tb, TokenBlock suffix );
 FUNC void       tb_stopAppending ( TokenBlock tb );
 FUNC int        tb_sendTo        ( TokenBlock tb, File fl, ObjectHeap heap );
 FUNC int        tb_sendNTo       ( TokenBlock tb, int tokenLimit, File fl, ObjectHeap heap );

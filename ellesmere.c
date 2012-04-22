@@ -408,7 +408,7 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 		if( name )
 			{
 			Symbol tag = pn_token( pn, i, gr );
-			Object value = oh_symbolPlaceholder( th->heap, tag );
+			Object value = oh_valuePlaceholder( th->heap, tag, oh_symbolToken( th->heap, name ) );
 			if( os_trace( th->os, on_INTERPRETER, "    -- bound %s to ", sy_name( name, th->st ) ) )
 				{
 				ob_sendTo( value, os_traceFile( th->os, on_INTERPRETER ), th->heap );
@@ -778,8 +778,10 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 		os_trace( th->os, on_INTERPRETER, ", %p ) startingDepth=%d\n", bindings, startingDepth );
 		}
 
+	MemoryLifetime parseTime = ml_begin( 100, ml_indefinite() );
+	Stack sk = sk_new( parseTime );
+
 	int itemsFromPrevHandle = startingDepth;
-	Object raw = NULL;
 	while( 1 )
 		{
 		Symbol handleSymbol;
@@ -979,7 +981,28 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 				case FN_STOP_RECORDING:
 					{
 					check( recording );
-					popN( pn_length( handleProduction, gr ), th );
+					int handleLength = pn_length( handleProduction, gr );
+					Stack operandStack = ps_operandStack( th->ps );
+					sk_mirrorN( sk, handleLength, operandStack );
+					while( sk_depth(sk) >= 1)
+						{
+						Object toRecord = sk_pop( sk );
+						if( ob_isPlaceholder( toRecord, th->heap ) )
+							{
+							if( ob_tagX( toRecord, th->heap ) == SYM_RECORDED_PLACEHOLDER )
+								{
+								// Already been recorded; ignore
+								continue;
+								}
+							else
+								{
+								// Actual value to record is attached to the placeholder
+								toRecord = ob_getFieldX( toRecord, SYM_VALUE, th->heap );
+								}
+							}
+						tb_append( recording, toRecord );
+						}
+					popN( handleLength, th );
 					Symbol lhs = pn_lhs( handleProduction, gr );
 					if( os_enabled( th->os, on_CONCRETIFICATION ) )
 						{
@@ -996,7 +1019,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 							lhs = ob_toSymbol( concretified, th->heap );
 							}
 						}
-					push( oh_symbolPlaceholder( th->heap, lhs ), th );
+					push( oh_recordedPlaceholder( th->heap, lhs ), th );
 					if( kind == FN_STOP_RECORDING )
 						{
 						assert( functionToCall->body.gl->response.action == stopRecordingTokenBlockAction );
@@ -1018,20 +1041,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 					break;
 				}
 			}
-		if( recording && raw )
-			{
-			// This raw token didn't cause the recording to terminate.  Append it.
-			tb_append( recording, raw );
-			if( interpreterTrace )
-				{
-				os_trace( th->os, on_INTERPRETER, "   Appended " );
-				ob_sendTo( raw, interpreterTrace, th->heap );
-				os_trace( th->os, on_INTERPRETER, " to ");
-				tb_sendTo( recording, interpreterTrace, th->heap );
-				os_trace( th->os, on_INTERPRETER, "\n");
-				}
-			}
-		raw = ts_currentRaw( th->tokenStream );
+		Object raw = ts_currentRaw( th->tokenStream );
 		if( !raw )
 			{
 			os_trace( th->os, on_INTERPRETER, "   Raw token is NULL\n" );
@@ -1065,6 +1075,8 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 			}
 		os_trace( th->os, on_INTERPRETER, "\n" );
 		}
+
+	ml_end( parseTime );
 	}
 
 NATIVE_ACTION void recordTokenBlockAction( Production handle, GrammarLine gl, Thread th )
