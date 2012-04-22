@@ -5,7 +5,7 @@
 #include "base.h"
 #include "file.h"
 
-FUNC BitVector bv_new     ( int numBits, MemoryLifetime ml );
+FUNC BitVector bv_new     ( int numBits, MemoryLifetime ml ) ALWAYS_NEW;
 FUNC bool      bv_isSet   ( BitVector bv, int bitIndex );
 FUNC void      bv_set     ( BitVector bv, int bitIndex );
 FUNC void      bv_unset   ( BitVector bv, int bitIndex );
@@ -66,7 +66,7 @@ static inline bool bv_isUnset( BitVector bv, int bitIndex ){ return !bv_isSet( b
 #ifdef NDEBUG
 	#define bv_newAnnotated( numBits, ml, f, l )  bv_new( numBits, ml )
 #else
-	FUNC BitVector bv_newAnnotated( int numBits, MemoryLifetime ml, const char *file, int line );
+	FUNC BitVector bv_newAnnotated( int numBits, MemoryLifetime ml, const char *file, int line ) ALWAYS_NEW;
 	#define bv_new( numBits, ml )  bv_newAnnotated( numBits, ml, __FILE__, __LINE__ )
 #endif
 

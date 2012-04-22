@@ -14,13 +14,13 @@ FUNC int         ts_depth      ( TokenStream ts ); // Current number of digressi
 FUNC TokenBlock  ts_curBlock   ( TokenStream ts );
 FUNC Object      ts_getBindings( TokenStream ts );
 FUNC void        ts_setBindings( TokenStream ts, Object bindings );
-FUNC TokenBlock  ts_beginBlock ( TokenStream ts ); // Return a block begun at the current token
-FUNC TokenBlock  ts_skipBlock  ( TokenStream ts ); // Return a block begun at the current token if it exists, and advance past it
+FUNC TokenBlock  ts_beginBlock ( TokenStream ts ) ALWAYS_NEW; // Return a block begun at the current token
+FUNC TokenBlock  ts_skipBlock  ( TokenStream ts );            // Return a block begun at the current token if it exists, and advance past it
 FUNC ObjectHeap  ts_heap       ( TokenStream ts );
 FUNC int         ts_sendTo     ( TokenStream ts, File fl );
 FUNC void        ts_cancelDigression ( TokenStream ts ); // Abort an unfinished digression and resume original stream
 
-FUNC TokenBlock tb_new           ( MemoryLifetime ml );  // Also consider ts_beginBlock
+FUNC TokenBlock tb_new           ( MemoryLifetime ml ) ALWAYS_NEW;  // Also consider ts_beginBlock
 FUNC int        tb_length        ( TokenBlock tb );
 FUNC void       tb_append        ( TokenBlock tb, Object token );
 FUNC void       tb_appendBlock   ( TokenBlock tb, TokenBlock suffix );

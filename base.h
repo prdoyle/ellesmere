@@ -47,4 +47,8 @@ static inline int min(int a, int b)
 static inline int max(int a, int b)
 	{ return a>b? a : b; }
 
+#define LIKE_PRINTF( FORMAT, FIRST_ARG ) __attribute__ ((format (printf, FORMAT, FIRST_ARG)))
+#define LIKE_VPRINTF( FORMAT )           __attribute__ ((format (printf, FORMAT, 0)))
+#define ALWAYS_NEW                       __attribute__ ((malloc))
+
 #endif

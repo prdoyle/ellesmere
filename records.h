@@ -5,7 +5,7 @@
 #include "bitvector.h"
 #include "symbols.h"
 
-FUNC Record rd_new( BitVector fieldIDs, MemoryLifetime ml ); // NULL is a valid Record (the empty record) and other functions can cope with it
+FUNC Record rd_new( BitVector fieldIDs, MemoryLifetime ml ) ALWAYS_NEW; // NULL is a valid Record (the empty record) and other functions can cope with it
 
 enum { rd_NONE=0 };                  // Indicates the given field ID is not present in the Records
 FUNC int rd_maxIndex ( Record rd );  // Max field index

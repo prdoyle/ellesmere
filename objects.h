@@ -17,7 +17,7 @@ FUNC InheritanceRelation  oh_inheritanceRelation ( ObjectHeap heap );
 FUNC Record  sy_instanceShape    ( Symbol sy, ObjectHeap heap );
 FUNC void    sy_setInstanceShape ( Symbol sy, Record rd, ObjectHeap heap );
 
-FUNC InheritanceRelation ir_new ( ObjectHeap heap, MemoryLifetime ml ); // TODO: Get rid of this if each heap has exactly one inheritance relation
+FUNC InheritanceRelation ir_new ( ObjectHeap heap, MemoryLifetime ml ) ALWAYS_NEW; // TODO: Get rid of this if each heap has exactly one inheritance relation
 FUNC Object              ir_index    ( InheritanceRelation ir );
 FUNC Symbol              ir_nodeTag  ( InheritanceRelation ir );
 FUNC ObjectHeap          ir_nodeHeap ( InheritanceRelation ir );

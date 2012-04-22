@@ -4,9 +4,9 @@
 
 #include "base.h"
 
-FUNC Array ar_new          ( int capacity, int elementSize, MemoryLifetime ml );
+FUNC Array ar_new          ( int capacity, int elementSize, MemoryLifetime ml ) ALWAYS_NEW;
 #ifndef NDEBUG
-	FUNC Array ar_newAnnotated ( int capacity, int elementSize, MemoryLifetime ml, const char *file, int line );
+	FUNC Array ar_newAnnotated ( int capacity, int elementSize, MemoryLifetime ml, const char *file, int line ) ALWAYS_NEW;
 
 	#define ar_new(c,s,ml)  ar_newAnnotated( (c), (s), (ml), __FILE__, __LINE__ )
 #endif

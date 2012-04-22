@@ -4,8 +4,8 @@
 
 #include "symbols.h"
 
-FUNC Grammar    gr_new       ( Symbol  goal,  int numProductionsEstimate, MemoryLifetime ml );
-FUNC Grammar    gr_nested    ( Grammar outer, int numProductionsEstimate, MemoryLifetime ml );
+FUNC Grammar    gr_new       ( Symbol  goal,  int numProductionsEstimate, MemoryLifetime ml ) ALWAYS_NEW;
+FUNC Grammar    gr_nested    ( Grammar outer, int numProductionsEstimate, MemoryLifetime ml ) ALWAYS_NEW;
 
 FUNC void       gr_stopAdding     ( Grammar gr );
 FUNC Symbol     gr_goal           ( Grammar gr );
@@ -38,8 +38,8 @@ typedef enum
 	CR_COUNT
 	} ConflictResolutions;
 
-FUNC Production pn_new( Grammar gr, Symbol lhs, int lengthEstimate );
-FUNC Production pn_copy( Grammar oldGrammar, Production oldProduction, Grammar gr, Symbol lhs, int numTokensToCopy );
+FUNC Production pn_new( Grammar gr, Symbol lhs, int lengthEstimate ) ALWAYS_NEW;
+FUNC Production pn_copy( Grammar oldGrammar, Production oldProduction, Grammar gr, Symbol lhs, int numTokensToCopy ) ALWAYS_NEW;
 FUNC void       pn_appendWithName ( Production pn, Symbol name, Symbol token, Grammar gr );
 FUNC void       pn_stopAppending  ( Production pn, Grammar gr );
 FUNC void       pn_abort          ( Production pn, Grammar gr ); // pn must be the last new Production in gr

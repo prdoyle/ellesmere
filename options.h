@@ -39,7 +39,7 @@ typedef enum
 	on_NUM_OPTION_NOUNS
 	} OptionNoun;
 
-FUNC OptionSet os_new ( MemoryLifetime ml );
+FUNC OptionSet os_new ( MemoryLifetime ml ) ALWAYS_NEW;
 FUNC OptionSet os_global();
 
 FUNC OptionDelta od_parse   ( char *start, char *stop, MemoryLifetime ml );
@@ -74,12 +74,12 @@ static inline bool os_enabledAll  ( OptionSet os, ... );
 static inline File os_logFile   ( OptionSet os, OptionNoun noun ){ return os_logging( os, noun ) ? os_getLogFile(os) : NULL; }
 static inline File os_traceFile ( OptionSet os, OptionNoun noun ){ return os_tracing( os, noun ) ? os_getLogFile(os) : NULL; }
 
-FUNC int os_log   ( OptionSet os, OptionNoun noun, const char *format, ... ) __attribute__ ((format (printf, 3, 4)));
-FUNC int os_trace ( OptionSet os, OptionNoun noun, const char *format, ... ) __attribute__ ((format (printf, 3, 4)));
+FUNC int os_log   ( OptionSet os, OptionNoun noun, const char *format, ... ) LIKE_PRINTF(3,4);
+FUNC int os_trace ( OptionSet os, OptionNoun noun, const char *format, ... ) LIKE_PRINTF(3,4);
 
 #if 1
 	#define TRACE    fl_write
-	FUNC int optional(char *format, ...);
+	FUNC int optional(char *format, ...) LIKE_PRINTF(1,2);
 #else
 	#define TRACE(...)
 	static inline int optional(char *format, ...) { return true; }

@@ -8,8 +8,8 @@
 
 typedef FILE *File;
 
-FUNC int fl_write( File fl, const char *format, ... ) __attribute__ ((format (printf, 2, 3)));
-FUNC int fl_vwrite( File fl, const char *format, va_list args );
+FUNC int fl_write( File fl, const char *format, ... )           LIKE_PRINTF(2,3);
+FUNC int fl_vwrite( File fl, const char *format, va_list args ) LIKE_VPRINTF(2);
 
 #endif
 

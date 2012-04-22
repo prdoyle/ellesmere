@@ -10,10 +10,10 @@
 #define ITEM_SET_NUMS
 #define REDUCE_CONTEXT_LENGTH // max tokens that could be involved in a reduce from the given state
 
-FUNC Automaton  au_new ( Grammar gr, SymbolTable st, ObjectHeap heap, MemoryLifetime ml, OptionSet os, File conflictLog, File diagnostics );
+FUNC Automaton  au_new ( Grammar gr, SymbolTable st, ObjectHeap heap, MemoryLifetime ml, OptionSet os, File conflictLog, File diagnostics ) ALWAYS_NEW;
 FUNC Grammar    au_grammar ( Automaton au );
 
-FUNC Parser     ps_new ( Automaton au, MemoryLifetime ml, File diagnostics );
+FUNC Parser     ps_new ( Automaton au, MemoryLifetime ml, File diagnostics ) ALWAYS_NEW;
 FUNC Automaton  ps_automaton ( Parser ps );
 
 FUNC bool       ps_expects ( Parser ps, Object ob ); // False if pushing ob would cause a parse error

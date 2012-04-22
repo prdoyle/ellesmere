@@ -1927,6 +1927,10 @@ FUNC Grammar au_grammar( Automaton au )
 FUNC Parser ps_new( Automaton au, MemoryLifetime ml, File diagnostics )
 	{
 	Parser result = NULL;
+	// Note that recycling parsers doesn't violate ALWAYS_NEW because we only
+	// reuse parsers that should never again be used by the program, and so if
+	// this function returns an alias to a parser that's still in use, then
+	// that's not the only bug in the program.
 	int i;
 	TRACE( diagnostics, "PARSER Scanning %d existing parsers on %p\n", psa_count( au->parsers ), au );
 	for( i = 0; i < psa_count( au->parsers ) && !result; i++ )
