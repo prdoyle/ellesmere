@@ -576,14 +576,14 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 				}
 			case SYM_VALUE_PLACEHOLDER:
 				{
-				charsSent += fl_write( fl, "?%s=", sy_name( ob_getTokenFieldX( ob, SYM_TAG, heap ), heap->st ) );
+				charsSent += fl_write( fl, "?%s@", sy_name( ob_getTokenFieldX( ob, SYM_TAG, heap ), heap->st ) );
 				charsSent += ob_sendTo( ob_getFieldX( ob, SYM_VALUE, heap ), fl, heap );
 				charsSent += fl_write( fl, "?" );
 				break;
 				}
 			default:
 				{
-				charsSent += fl_write( fl, "%s_%p", sy_name( ob_tag(ob,heap), heap->st ), ob );
+				charsSent += fl_write( fl, "%s_x%x", sy_name( ob_tag(ob,heap), heap->st ), ob->checkListIndex );
 				break;
 				}
 			}
@@ -751,7 +751,7 @@ FUNC Object oh_valuePlaceholder( ObjectHeap heap, Symbol tag, Object value )
 	{
 	Object result = ob_createX( SYM_VALUE_PLACEHOLDER, heap );
 	ob_setFieldX      ( result, SYM_VALUE, value, heap );
-	ob_setTokenFieldX ( result, SYM_TAG,   ob_tag( value, heap ), heap );
+	ob_setTokenFieldX ( result, SYM_TAG,   tag,   heap );
 	return result;
 	}
 

@@ -409,7 +409,7 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 			{
 			Symbol tag = pn_token( pn, i, gr );
 			Object value = oh_valuePlaceholder( th->heap, tag, oh_symbolToken( th->heap, name ) );
-			if( os_trace( th->os, on_INTERPRETER, "    -- bound %s to ", sy_name( name, th->st ) ) )
+			if( os_trace( th->os, on_INTERPRETER, "    -- bound %s@%s to ", sy_name( tag, th->st ), sy_name( name, th->st ) ) )
 				{
 				ob_sendTo( value, os_traceFile( th->os, on_INTERPRETER ), th->heap );
 				os_trace( th->os, on_INTERPRETER, "\n" );
@@ -1001,6 +1001,12 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 								}
 							}
 						tb_append( recording, toRecord );
+						}
+					if( interpreterTrace )
+						{
+						os_trace( th->os, on_INTERPRETER, "   Appended %d objects to ", handleLength );
+						tb_sendTo( recording, interpreterTrace, th->heap );
+						os_trace( th->os, on_INTERPRETER, "\n");
 						}
 					popN( handleLength, th );
 					Symbol lhs = pn_lhs( handleProduction, gr );
