@@ -8,7 +8,8 @@
 typedef struct syd_struct
 	{
 	Object  token;
-	Object  placeholder; // A simple information-free placeholder.  Nothing more than a token really.
+	Object  placeholder;         // A simple information-free placeholder.  Nothing more than a token really.
+	Object  recordedPlaceholder; // Another placeholder indicating that an item has already been recorded to a token block and shouldn't be recorded again.
 	Record  instanceShape;
 	} *SymbolDescriptor;
 
@@ -570,7 +571,6 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 				}
 			case SYM_PLACEHOLDER:
 				{
-				//charsSent += fl_write( fl, "%s_%p:%s", sy_name( ob_tag(ob,heap), heap->st ), ob, sy_name( ob_getTokenFieldX( ob, SYM_TAG, heap ), heap->st ) );
 				charsSent += fl_write( fl, "?%s?", sy_name( ob_getTokenFieldX( ob, SYM_TAG, heap ), heap->st ) );
 				break;
 				}
@@ -579,6 +579,11 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 				charsSent += fl_write( fl, "?%s@", sy_name( ob_getTokenFieldX( ob, SYM_TAG, heap ), heap->st ) );
 				charsSent += ob_sendTo( ob_getFieldX( ob, SYM_VALUE, heap ), fl, heap );
 				charsSent += fl_write( fl, "?" );
+				break;
+				}
+			case SYM_RECORDED_PLACEHOLDER:
+				{
+				charsSent += fl_write( fl, "?rec:%s?", sy_name( ob_getTokenFieldX( ob, SYM_TAG, heap ), heap->st ) );
 				break;
 				}
 			default:
@@ -755,14 +760,26 @@ FUNC Object oh_valuePlaceholder( ObjectHeap heap, Symbol tag, Object value )
 	return result;
 	}
 
-FUNC Object oh_recordedPlaceholder( ObjectHeap heap, Symbol tag )
+FUNC Object oh_symbolPlaceholder( ObjectHeap heap, Symbol tag )
 	{
 	Object result = sy_descriptor( tag, heap )->placeholder;
 	if( !result )
 		{
-		result = ob_createX( SYM_RECORDED_PLACEHOLDER, heap );
+		result = ob_createX( SYM_PLACEHOLDER, heap );
 		ob_setTokenFieldX ( result, SYM_TAG, tag, heap );
 		sy_descriptor( tag, heap )->placeholder = result;
+		}
+	return result;
+	}
+
+FUNC Object oh_recordedPlaceholder( ObjectHeap heap, Symbol tag )
+	{
+	Object result = sy_descriptor( tag, heap )->recordedPlaceholder;
+	if( !result )
+		{
+		result = ob_createX( SYM_RECORDED_PLACEHOLDER, heap );
+		ob_setTokenFieldX ( result, SYM_TAG, tag, heap );
+		sy_descriptor( tag, heap )->recordedPlaceholder = result;
 		}
 	return result;
 	}

@@ -54,7 +54,6 @@ struct th_struct
 	OptionSet            os;
 
 	FILE                *parserGenDiagnostics;
-	FILE                *conflictLog;
 	long                 timeBasis;
 	} theThread = {0};
 
@@ -121,7 +120,6 @@ typedef enum
 	FN_UNKNOWN,
 	FN_NATIVE,
 	FN_TOKEN_BLOCK,
-	FN_STOP_RECORDING, // weird special case... perhaps can be handled more elegantly?
 	} FunctionKind;
 
 struct fn_struct
@@ -255,6 +253,7 @@ struct gl_struct
 		{
 		NativeAction action;
 		int parm1;
+		int parm2;
 		} response;
 	PartialEvaluationSafety peSafe;
 	ConflictResolutions     cr;
@@ -274,6 +273,16 @@ NATIVE_ACTION void passThrough( Production handle, GrammarLine gl, Thread th )
 	Object result = sk_item( ps_operandStack( th->ps ), depth );
 	popN( pn_length( handle, gr ), th );
 	push( result, th );
+	}
+
+NATIVE_ACTION void passThroughField( Production handle, GrammarLine gl, Thread th )
+	{
+	Grammar gr = ps_grammar( th->ps );
+	SymbolIndex field = gl->response.parm1;
+	int depth         = gl->response.parm2;
+	Object container = sk_item( ps_operandStack( th->ps ), depth );
+	popN( pn_length( handle, gr ), th );
+	push( ob_getFieldX( container, field, th->heap ), th );
 	}
 
 NATIVE_ACTION void addAction( Production handle, GrammarLine gl, Thread th )
@@ -324,7 +333,13 @@ NATIVE_ACTION void recordTokenBlockAction( Production handle, GrammarLine gl, Th
 
 NATIVE_ACTION void stopRecordingTokenBlockAction( Production handle, GrammarLine gl, Thread th )
 	{
-	assert(0); // Never actually gets called.  It's a kind of null terminator.
+	// If we're calling this, it's because the parser is to "stop recording" a
+	// nested token block during another recording.  (The code to actually end
+	// a recording is inside mainParsingLoop itself.)  In that case, return a
+	// placeholder for the resulting token block.
+	Grammar gr = ps_grammar( th->ps );
+	popN( pn_length( handle, gr ), th );
+	push( oh_symbolPlaceholder( th->heap, pn_lhs( handle, gr ) ), th );
 	}
 
 NATIVE_ACTION void parseTreeAction( Production handle, GrammarLine gl, Thread th )
@@ -379,7 +394,7 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 	if ( os_enabled( th->os, on_GRAMMAR_AUGMENTATION ) )
 		gr = gr_augmentedShallow( gr, oh_inheritanceRelation( th->heap ), sym_abstract, ml_indefinite(), os_logFile( th->os, on_GRAMMAR_AUGMENTATION ) );
 	addNewestProductionsToMap( gr, th );
-	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, os_traceFile( th->os, on_PARSER_GEN ) );
+	Automaton au = au_new( gr, th->st, th->heap, ml_indefinite(), th->os, os_logFile( th->os, on_PARSER_CONFLICT ), os_traceFile( th->os, on_PARSER_GEN ) );
 	Parser oldParser = th->ps;
 	th->ps = ps_new( au, ml_indefinite(), os_logFile( th->os, on_INTERPRETER ) );
 
@@ -604,11 +619,13 @@ static struct gl_struct grammar1[] =
 	{ { "PARAMETER_LIST",  "TOKEN@name", ":", "TOKEN@tag",  "PARAMETER_LIST@next"   }, { parseTreeAction } },
 	{ { "PRODUCTION",      "TOKEN@result", "PARAMETER_LIST@parms"                   }, { addProductionAction } },
 	{ { "PRODUCTION",      "l2r", "TOKEN@result", "PARAMETER_LIST@parms"            }, { addProductionAction, CR_REDUCE_BEATS_SHIFT } },
-	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "}"                                 }, { stopRecordingTokenBlockAction }, PE_SAFE },
-	{ { "TOKEN_BLOCK",     "TB_START",          "}"                                 }, { stopRecordingTokenBlockAction }, PE_SAFE },
-	{ { "TOKEN_BLOCK",     "TB_START", "VOIDS", "OBJECT", "}"                       }, { stopRecordingTokenBlockAction }, PE_SAFE },
-	{ { "TOKEN_BLOCK",     "TB_START", "OBJECT", "}"                                }, { stopRecordingTokenBlockAction }, PE_SAFE },
 	{ { "TB_START",        "{",                                                     }, { recordTokenBlockAction } },
+	{ { "TB_BODY",                                                                  }, { nopAction } },
+	{ { "TB_BODY",         "VOIDS",                                                 }, { nopAction } },
+	{ { "TB_BODY",         "OBJECT",                                                }, { nopAction } },
+	{ { "TB_BODY",         "VOIDS", "OBJECT",                                       }, { nopAction } },
+	{ { "TB_RECORDING",    "TB_START", "TB_BODY",                                   }, { stopRecordingTokenBlockAction }, PE_SAFE },
+	{ { "TOKEN_BLOCK",     "TB_RECORDING", "}"                                      }, { passThroughField, SYM_VALUE, 1 }, PE_SAFE },
 	{ { "VOID",            "def", "PRODUCTION", "as", "TOKEN_BLOCK"                 }, { defAction } },
 
 	{ { "VOID",     "optimize"                                                      }, { optimizeAction } },
@@ -701,18 +718,10 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 			pn_stopAppending( pn, gr );
 			Function fn = (Function)ml_alloc( ml_indefinite(), sizeof(*fn) );
 			fn->body.gl = line;
-			if( line->response.action == stopRecordingTokenBlockAction )
-				{
-				fn->kind = FN_STOP_RECORDING;
+			fn->kind    = FN_NATIVE;
+			ob_setFunctionField( th->executionBindings, pnSymbol, fn, th->heap );
+			if( line->peSafe )
 				ob_setFunctionField( th->recordingBindings, pnSymbol, fn, th->heap );
-				}
-			else
-				{
-				fn->kind = FN_NATIVE;
-				ob_setFunctionField( th->executionBindings, pnSymbol, fn, th->heap );
-				if( line->peSafe )
-					ob_setFunctionField( th->recordingBindings, pnSymbol, fn, th->heap );
-				}
 			}
 		}
 	gr_stopAdding( gr );
@@ -761,11 +770,42 @@ static void initializeInheritanceRelation( ObjectHeap heap, SymbolTable st, Memo
 		}
 	}
 
-static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
+static void record( TokenBlock recording, int lengthToRecord, Stack utilityStack, Thread th )
+	{
+	Stack operandStack = ps_operandStack( th->ps );
+	assert( sk_depth( utilityStack ) == 0 );
+	if( lengthToRecord >= 0 )
+		{
+		sk_mirrorN( utilityStack, lengthToRecord, operandStack );
+		while( sk_depth( utilityStack ) >= 1)
+			{
+			Object toRecord = sk_pop( utilityStack );
+			if( ob_isPlaceholder( toRecord, th->heap ) )
+				{
+				assert( ob_tagX( toRecord, th->heap ) != SYM_RECORDED_PLACEHOLDER ); // Ensure lengthToRecord is accurate
+				// Actual value to record is attached to the placeholder
+				toRecord = ob_getFieldX( toRecord, SYM_VALUE, th->heap );
+				}
+			tb_append( recording, toRecord );
+			}
+		File interpreterTrace = os_traceFile( th->os, on_INTERPRETER );
+		if( interpreterTrace )
+			{
+			os_trace( th->os, on_INTERPRETER, "   Recorded %d objects to ", lengthToRecord );
+			tb_sendTo( recording, interpreterTrace, th->heap );
+			os_trace( th->os, on_INTERPRETER, "\n");
+			}
+		}
+	}
+
+static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 	{
 	assert( bindings );
 
+	Production result = NULL;
+
 	int startingDepth = sk_depth( ps_operandStack( th->ps ) );
+	int recordedDepth = startingDepth;
 
 	File interpreterTrace = os_traceFile( th->os, on_INTERPRETER );
 	if( interpreterTrace )
@@ -792,6 +832,9 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 			){
 			Grammar gr = ps_grammar( th->ps ); // Grammar can change as the program proceeds
 			Production handleProduction = gr_production( gr, ob_getIntField( th->productionMap, handleSymbol, th->heap ) );
+			Stack operandStack = ps_operandStack( th->ps );
+			int handleLength = pn_length( handleProduction, gr );
+			int depthWithoutHandle = sk_depth( operandStack ) - handleLength;
 
 			Object boundObject = ob_getField( bindings, handleSymbol, th->heap );
 			Function functionToCall = boundObject? ob_toFunction( boundObject, th->heap ) : NULL;
@@ -802,18 +845,15 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 					{
 					// Some native actions are pretty boring.  If we're logging (not tracing), skip the boring ones.
 					int i;
-					static const NativeAction silentActions[] = { nopAction, passThrough, parseTreeAction, recordTokenBlockAction };
+					static const NativeAction silentActions[] = { nopAction, passThrough, parseTreeAction, recordTokenBlockAction, stopRecordingTokenBlockAction };
 					NativeAction action = functionToCall->body.gl->response.action;
 					for( i=0; logThisFunction && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
 						if( action == silentActions[i] )
 							logThisFunction = NULL;
 					}
-				else if( functionToCall->kind == FN_STOP_RECORDING )
-					logThisFunction = NULL; // This is pretty boring too
 				}
 			if( os_logging( th->os, on_EXECUTION ) )
 				{
-				int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
 				if( logThisFunction )
 					{
 					os_log( th->os, on_EXECUTION, "#  Stack:" );
@@ -894,6 +934,16 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 					os_log( th->os, on_EXECUTION, "\n" );
 					}
 				}
+
+			if( depthWithoutHandle < startingDepth )
+				{
+				os_log( th->os, on_EXECUTION, "   Exiting before reduce past starting depth %d\n", startingDepth );
+				int lengthToRecord = sk_depth( operandStack ) - recordedDepth;
+				record( recording, lengthToRecord, sk, th );
+				result = handleProduction;
+				goto done;
+				}
+
 			FunctionKind kind = functionToCall? functionToCall->kind : FN_UNKNOWN;
 			bool atLeastOneArgumentIsPlaceholder = false;
 				{
@@ -934,7 +984,6 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 						}
 						break;
 					case FN_UNKNOWN:
-					case FN_STOP_RECORDING:
 						break;
 					}
 				}
@@ -978,36 +1027,16 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 					}
 					break;
 				case FN_UNKNOWN:
-				case FN_STOP_RECORDING:
 					{
 					check( recording );
-					int handleLength = pn_length( handleProduction, gr );
+					// With an unknown action, we give up on trying to do a good job
+					// with the tokens we've seen so far.  Append everything to the
+					// token block, push a bunch of recordedPlaceholders, and proceed
+					// hoping that we can do something useful with upcoming tokens.
 					Stack operandStack = ps_operandStack( th->ps );
-					sk_mirrorN( sk, handleLength, operandStack );
-					while( sk_depth(sk) >= 1)
-						{
-						Object toRecord = sk_pop( sk );
-						if( ob_isPlaceholder( toRecord, th->heap ) )
-							{
-							if( ob_tagX( toRecord, th->heap ) == SYM_RECORDED_PLACEHOLDER )
-								{
-								// Already been recorded; ignore
-								continue;
-								}
-							else
-								{
-								// Actual value to record is attached to the placeholder
-								toRecord = ob_getFieldX( toRecord, SYM_VALUE, th->heap );
-								}
-							}
-						tb_append( recording, toRecord );
-						}
-					if( interpreterTrace )
-						{
-						os_trace( th->os, on_INTERPRETER, "   Appended %d objects to ", handleLength );
-						tb_sendTo( recording, interpreterTrace, th->heap );
-						os_trace( th->os, on_INTERPRETER, "\n");
-						}
+					int lengthToRecord = sk_depth( operandStack ) - recordedDepth;
+					record( recording, lengthToRecord, sk, th );
+					int handleLength = pn_length( handleProduction, gr );
 					popN( handleLength, th );
 					Symbol lhs = pn_lhs( handleProduction, gr );
 					if( os_enabled( th->os, on_CONCRETIFICATION ) )
@@ -1026,23 +1055,7 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 							}
 						}
 					push( oh_recordedPlaceholder( th->heap, lhs ), th );
-					if( kind == FN_STOP_RECORDING )
-						{
-						assert( functionToCall->body.gl->response.action == stopRecordingTokenBlockAction );
-						OptionNoun noun = on_INTERPRETER;
-						int depthWithoutHandle = sk_depth( ps_operandStack( th->ps ) ) - pn_length( handleProduction, gr );
-						if( depthWithoutHandle < startingDepth )
-							{
-							if( os_log( th->os, noun, "   Done recording " ) )
-								{
-								tb_sendTo( recording, os_logFile( th->os, noun ), th->heap );
-								os_log( th->os, noun, "\n" );
-								}
-							goto done;
-							}
-						else
-							os_trace( th->os, noun, "     Too deep to stop recording yet\n" );
-						}
+					recordedDepth = sk_depth( operandStack );
 					}
 					break;
 				}
@@ -1083,12 +1096,13 @@ static void mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
 		}
 
 	ml_end( parseTime );
+
+	return result;
 	}
 
 NATIVE_ACTION void recordTokenBlockAction( Production handle, GrammarLine gl, Thread th )
 	{
-	Grammar gr = ps_grammar( th->ps );
-	TokenBlock tb = ts_skipBlock( th->tokenStream );
+	TokenBlock tb = NULL; // ts_skipBlock( th->tokenStream ); TODO: reinstate once I've figured out how to compute the proper handle production
 	File interpreterTrace = os_traceFile( th->os, on_INTERPRETER );
 	if( !tb )
 		{
@@ -1101,12 +1115,22 @@ NATIVE_ACTION void recordTokenBlockAction( Production handle, GrammarLine gl, Th
 			}
 		nopAction( handle, gl, th );
 
-		mainParsingLoop( tb, th->recordingBindings, th );
+		handle = mainParsingLoop( tb, th->recordingBindings, th );
+
+		if( interpreterTrace )
+			{
+			os_trace( th->os, on_INTERPRETER, "  Recording stopped at: " );
+			pn_sendTo( handle, interpreterTrace, ps_grammar( th->ps ), th->st );
+			os_trace( th->os, on_INTERPRETER, "\n" );
+			}
 
 		tb_stopAppending( tb );
 		}
+	Grammar gr = ps_grammar( th->ps );
 	popN( pn_length( handle, gr ), th );
-	push( ob_fromTokenBlock( tb, th->heap ), th );
+	Object result = ob_create( sy_byName( "TB_RECORDING", th->st ), th->heap );
+	ob_setFieldX( result, SYM_VALUE, ob_fromTokenBlock( tb, th->heap ), th->heap );
+	push( result, th );
 	if( interpreterTrace )
 		{
 		os_trace( th->os, on_INTERPRETER, "    Recorded token block: " );
@@ -1197,7 +1221,6 @@ int main( int argc, char **argv )
 	{
 	Thread th = &theThread;
 	th->os = processOptions( argc, argv, ml_indefinite() );
-	th->conflictLog = stderr;
 	th->parserGenDiagnostics = NULL;
 	th->heap = theObjectHeap();
 	th->st = theSymbolTable( th->heap );
@@ -1209,7 +1232,7 @@ int main( int argc, char **argv )
 	th->concretifications = ob_createX( SYM_BINDINGS, th->heap );
 	th->productionMap     = ob_create( sy_byName( "PRODUCTION_MAP", th->st ), th->heap );
 	Grammar initialGrammar = populateGrammar( th->st, th );
-	Automaton au = au_new( initialGrammar, th->st, th->heap, ml_indefinite(), th->os, th->conflictLog, os_traceFile( th->os, on_PARSER_GEN ) );
+	Automaton au = au_new( initialGrammar, th->st, th->heap, ml_indefinite(), th->os, os_logFile( th->os, on_PARSER_CONFLICT ), os_traceFile( th->os, on_PARSER_GEN ) );
 	th->ps = ps_new( au, ml_indefinite(), os_logFile( th->os, on_INTERPRETER ) );
 	th->tokenStream = theLexTokenStream( th->heap, th->st );
 	th->timeBasis = currentTimeMillis();
