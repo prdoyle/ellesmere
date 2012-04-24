@@ -2,7 +2,6 @@
 #include "symbols.h"
 #include "memory.h"
 #include <string.h>
-#include <stdint.h>
 
 typedef struct sys_struct
 	{

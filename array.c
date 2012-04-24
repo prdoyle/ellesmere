@@ -2,7 +2,6 @@
 #include "array.h"
 #include "memory.h"
 #include <stdlib.h>
-#include <stdint.h>
 #include <string.h>
 
 // These macros are for users of memory.h, not the implementation

@@ -3,7 +3,6 @@
 #include "memory.h"
 #include "symbols.h"
 #include <stdlib.h>
-#include <stdint.h>
 #include <limits.h>
 
 enum { BUCKET_SIZE=4 };
@@ -167,7 +166,7 @@ FUNC int rd_nextField( Record rd, int prevField )
 
 FUNC int rd_sendTo( Record rd, File fl, SymbolTable st )
 	{
-	int charsSent = fl_write( fl, "Record %p {\n", rd );
+	int charsSent = fl_write( fl, "Record %p {\n", PH( rd ) );
 	int fieldID;
 	for( fieldID = rd_firstField( rd ); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
 		{

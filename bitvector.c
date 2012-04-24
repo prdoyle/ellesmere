@@ -1,7 +1,6 @@
 
 #include "bitvector.h"
 #include "memory.h"
-#include <stdint.h>
 #include <string.h>
 
 typedef uint64_t Word;

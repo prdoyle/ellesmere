@@ -399,7 +399,7 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 
 		bv_copy( itemsLeft, curItemSet->items );
 		if( TRACE( traceFile, "  Expanding " ITEM_STATE_PREFIX "%d\n    stateNode: %s_%p\n         items left: ",
-			its_index( curItemSet, pg ), sy_name( ob_tag( curItemSet->stateNode, pg->heap ), st ), curItemSet->stateNode ) )
+			its_index( curItemSet, pg ), sy_name( ob_tag( curItemSet->stateNode, pg->heap ), st ), PH( curItemSet->stateNode ) ) )
 			{
 			traceBVX( itemsLeft, traceFile, sendBitNumber, "i%d" );
 			TRACE( traceFile, "\n" );
@@ -1011,7 +1011,7 @@ static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
 		{
 		ItemSet its = itst_element( pg->itemSets, i );
-		charsSent += fl_write( dotFile, "n%p [label=\"%d %s\\n", its->stateNode, i, LR0StateKindNames[ its_LR0StateKind( its, pg ) ] );
+		charsSent += fl_write( dotFile, "n%p [label=\"%d %s\\n", PH( its->stateNode ), i, LR0StateKindNames[ its_LR0StateKind( its, pg ) ] );
 #ifdef REDUCE_CONTEXT_LENGTH
 		charsSent += fl_write( dotFile, "(reduce context: %d)\\n", ob_getIntFieldX( its->stateNode, SYM_REDUCE_CONTEXT_LENGTH, pg->heap ) );
 #endif
@@ -1085,7 +1085,7 @@ FUNC int ir_sendTo( InheritanceRelation ir, File fl )
 
 static void au_augment( Automaton au, InheritanceRelation ir, SymbolTable st, File diagnostics )
 	{
-	TRACE( diagnostics, "Augmenting automaton %p:\n", au );
+	TRACE( diagnostics, "Augmenting automaton %p:\n", PH( au ) );
 	Symbol symSymbol = sy_byIndex( SYM_SYMBOL, st );
 	MemoryLifetime augmentTime = ml_begin( 10000, ml_undecided() );
 	CheckList pushedStates = cl_open( au->stateHeap );
@@ -1640,7 +1640,7 @@ static void addAllProductionCombos(
 	if( tokenIndex >= pn_length( oldProduction, oldGrammar ) )
 		{
 		// We're done with this production
-		if( unchangedSoFar && optional("Abort new production %d because it matches one already in the original grammar", pn_index( newProduction, newGrammar ) ) )
+		if( unchangedSoFar && optionalDetail("Abort new production %d because it matches one already in the original grammar", pn_index( newProduction, newGrammar ) ) )
 			{
 			if( diagnostics )
 				{
@@ -1719,7 +1719,7 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Sy
 	SymbolTable st = oh_symbolTable( ir_nodeHeap(ir) );
 	if( diagnostics )
 		{
-		TRACE( diagnostics, "Augmenting grammar %p {\n", original );
+		TRACE( diagnostics, "Augmenting grammar %p {\n", PH( original ) );
 		gr_sendTo( original, diagnostics, st );
 		TRACE( diagnostics, "}\n" );
 		}
@@ -1775,7 +1775,7 @@ FUNC Grammar gr_augmentedRecursive( Grammar original, InheritanceRelation ir, Sy
 
 		if( diagnostics )
 			{
-			TRACE( diagnostics, "Augmented grammar %p from %p {\n", result, original );
+			TRACE( diagnostics, "Augmented grammar %p from %p {\n", PH( result ), PH( original ) );
 			gr_sendTo( result, diagnostics, st );
 			TRACE( diagnostics, "}\n\n" );
 			}
@@ -1895,13 +1895,13 @@ FUNC Automaton au_new( Grammar gr, SymbolTable st, ObjectHeap heap, MemoryLifeti
 	result->parsers    = psa_new( 2, ml );
 	if (diagnostics)
 		{
-		TRACE( diagnostics, "Finished generating automaton %p:\n\n", result );
+		TRACE( diagnostics, "Finished generating automaton %p:\n\n", PH( result ) );
 		au_sendTo( result, diagnostics, theObjectHeap(), st );
 		if( 0 )
 			pg_sendDotTo( pg, diagnostics );
 		TRACE( diagnostics, "\n\n" );
 		}
-	if( os_log( os, on_PARSER_GEN, "Finished automaton %p ", result ) )
+	if( os_log( os, on_PARSER_GEN, "Finished automaton %p ", PH( result ) ) )
 		{
 		au_sendReportTo( result, os_logFile( os, on_PARSER_GEN ), pg );
 		os_log( os, on_PARSER_GEN, "\n" );
@@ -1932,18 +1932,18 @@ FUNC Parser ps_new( Automaton au, MemoryLifetime ml, File diagnostics )
 	// this function returns an alias to a parser that's still in use, then
 	// that's not the only bug in the program.
 	int i;
-	TRACE( diagnostics, "PARSER Scanning %d existing parsers on %p\n", psa_count( au->parsers ), au );
+	TRACE( diagnostics, "PARSER Scanning %d existing parsers on %p\n", psa_count( au->parsers ), PH( au ) );
 	for( i = 0; i < psa_count( au->parsers ) && !result; i++ )
 		{
 		Parser ps = psa_get( au->parsers, i );
 		if( sk_depth( ps->stateStack ) == 0 )
 			{
 			result = ps;
-			TRACE( diagnostics, "PARSER Found existing parser %p on %p @ %d\n", result, au, i );
+			TRACE( diagnostics, "PARSER Found existing parser %p on %p @ %d\n", PH( result ), PH( au ), i );
 			}
 		else
 			{
-			TRACE( diagnostics, "PARSER Existing parser %p on %p @ %d has depth %d\n", ps, au, i, sk_depth( ps->stateStack ) );
+			TRACE( diagnostics, "PARSER Existing parser %p on %p @ %d has depth %d\n", PH( ps ), PH( au ), i, sk_depth( ps->stateStack ) );
 			}
 		}
 	if( !result )
@@ -1952,7 +1952,7 @@ FUNC Parser ps_new( Automaton au, MemoryLifetime ml, File diagnostics )
 		result->au = au;
 		result->stateStack   = sk_new( ml );
 		result->operandStack = sk_new( ml );
-		TRACE( diagnostics, "PARSER Allocated new parser %p on %p @ %d\n", result, au, psa_count( au->parsers ) );
+		TRACE( diagnostics, "PARSER Allocated new parser %p on %p @ %d\n", PH( result ), PH( au ), psa_count( au->parsers ) );
 		psa_append( au->parsers, result );
 		}
 	sk_push( result->stateStack, au->startState );
@@ -1963,7 +1963,7 @@ FUNC Parser ps_new( Automaton au, MemoryLifetime ml, File diagnostics )
 
 FUNC void ps_close( Parser ps )
 	{
-	TRACE( ps->diagnostics, "PARSER Freed parser %p\n", ps );
+	TRACE( ps->diagnostics, "PARSER Freed parser %p\n", PH( ps ) );
 	sk_popAll( ps->stateStack );
 	sk_popAll( ps->operandStack );
 	}
@@ -2151,7 +2151,7 @@ FUNC int ps_sendTo( Parser ps, File fl, ObjectHeap heap, SymbolTable st )
 	if( !fl )
 		return 0;
 
-	int charsSent = 0; //fl_write( fl, "%p(%p): ", ps, ps_automaton(ps) );
+	int charsSent = 0; //fl_write( fl, "%p(%p): ", PH( ps ), PH( ps_automaton(ps) ) );
 	//sk_sendTo( ps->stateStack, fl, heap );
 #ifdef ITEM_SET_NUMS
 	int i;

@@ -475,7 +475,7 @@ NATIVE_ACTION void returnAction( Production handle, GrammarLine gl, Thread th )
 	ts_cancelDigression( th->tokenStream );
 	push( oh_symbolToken( th->heap, pn_lhs( handle, ps_grammar(th->ps) ) ), th );
 	cf_pop( th );
-	os_trace( th->os, on_EXECUTION, "Returned to TokenBlock %p\n", ts_curBlock( th->tokenStream ) );
+	os_trace( th->os, on_EXECUTION, "Returned to TokenBlock %p\n", PH( ts_curBlock( th->tokenStream ) ) );
 	push( result, th );
 	}
 #endif
@@ -540,7 +540,7 @@ NATIVE_ACTION void optimizeAction( Production handle, GrammarLine gl, Thread th 
 	if( 0 )
 		{
 		Symbol tag = ob_tag( th->executionBindings, th->heap );
-		printf( "optimized executionBindings tag is %s, shape %p\n", sy_name( tag, th->st ), sy_instanceShape( tag, th->heap ) );
+		printf( "optimized executionBindings tag is %s, shape %p\n", sy_name( tag, th->st ), PH( sy_instanceShape( tag, th->heap ) ) );
 		rd_sendTo( sy_instanceShape( tag, th->heap ), stdout, th->st );
 		}
 	th->recordingBindings = recordified( th->recordingBindings, th );
@@ -774,7 +774,7 @@ static void record( TokenBlock recording, int lengthToRecord, Stack utilityStack
 	{
 	Stack operandStack = ps_operandStack( th->ps );
 	assert( sk_depth( utilityStack ) == 0 );
-	if( lengthToRecord >= 0 )
+	if( lengthToRecord > 0 )
 		{
 		sk_mirrorN( utilityStack, lengthToRecord, operandStack );
 		while( sk_depth( utilityStack ) >= 1)
@@ -788,12 +788,12 @@ static void record( TokenBlock recording, int lengthToRecord, Stack utilityStack
 				}
 			tb_append( recording, toRecord );
 			}
-		File interpreterTrace = os_traceFile( th->os, on_INTERPRETER );
-		if( interpreterTrace )
+		File interpreterLog = os_logFile( th->os, on_INTERPRETER );
+		if( interpreterLog )
 			{
-			os_trace( th->os, on_INTERPRETER, "   Recorded %d objects to ", lengthToRecord );
-			tb_sendTo( recording, interpreterTrace, th->heap );
-			os_trace( th->os, on_INTERPRETER, "\n");
+			os_log( th->os, on_INTERPRETER, "   Recorded %d objects to ", lengthToRecord );
+			tb_sendTo( recording, interpreterLog, th->heap );
+			os_log( th->os, on_INTERPRETER, "\n");
 			}
 		}
 	}
@@ -815,7 +815,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 			tb_sendTo( recording, interpreterTrace, th->heap );
 		else
 			os_trace( th->os, on_INTERPRETER, "(not recording)" );
-		os_trace( th->os, on_INTERPRETER, ", %p ) startingDepth=%d\n", bindings, startingDepth );
+		os_trace( th->os, on_INTERPRETER, ", %p ) startingDepth=%d\n", PH( bindings ), startingDepth );
 		}
 
 	MemoryLifetime parseTime = ml_begin( 100, ml_indefinite() );
@@ -1021,7 +1021,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 						if( dladdr( line->response.action, &nativeInfo ) && nativeInfo.dli_saddr == line->response.action )
 							os_trace( th->os, on_EXECUTION, "%s\n", nativeInfo.dli_sname );
 						else
-							os_trace( th->os, on_EXECUTION, "%p\n", line->response.action );
+							os_trace( th->os, on_EXECUTION, "%p\n", PH( line->response.action ) );
 						}
 					line->response.action( handleProduction, line, th );
 					}
@@ -1031,8 +1031,8 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 					check( recording );
 					// With an unknown action, we give up on trying to do a good job
 					// with the tokens we've seen so far.  Append everything to the
-					// token block, push a bunch of recordedPlaceholders, and proceed
-					// hoping that we can do something useful with upcoming tokens.
+					// token block, push a recordedPlaceholder, and proceed hoping
+					// that we can do something useful with upcoming tokens.
 					Stack operandStack = ps_operandStack( th->ps );
 					int lengthToRecord = sk_depth( operandStack ) - recordedDepth;
 					record( recording, lengthToRecord, sk, th );
@@ -1069,7 +1069,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 		Object toPush = ts_current( th->tokenStream );
 		if( interpreterTrace )
 			{
-			os_trace( th->os, on_INTERPRETER, "Pushing token from %p: ", ts_curBlock( th->tokenStream ) );
+			os_trace( th->os, on_INTERPRETER, "Pushing token from %p: ", PH( ts_curBlock( th->tokenStream ) ) );
 			ob_sendTo( toPush, interpreterTrace, th->heap );
 			os_trace( th->os, on_INTERPRETER, "\n" );
 			}
@@ -1077,7 +1077,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 		ts_advance( th->tokenStream );
 		if( interpreterTrace )
 			{
-			os_trace( th->os, on_INTERPRETER, "Advanced %p: ", ts_curBlock( th->tokenStream ) );
+			os_trace( th->os, on_INTERPRETER, "Advanced %p: ", PH( ts_curBlock( th->tokenStream ) ) );
 			ts_sendTo( th->tokenStream, interpreterTrace );
 			os_trace( th->os, on_INTERPRETER, "\n" );
 			}
@@ -1089,7 +1089,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 		os_trace( th->os, on_INTERPRETER, "Exiting mainParsingLoop" );
 		if( th->tokenStream && ts_current( th->tokenStream ) )
 			{
-			os_trace( th->os, on_INTERPRETER, "; current token on %p is ", ts_curBlock( th->tokenStream ) );
+			os_trace( th->os, on_INTERPRETER, "; current token on %p is ", PH( ts_curBlock( th->tokenStream ) ) );
 			ob_sendTo( ts_current( th->tokenStream ), interpreterTrace, th->heap );
 			}
 		os_trace( th->os, on_INTERPRETER, "\n" );
@@ -1102,9 +1102,13 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 
 NATIVE_ACTION void recordTokenBlockAction( Production handle, GrammarLine gl, Thread th )
 	{
-	TokenBlock tb = NULL; // ts_skipBlock( th->tokenStream ); TODO: reinstate once I've figured out how to compute the proper handle production
+	TokenBlock tb = NULL; // ts_skipBlock( th->tokenStream ); TODO: reinstate once I've figured out how to avoid binding values I shouldn't during execution
 	File interpreterTrace = os_traceFile( th->os, on_INTERPRETER );
-	if( !tb )
+	if( tb )
+		{
+		popN( pn_length( handle, ps_grammar( th->ps ) ), th );
+		}
+	else
 		{
 		tb = ts_beginBlock( th->tokenStream );
 		if( interpreterTrace )
@@ -1115,7 +1119,7 @@ NATIVE_ACTION void recordTokenBlockAction( Production handle, GrammarLine gl, Th
 			}
 		nopAction( handle, gl, th );
 
-		handle = mainParsingLoop( tb, th->recordingBindings, th );
+		Production finishingHandle = mainParsingLoop( tb, th->recordingBindings, th );
 
 		if( interpreterTrace )
 			{
@@ -1125,9 +1129,9 @@ NATIVE_ACTION void recordTokenBlockAction( Production handle, GrammarLine gl, Th
 			}
 
 		tb_stopAppending( tb );
+
+		popN( pn_length( finishingHandle, ps_grammar( th->ps ) ), th );
 		}
-	Grammar gr = ps_grammar( th->ps );
-	popN( pn_length( handle, gr ), th );
 	Object result = ob_create( sy_byName( "TB_RECORDING", th->st ), th->heap );
 	ob_setFieldX( result, SYM_VALUE, ob_fromTokenBlock( tb, th->heap ), th->heap );
 	push( result, th );

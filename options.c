@@ -348,6 +348,7 @@ FUNC int optional(char *format, ...)
 		optLimitStr = getenv( "EL_optLimit" );
 		if( optLimitStr )
 			optLimit = atoi( optLimitStr );
+		initialized = true;
 		}
 	if( optLimitStr && optCount >= optLimit ) // haven't incremented it yet, so this is actually checking the previous opt's number
 		return false;

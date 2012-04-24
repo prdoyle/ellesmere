@@ -1,7 +1,6 @@
 
 #include "grammar.h"
 #include "memory.h"
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -148,7 +147,7 @@ FUNC Symbol pn_autoSymbol( Production pn, SymbolTable st, Grammar gr )
 		fl_write( stderr, "ERROR: Tried to autoSymbol production %s\n", sy_name( pn_symbol( pn, gr ), st ) );
 	assert( !pn_symbol( pn, gr ) );
 	char *buf = alloca( 40 );
-	sprintf(buf, "PN_%d_%p", pn_index( pn, gr ), gr );
+	sprintf(buf, "PN_%d_%p", pn_index( pn, gr ), PH( gr ) );
 	Symbol result = sy_byName( buf, st );
 	pn_setSymbol( pn, result, gr );
 	return result;
@@ -364,7 +363,7 @@ FUNC int pn_sendTo( Production pn, File fl, Grammar gr, SymbolTable st )
 
 static int sendTo( Grammar gr, File fl, SymbolTable st, int indent )
 	{
-	int charsSent = fl_write( fl, "%*sGrammar %p( %s )\n", 2*indent, "", gr, sy_name( gr_goal(gr), st ) );
+	int charsSent = fl_write( fl, "%*sGrammar %p( %s )\n", 2*indent, "", PH( gr ), sy_name( gr_goal(gr), st ) );
 	if( gr->kind == NESTED )
 		charsSent += sendTo( gr->data.outer, fl, st, indent+1 );
 	int i;

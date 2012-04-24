@@ -3,6 +3,7 @@
 #define BASE_H
 
 #include <assert.h>
+#include <stdint.h>
 
 typedef char bool;
 #define false 0
@@ -46,6 +47,14 @@ static inline int min(int a, int b)
 
 static inline int max(int a, int b)
 	{ return a>b? a : b; }
+
+static inline void *PH(void *pointer) // pointer hash -- makes %p smaller
+	{
+	uintptr_t result = (uintptr_t)pointer;
+	result ^= ( result>>12 );
+	result ^= ( result>>24 );
+	return (void*)((uintptr_t)result & 0xfff);
+	}
 
 #define LIKE_PRINTF( FORMAT, FIRST_ARG ) __attribute__ ((format (printf, FORMAT, FIRST_ARG)))
 #define LIKE_VPRINTF( FORMAT )           __attribute__ ((format (printf, FORMAT, 0)))

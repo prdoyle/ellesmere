@@ -282,7 +282,7 @@ FUNC TokenBlock ts_skipBlock( TokenStream ts )
 				if( candidate->startIndex == di->index )
 					result = candidate;
 				}
-			if( result && optional( "Use existing TOKEN_BLOCK_%p of length %d", result, tb_length( result ) ) )
+			if( result && optional( "Use existing TOKEN_BLOCK_%p of length %d", PH( result ), tb_length( result ) ) )
 				di->index += tb_length( result ) + 1; // +1 for the end-curly-brace
 			else
 				result = NULL;
@@ -313,7 +313,7 @@ FUNC TokenBlock ts_beginBlock( TokenStream ts )
 	if( os_enabled( os_global(), on_TOKEN_BLOCK_RECYCLING ) )
 		{
 		result->subBlocks = tba_new( 1, ml );
-		if( di && optional( "Store new TOKEN_BLOCK_%p of length %d for later reuse", result, tb_length( result ) ) )
+		if( di && optional( "Store new TOKEN_BLOCK_%p for later reuse", PH( result ) ) )
 			tba_append( di->tb->subBlocks, result ); // FIXME: Could make a cached block visible before it's complete
 		}
 	return result;
@@ -343,7 +343,7 @@ FUNC void tb_stopAppending( TokenBlock tb )
 
 FUNC int ts_sendTo( TokenStream ts, File fl )
 	{
-	int charsSent = fl_write( fl, "TOKEN_STREAM_%p: ", ts );
+	int charsSent = fl_write( fl, "TOKEN_STREAM_%p: ", PH( ts ) );
 	int i;
 	int lengthLimit = 8;
 	for( i = dis_count( ts->digressions )-1; i >= 0; i--, lengthLimit >>= 1 )
@@ -377,7 +377,7 @@ FUNC int tb_sendNTo( TokenBlock tb, int tokenLimit, File fl, ObjectHeap heap )
 
 FUNC int tb_sendTo( TokenBlock tb, File fl, ObjectHeap heap )
 	{
-	int charsSent = fl_write( fl, "TOKEN_BLOCK_%p length %d:", tb, oba_count( tb->tokens ) );
+	int charsSent = fl_write( fl, "TOKEN_BLOCK_%p length %d:", PH( tb ), oba_count( tb->tokens ) );
 	charsSent += tb_sendNTo( tb, oba_count( tb->tokens ), fl, heap );
 	return charsSent;
 	}

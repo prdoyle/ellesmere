@@ -6,5 +6,5 @@ fi
 
 REPS=3
 for (( I=0; I<REPS; I++ )); do
-	echo `./fib.el $*` | awk '{ printf "%s %s %.1f\n", $1, $2, 100*log(1000.0 * $1 / $2) }' # 1000 because $2 is in milliseconds
+	echo `ellesmere -dtbr ./fib.el $*` | awk '{ printf "%s %s %.1f\n", $1, $2, 100*log(1000.0 * $1 / $2) }' # 1000 because $2 is in milliseconds
 done

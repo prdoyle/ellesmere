@@ -2,7 +2,6 @@
 #include "objects.h"
 #include "memory.h"
 //#include "stack.h"
-#include <stdint.h>
 #include <string.h>
 
 typedef struct syd_struct
@@ -554,19 +553,19 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 			case SYM_FUNCTION:
 				{
 				Function fn = ob_toFunction( ob, heap );
-				charsSent += fl_write( fl, "FUNCTION_%p", fn );
+				charsSent += fl_write( fl, "FUNCTION_%p", PH( fn ) );
 				break;
 				}
 			case SYM_TOKEN_BLOCK:
 				{
 				TokenBlock tb = ob_toTokenBlock( ob, heap );
-				charsSent += fl_write( fl, "TOKEN_BLOCK_%p", tb );
+				charsSent += fl_write( fl, "TOKEN_BLOCK_%p", PH( tb ) );
 				break;
 				}
 			case SYM_TOKEN_STREAM:
 				{
 				TokenStream ts = ob_toTokenStream( ob, heap );
-				charsSent += fl_write( fl, "TOKEN_STREAM_%p", ts );
+				charsSent += fl_write( fl, "TOKEN_STREAM_%p", PH( ts ) );
 				break;
 				}
 			case SYM_PLACEHOLDER:

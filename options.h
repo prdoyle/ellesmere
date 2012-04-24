@@ -84,6 +84,7 @@ FUNC int os_trace ( OptionSet os, OptionNoun noun, const char *format, ... ) LIK
 	#define TRACE(...)
 	static inline int optional(char *format, ...) { return true; }
 #endif
+static inline int optionalDetail(char *format, ...) { return true; }
 
 #endif
 
