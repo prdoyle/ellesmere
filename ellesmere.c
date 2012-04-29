@@ -1122,7 +1122,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 
 NATIVE_ACTION void recordTokenBlockAction( Production handle, GrammarLine gl, Thread th )
 	{
-	TokenBlock tb = NULL; // ts_skipBlock( th->tokenStream ); TODO: reinstate once I've figured out how to avoid binding values I shouldn't during execution
+	TokenBlock tb = ts_skipBlock( th->tokenStream );
 	File interpreterTrace = os_traceFile( th->os, on_INTERPRETER );
 	if( tb )
 		{

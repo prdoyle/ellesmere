@@ -173,7 +173,7 @@ FUNC void od_applyTo( OptionDelta od, OptionSet os, MemoryLifetime ml )
 
 static OptionClause defaultSettings[] =
 	{
-	//{ oq_DISABLED, 1, on_TOKEN_BLOCK_RECYCLING },
+	{ oq_DISABLED, 1, on_TOKEN_BLOCK_RECYCLING }, //  TODO: reinstate once I've figured out how to avoid binding values I shouldn't during execution
 	{ 0 }
 	};
 
