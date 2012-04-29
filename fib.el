@@ -62,7 +62,7 @@ as
 def VOID
 	print( n:INT )
 as
-	{ n print! }
+	{ n println! }
 
 def VOID
 	fibs( n:INT )
@@ -84,7 +84,7 @@ optimize
 #fibs( 2 )
 #fibs( 12 )
 #fibs( 24 )
-#fib( 0 ) print!  # To measure parser-gen performance
-#fib( 12 ) print! # Confirm it's still working and get reasonable-sized log files
- fib( 26 ) print! # For performance measurements
+#fib( 0 ) println!  # To measure parser-gen performance
+#fib( 12 ) println! # Confirm it's still working and get reasonable-sized log files
+ fib( 26 ) println! # For performance measurements
 print( time )

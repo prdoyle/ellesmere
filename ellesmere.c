@@ -332,6 +332,13 @@ NATIVE_ACTION void printAction( Production handle, GrammarLine gl, Thread th )
 	{
 	int depth = gl->response.parm1;
 	ob_sendTo( sk_item( ps_operandStack( th->ps ), depth ), stdout, th->heap );
+	nopAction( handle, gl, th );
+	}
+
+NATIVE_ACTION void printlnAction( Production handle, GrammarLine gl, Thread th )
+	{
+	int depth = gl->response.parm1;
+	ob_sendTo( sk_item( ps_operandStack( th->ps ), depth ), stdout, th->heap );
 	printf("\n");
 	nopAction( handle, gl, th );
 	}
@@ -614,6 +621,7 @@ static struct gl_struct grammar1[] =
 	{ { "VOID",     "{",          "}"                                               }, { nopAction }, PE_SAFE },
 
 	{ { "VOID",     "OBJECT", "print!"                                              }, { printAction, 1 } },
+	{ { "VOID",     "OBJECT", "println!"                                            }, { printlnAction, 1 } },
 
 	//{ { "VOID",     "OBJECT",  "return!",                                           }, { returnAction, 1 } },
 	//{ { "VOID",     "VOID", "return!",                                              }, { returnAction, 1 } },
