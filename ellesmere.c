@@ -321,6 +321,13 @@ NATIVE_ACTION void divAction( Production handle, GrammarLine gl, Thread th )
 	push( ob_fromInt( left / right, th->heap ), th );
 	}
 
+NATIVE_ACTION void evalAction( Production handle, GrammarLine gl, Thread th )
+	{
+	popToken( th );
+	TokenBlock tb = ob_toTokenBlock( pop(th), th->heap );
+	ts_digress( th->tokenStream, tb, ts_getBindings( th->tokenStream ) );
+	}
+
 NATIVE_ACTION void printAction( Production handle, GrammarLine gl, Thread th )
 	{
 	int depth = gl->response.parm1;
@@ -628,6 +635,9 @@ static struct gl_struct grammar1[] =
 	{ { "TOKEN_BLOCK",     "TB_RECORDING", "}"                                      }, { passThroughField, SYM_VALUE, 1 }, PE_SAFE },
 	{ { "VOID",            "def", "PRODUCTION", "as", "TOKEN_BLOCK"                 }, { defAction } },
 
+	{ { "VOID",            "TOKEN_BLOCK", "eval!"                                   }, { evalAction } },
+	{ { "INT",             "TOKEN_BLOCK", "eval!"                                   }, { evalAction } },
+
 	{ { "VOID",     "optimize"                                                      }, { optimizeAction } },
 	{ { "INT",      "time"                                                          }, { timeAction } },
 
@@ -856,7 +866,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 				{
 				if( logThisFunction )
 					{
-					os_log( th->os, on_EXECUTION, "#  Stack:" );
+					os_log( th->os, on_EXECUTION, "#  State:" );
 
 					int stackDepth             = sk_depth( ps_operandStack( th->ps ) );
 					int newValues              = stackDepth - itemsFromPrevHandle;
@@ -882,7 +892,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 						os_log( th->os, on_EXECUTION, " firstHandleValueIndex=%d", firstHandleValueIndex );
 						os_log( th->os, on_EXECUTION, " interestingValues=%d", interestingValues );
 						os_log( th->os, on_EXECUTION, " totalValues=%d", totalValues );
-						os_log( th->os, on_EXECUTION, "\n#  Stack:" );
+						os_log( th->os, on_EXECUTION, "\n#  State:" );
 						}
 
 					int newValuesColumn = INT_MAX;
@@ -900,6 +910,8 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 						}
 					newValuesColumn = min( newValuesColumn, currentColumn );
 					handleColumn    = min( handleColumn,    currentColumn );
+					if( os_log( th->os, on_EXECUTION, "  ||  " ) )
+						ts_sendPreviewTo( th->tokenStream, os_logFile( th->os, on_EXECUTION ) );
 					os_log( th->os, on_EXECUTION, "\n" );
 					if( handleColumn < newValuesColumn )
 						os_log( th->os, on_EXECUTION, "#%*s        %*s%*s\n", prefixSpaces, "", handleColumn    , "H", newValuesColumn-handleColumn, "^" );
@@ -937,7 +949,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 
 			if( depthWithoutHandle < startingDepth )
 				{
-				os_log( th->os, on_EXECUTION, "   Exiting before reduce past starting depth %d\n", startingDepth );
+				os_trace( th->os, on_EXECUTION, "   Exiting before reduce past starting depth %d\n", startingDepth );
 				int lengthToRecord = sk_depth( operandStack ) - recordedDepth;
 				record( recording, lengthToRecord, sk, th );
 				result = handleProduction;
@@ -1135,11 +1147,14 @@ NATIVE_ACTION void recordTokenBlockAction( Production handle, GrammarLine gl, Th
 	Object result = ob_create( sy_byName( "TB_RECORDING", th->st ), th->heap );
 	ob_setFieldX( result, SYM_VALUE, ob_fromTokenBlock( tb, th->heap ), th->heap );
 	push( result, th );
+	if( os_log( th->os, on_EXECUTION, "    Recorded token block: " ) ) // TODO: This is more like on_INTERPRETER but that's a mess right now
+		{
+		tb_sendTo( tb, os_logFile( th->os, on_EXECUTION ), th->heap );
+		os_log( th->os, on_EXECUTION, "\n" );
+		}
 	if( interpreterTrace )
 		{
-		os_trace( th->os, on_INTERPRETER, "    Recorded token block: " );
-		tb_sendTo( tb, interpreterTrace, th->heap );
-		os_trace( th->os, on_INTERPRETER, "\n    Now current: " );
+		os_trace( th->os, on_INTERPRETER, "    Now current: " );
 		ob_sendTo( ts_current( th->tokenStream ), interpreterTrace, th->heap );
 		os_trace( th->os, on_INTERPRETER, "\n" );
 		}

@@ -3,20 +3,20 @@
 # Conditional statements
 
 def INT
-	if TRUE then result:INT else TOKEN_BLOCK end
-as { result }
+	if TRUE then result:TOKEN_BLOCK else TOKEN_BLOCK end
+as { result eval! }
 
 def INT
-	if FALSE then TOKEN_BLOCK else result:INT end
-as { result }
+	if FALSE then TOKEN_BLOCK else result:TOKEN_BLOCK end
+as { result eval! }
 
 def VOID
-	if TRUE then result:VOID else TOKEN_BLOCK end
-as { result }
+	if TRUE then result:TOKEN_BLOCK else TOKEN_BLOCK end
+as { result eval! }
 
 def VOID
-	if FALSE then TOKEN_BLOCK else result:VOID end
-as { result }
+	if FALSE then TOKEN_BLOCK else result:TOKEN_BLOCK end
+as { result eval! }
 
 # Infix stuff
 
@@ -85,6 +85,6 @@ optimize
 #fibs( 12 )
 #fibs( 24 )
 #fib( 0 ) print!  # To measure parser-gen performance
-#fib( 12 ) print!  # Confirm it's still working and get reasonable-sized log files
+#fib( 12 ) print! # Confirm it's still working and get reasonable-sized log files
  fib( 26 ) print! # For performance measurements
 print( time )

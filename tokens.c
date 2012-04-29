@@ -188,17 +188,23 @@ FUNC Object ts_current( TokenStream ts )
 		return result;
 	}
 
+static void ts_collectGarbage( TokenStream ts )
+	{
+	Digression di = ts_digression( ts );
+	while( di && !ts_currentRaw( ts ) )
+		{
+		ts_cancelDigression( ts );
+		di = ts_digression( ts );
+		}
+	}
+
 FUNC void ts_advance( TokenStream ts )
 	{
 	Digression di = ts_digression( ts );
 	if( di )
 		{
 		di->index++;
-		while( di && !ts_currentRaw( ts ) )
-			{
-			ts_cancelDigression( ts );
-			di = ts_digression( ts );
-			}
+		ts_collectGarbage( ts );
 		}
 	else
 		ts->lex.current = getLexToken( ts );
@@ -210,6 +216,7 @@ FUNC void ts_digress( TokenStream ts, TokenBlock tb, Object bindings )
 	di->tb       = tb;
 	di->bindings = bindings;
 	di->index    = 0;
+	ts_collectGarbage( ts );
 	}
 
 FUNC ObjectHeap ts_heap( TokenStream ts )
@@ -341,9 +348,9 @@ FUNC void tb_stopAppending( TokenBlock tb )
 	oba_shrinkWrap( tb->tokens );
 	}
 
-FUNC int ts_sendTo( TokenStream ts, File fl )
+FUNC int ts_sendPreviewTo( TokenStream ts, File fl )
 	{
-	int charsSent = fl_write( fl, "TOKEN_STREAM_%p: ", PH( ts ) );
+	int charsSent = 0;
 	int i;
 	int lengthLimit = 8;
 	for( i = dis_count( ts->digressions )-1; i >= 0; i--, lengthLimit >>= 1 )
@@ -355,8 +362,16 @@ FUNC int ts_sendTo( TokenStream ts, File fl )
 		charsSent += fl_write( fl, "  ||  " );
 		}
 	if( ts->lex.current )
+		{
 		charsSent += ob_sendTo( ts->lex.current, fl, ts->heap );
+		charsSent += fl_write( fl, "  ..." ); // Never can tell when you're at the end of theLexTokenStream
+		}
 	return charsSent;
+	}
+
+FUNC int ts_sendTo( TokenStream ts, File fl )
+	{
+	return fl_write( fl, "TOKEN_STREAM_%p: ", PH( ts ) ) + ts_sendPreviewTo( ts, fl );
 	}
 
 FUNC int tb_sendNTo( TokenBlock tb, int tokenLimit, File fl, ObjectHeap heap )

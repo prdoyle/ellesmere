@@ -19,6 +19,7 @@ FUNC TokenBlock  ts_skipBlock  ( TokenStream ts );            // Return a block 
 FUNC ObjectHeap  ts_heap       ( TokenStream ts );
 FUNC int         ts_sendTo     ( TokenStream ts, File fl );
 FUNC void        ts_cancelDigression ( TokenStream ts ); // Abort an unfinished digression and resume original stream
+FUNC int         ts_sendPreviewTo ( TokenStream ts, File fl );
 
 FUNC TokenBlock tb_new           ( MemoryLifetime ml ) ALWAYS_NEW;  // Also consider ts_beginBlock
 FUNC int        tb_length        ( TokenBlock tb );
