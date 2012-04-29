@@ -48,7 +48,6 @@ static const struct noun_struct
 	{ on_OPTIONS,               "ops",   "options",              "option parsing and processing"                                                        },
 	{ on_PARSER_CONFLICT,       "pc",    "parserConflict",       "situations where the automaton to generate is ambiguous"                              },
 	{ on_PARSER_GEN,            "pgen",  "parserGen",            "construction of an automaton from a grammar"                                          },
-	{ on_TOKEN_BLOCK_RECYCLING, "tbr",   "TBRecycling",          "reuse of existing equivalent token blocks"                                            },
 	{ 0 }
 	};
 
@@ -173,7 +172,7 @@ FUNC void od_applyTo( OptionDelta od, OptionSet os, MemoryLifetime ml )
 
 static OptionClause defaultSettings[] =
 	{
-	{ oq_DISABLED, 1, on_TOKEN_BLOCK_RECYCLING }, //  TODO: reinstate once I've figured out how to avoid binding values I shouldn't during execution
+	//{ oq_DISABLED, 1, on_CONCRETIFICATION },
 	{ 0 }
 	};
 
