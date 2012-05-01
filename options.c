@@ -42,6 +42,7 @@ static const struct noun_struct
 	{ on_CONCRETIFICATION,      "ccfn",  "concretification",     "substituting arbitrary subtags to make parsing succeed for token block recording"     },
 	{ on_EXECUTION,             "exec",  "execution",            "operations performed by the user program"                                             },
 	{ on_GRAMMAR_AUGMENTATION,  "grau",  "grammarAugmentation",  "adding productions to grammars to handle inheritance"                                 },
+	{ on_HACK,                  "hack",  "hack",                 "temporary experiments"                                                                },
 	{ on_INHERITANCE,           "inh",   "inheritance",          "substitution of one symbol for another"                                               },
 	{ on_INTERPRETER,           "int",   "interpreter",          "reading tokens, walking automata, and computing which operations to perform"          },
 	{ on_OPTIMIZATIONS,         "opts",  "optimizations",        "optional performance enhancements"                                                    },
@@ -150,8 +151,8 @@ static void os_set( OptionSet os, OptionQuery query, OptionNoun noun, OptionLeve
 	assert( os );
 	if( abs( level ) >= abs( os->optionLevels[ query ][ noun ] ) )
 		{
-		os_log( os, on_OPTIONS, "%s.%s %d -> %d\n", nouns[ noun-1 ].name, queries[ query-1 ].name, os->optionLevels[ query ][ noun ], level );
 		os->optionLevels[ query ][ noun ] = level;
+		os_log( os, on_OPTIONS, "%s.%s %d -> %d\n", nouns[ noun-1 ].name, queries[ query-1 ].name, os->optionLevels[ query ][ noun ], level );
 		}
 	else
 		{
@@ -172,7 +173,7 @@ FUNC void od_applyTo( OptionDelta od, OptionSet os, MemoryLifetime ml )
 
 static OptionClause defaultSettings[] =
 	{
-	//{ oq_DISABLED, 1, on_CONCRETIFICATION },
+	{ oq_DISABLED, 1, on_HACK },
 	{ 0 }
 	};
 
