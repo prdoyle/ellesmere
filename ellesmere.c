@@ -66,12 +66,40 @@ static Context currentContext( Thread th )
 static Object activeBindings( Thread th )
 	{
 	Object result = currentContext( th )->bindings.active;
-	if( os_trace( th->os, on_BINDINGS, "/= Bindings =\\\n" ) )
+	if( 0 && os_trace( th->os, on_BINDINGS, "/= Bindings =\\\n" ) )
 		{
 		ob_sendDeepTo( result, os_logFile( th->os, on_BINDINGS ), th->heap );
 		os_trace( th->os, on_BINDINGS, "\\= Bindings /\n" );
 		}
 	return result;
+	}
+
+static void bindTo( Symbol sy, Object value, Thread th )
+	{
+	File traceFile = os_traceFile( th->os, on_BINDINGS );
+	Object oldValue = NULL;
+	if( traceFile )
+		{
+		oldValue = ob_getFieldRecursivelyIfPresent(
+			activeBindings( th ),
+			sy,
+			sy_byIndex( SYM_DELEGATE, oh_symbolTable(th->heap) ),
+			NULL,
+			th->heap );
+		ob_sendTo( activeBindings(th), traceFile, th->heap );
+		fl_write( traceFile, "[ %s ] := ", sy_name( sy, th->st ) );
+		if( value )
+			ob_sendTo( value, traceFile, th->heap );
+		else
+			fl_write( traceFile, "null" );
+		if( oldValue )
+			{
+			fl_write( traceFile, " -- was " );
+			ob_sendTo( oldValue, traceFile, th->heap );
+			}
+		fl_write( traceFile, "\n" );
+		}
+	ob_setField( activeBindings( th ), sy, value, th->heap );
 	}
 
 static Object boundTo( Symbol sy, Object defaultResult, Thread th )
@@ -86,7 +114,7 @@ static Object boundTo( Symbol sy, Object defaultResult, Thread th )
 		{
 		File fl = os_traceFile( th->os, on_BINDINGS );
 		ob_sendTo( activeBindings(th), fl, th->heap );
-		fl_write( fl, "[ %s ] = ", sy_name( sy, th->st ) );
+		fl_write( fl, "[ %s ] == ", sy_name( sy, th->st ) );
 		if( result )
 			ob_sendTo( result, fl, th->heap );
 		else
@@ -152,6 +180,15 @@ static void initBindingSet( BindingsSet *bindings, BindingsSet *delegates, Threa
 static void cancelDigression( Thread th )
 	{
 	cxs_incCountBy( th->cxs, -1 );
+	if( os_log( th->os, on_EXECUTION, "Cancel bindings:\n   active = " ) )
+		{
+		File logFile = os_logFile( th->os, on_EXECUTION );
+		BindingsSet bindings = currentContext(th)->bindings;
+		ob_sendTo( bindings.active, logFile, th->heap );
+		os_log( th->os, on_BINDINGS, "\n   recording = " );
+		ob_sendTo( bindings.recording, logFile, th->heap );
+		os_log( th->os, on_BINDINGS, "\n" );
+		}
 	}
 
 static void cleanupDigressions( Thread th )
@@ -463,7 +500,7 @@ NATIVE_ACTION void parseTreeAction( Production handle, GrammarLine gl, Thread th
 	push( result, th );
 	}
 
-static void addTagPlaceholdersToBindings( Object prmBindings, Production pn, Grammar gr, Thread th )
+static void addTagPlaceholdersToBindings( Production pn, Grammar gr, Thread th )
 	{
 	int i;
 	for( i = 0; i < pn_length( pn, gr ); i++ )
@@ -473,12 +510,7 @@ static void addTagPlaceholdersToBindings( Object prmBindings, Production pn, Gra
 			{
 			Symbol tag = pn_token( pn, i, gr );
 			Object value = oh_valuePlaceholder( th->heap, tag, oh_symbolToken( th->heap, name ) );
-			if( os_trace( th->os, on_INTERPRETER, "    -- bound %s@%s to ", sy_name( tag, th->st ), sy_name( name, th->st ) ) )
-				{
-				ob_sendTo( value, os_traceFile( th->os, on_INTERPRETER ), th->heap );
-				os_trace( th->os, on_INTERPRETER, "\n" );
-				}
-			ob_setField( prmBindings, name, value, th->heap );
+			bindTo( name, value, th );
 			}
 		}
 	}
@@ -541,8 +573,7 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 	Context cx = currentContext( th );
 	digress( th, currentStream( th ), NULL, NULL );
 	initBindingSet( &currentContext( th )->bindings, &cx->bindings, th );
-	Object prmBindings = activeBindings( th );
-	addTagPlaceholdersToBindings( prmBindings, pn, gr, th );
+	addTagPlaceholdersToBindings( pn, gr, th );
 
 	if( interpreterTrace )
 		{
@@ -560,7 +591,7 @@ NATIVE_ACTION void defAction( Production handle, GrammarLine gl, Thread th )
 	popToken( th ); // "def" keyword
 	push( oh_symbolToken( th->heap, pn_lhs( handle, ps_grammar(th->ps) ) ), th );
 
-	// Remove argument bindings
+	// Remove argument bindings added by addProductionAction
 	cancelDigression( th );
 
 	// Store the body from the definition
@@ -1097,17 +1128,18 @@ static Production mainParsingLoop( TokenBlock recording, Thread th )
 					{
 					assert( handleProduction );
 					Object argBindings = newBindings( activeBindings(th), th );
+					Object prmBindings = newBindings( currentContext(th)->bindings.recording, th );
+					digress( th, ts_new( functionToCall->body.tb, th->heap ), prmBindings, prmBindings );
+					addTagPlaceholdersToBindings( handleProduction, gr, th );
+					currentContext( th )->bindings.active = argBindings;
 					int i;
 					for( i = pn_length( handleProduction, gr ) - 1; i >= 0; i-- )
 						{
 						Symbol nameSymbol = pn_name( handleProduction, i, gr );
 						Object value = pop( th );
 						if( nameSymbol )
-							ob_setField( argBindings, nameSymbol, value, th->heap );
+							bindTo( nameSymbol, value, th );
 						}
-					Object prmBindings = newBindings( currentContext(th)->bindings.recording, th );
-					addTagPlaceholdersToBindings( prmBindings, handleProduction, gr, th );
-					digress( th, ts_new( functionToCall->body.tb, th->heap ), argBindings, prmBindings );
 					if( logThisHandle && os_trace( th->os, on_EXECUTION, "   Digressing into " ) )
 						{
 						tb_sendTo( functionToCall->body.tb, logThisHandle, th->heap );
