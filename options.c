@@ -39,6 +39,7 @@ static const struct noun_struct
 	char      *name;
 	char      *description;
 	} nouns[] = {
+	{ on_BINDINGS,              "bind",  "bindings",             "mapping symbols to values (or placeholders) during execution and recording"           },
 	{ on_CONCRETIFICATION,      "ccfn",  "concretification",     "substituting arbitrary subtags to make parsing succeed for token block recording"     },
 	{ on_EXECUTION,             "exec",  "execution",            "operations performed by the user program"                                             },
 	{ on_GRAMMAR_AUGMENTATION,  "grau",  "grammarAugmentation",  "adding productions to grammars to handle inheritance"                                 },

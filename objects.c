@@ -610,8 +610,11 @@ static int sendEdgeTo( SymbolIndex siArg, Object value, ObjectHeap heap, File fl
 	return charsSent;
 	}
 
-static int sendDeepTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
+static int sendDeepTo( Object ob, File fl, ObjectHeap heap, CheckList cl, int depthLimit )
 	{
+	if( depthLimit <= 0 )
+		return 0;
+
 	int charsSent = 0;
 	if( !cl_isChecked( cl, ob ) && fl )
 		{
@@ -636,10 +639,10 @@ static int sendDeepTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 				{
 				Object target = ob_getFieldX( ob, fieldID, heap );
 				if( target )
-					charsSent += sendDeepTo( target, fl, heap, cl );
+					charsSent += sendDeepTo( target, fl, heap, cl, depthLimit-1 );
 				}
 			for( field = ob->data.listFields; field; field = field->tail )
-				charsSent += sendDeepTo( field->value, fl, heap, cl );
+				charsSent += sendDeepTo( field->value, fl, heap, cl, depthLimit-1 );
 			}
 		else
 			{
@@ -651,10 +654,10 @@ static int sendDeepTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 	return charsSent;
 	}
 
-FUNC int ob_sendDeepTo( Object ob, File fl, ObjectHeap heap )
+FUNC int ob_sendGraphTo( Object ob, File fl, int depthLimit, ObjectHeap heap )
 	{
 	CheckList cl = cl_open( heap );
-	int result = sendDeepTo( ob, fl, heap, cl );
+	int result = sendDeepTo( ob, fl, heap, cl, depthLimit );
 	cl_close( cl );
 	return result;
 	}

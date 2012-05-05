@@ -14,11 +14,17 @@
 #include <sys/time.h>
 #include <limits.h>
 
+typedef struct
+	{
+	Object active;
+	Object recording;
+	} BindingsSet;
+
 typedef struct cx_struct *Context;
 struct cx_struct
 	{
 	TokenStream stream;
-	Object      bindings;
+	BindingsSet bindings;
 	};
 
 #ifdef NDEBUG
@@ -44,9 +50,8 @@ struct th_struct
 	Parser               ps;
 	ContextStack         cxs;
 	Object               productionMap;
-	Object               executionBindings;
-	Object               recordingBindings;
 	Object               concretifications;
+	BindingsSet          globalBindings;
 	OptionSet            os;
 
 	FILE                *parserGenDiagnostics;
@@ -58,9 +63,37 @@ static Context currentContext( Thread th )
 	return cxs_last( th->cxs, 0 );
 	}
 
-static Object currentBindings( Thread th )
+static Object activeBindings( Thread th )
 	{
-	return currentContext( th )->bindings;
+	Object result = currentContext( th )->bindings.active;
+	if( os_trace( th->os, on_BINDINGS, "/= Bindings =\\\n" ) )
+		{
+		ob_sendDeepTo( result, os_logFile( th->os, on_BINDINGS ), th->heap );
+		os_trace( th->os, on_BINDINGS, "\\= Bindings /\n" );
+		}
+	return result;
+	}
+
+static Object boundTo( Symbol sy, Object defaultResult, Thread th )
+	{
+	Object result = ob_getFieldRecursivelyIfPresent(
+		activeBindings( th ),
+		sy,
+		sy_byIndex( SYM_DELEGATE, oh_symbolTable(th->heap) ),
+		defaultResult,
+		th->heap );
+	if( os_tracing( th->os, on_BINDINGS ) )
+		{
+		File fl = os_traceFile( th->os, on_BINDINGS );
+		ob_sendTo( activeBindings(th), fl, th->heap );
+		fl_write( fl, "[ %s ] = ", sy_name( sy, th->st ) );
+		if( result )
+			ob_sendTo( result, fl, th->heap );
+		else
+			fl_write( fl, "null" );
+		fl_write( fl, "\n" );
+		}
+	return result;
 	}
 
 static TokenStream currentStream( Thread th )
@@ -68,7 +101,7 @@ static TokenStream currentStream( Thread th )
 	return currentContext( th )->stream;
 	}
 
-static Object currentToken( Thread th, Object bindings ) // Token here is a misnomer -- it can be any object
+static Object currentToken( Thread th ) // Token here is a misnomer -- it can be any object
 	{
 	TokenStream  ts = currentStream( th );
 	ObjectHeap heap = ts_heap( ts );
@@ -79,42 +112,71 @@ static Object currentToken( Thread th, Object bindings ) // Token here is a misn
 		return oh_symbolToken( th->heap, sy_byIndex( SYM_END_OF_INPUT, th->st ) );
 		}
 	else if( ob_isToken( raw, th->heap ) )
-		{
-		return ob_getFieldRecursivelyIfPresent(
-			bindings,
-			ob_toSymbol( raw, heap ),
-			sy_byIndex( SYM_DELEGATE, oh_symbolTable(heap) ),
-			raw,
-			heap );
-		}
+		return boundTo( ob_toSymbol( raw, heap ), raw, th );
 	else
-		{
 		return raw;
+	}
+
+static Object newBindings( Object delegate, Thread th )
+	{
+	ObjectHeap heap = th->heap;
+	Object result = ob_createX( SYM_BINDINGS, heap ); // TODO: recycle?
+	if( delegate )
+		ob_setFieldX( result, SYM_DELEGATE, delegate, heap );
+	if( os_log( th->os, on_BINDINGS, "New binding " ) )
+		{
+		File log = os_logFile( th->os, on_BINDINGS );
+		ob_sendTo( result, log, th->heap );
+		if( delegate )
+			{
+			os_log( th->os, on_BINDINGS, " -> " );
+			ob_sendTo( delegate, log, th->heap );
+			}
+		os_log( th->os, on_BINDINGS, "\n" );
 		}
+	return result;
+	}
+
+static void initBindingSet( BindingsSet *bindings, BindingsSet *delegates, Thread th )
+	{
+	// Load from delegate first in case bindings == delegates
+	Object activeDelegate    = delegates? delegates->active    : NULL;
+	Object recordingDelegate = delegates? delegates->recording : NULL;
+
+	os_log( th->os, on_BINDINGS, "Init bindings:\n   active = " );
+	bindings->active = newBindings( activeDelegate, th );
+	os_log( th->os, on_BINDINGS, "   recording = " );
+	bindings->recording = newBindings( recordingDelegate, th );
 	}
 
 static void cancelDigression( Thread th )
 	{
-	if( cxs_count( th->cxs ) >= 2 ) // Can't "cancel a digression" on theLexTokenStream
-		cxs_incCountBy( th->cxs, -1 );
+	cxs_incCountBy( th->cxs, -1 );
 	}
 
-static void digress( Thread th, TokenStream stream, Object bindings )
+static void cleanupDigressions( Thread th )
+	{
+	TokenStream ts;
+	for( ts = currentStream(th); ts_current(ts) == NULL && ts != theLexTokenStream(th->heap); ts = currentStream(th) )
+		cancelDigression( th );
+	}
+
+static void digress( Thread th, TokenStream stream, Object activeBindings, Object recordingBindings )
 	{
 	if( ts_current( stream ) )
 		{
-		Context cx   = cxs_nextElement( th->cxs );
-		cx->stream   = stream;
-		cx->bindings = bindings;
+		Context cx             = cxs_nextElement( th->cxs );
+		cx->stream             = stream;
+		cx->bindings.active    = activeBindings;
+		cx->bindings.recording = recordingBindings;
 		}
 	}
 
 static void advanceToken( Thread th )
 	{
-	TokenStream ts = currentStream( th );
+	TokenStream ts = currentStream(th);
 	ts_advance( ts );
-	if( ts_current(ts) == NULL )
-		cancelDigression( th );
+	cleanupDigressions( th );
 	}
 
 static int sendTokenPreviewTo( Thread th, File fl )
@@ -353,7 +415,7 @@ NATIVE_ACTION void evalAction( Production handle, GrammarLine gl, Thread th )
 	{
 	popToken( th );
 	TokenBlock tb = ob_toTokenBlock( pop(th), th->heap );
-	digress( th, ts_new( tb, th->heap ), currentBindings(th) );
+	digress( th, ts_new( tb, th->heap ), activeBindings(th), currentContext(th)->bindings.recording );
 	}
 
 NATIVE_ACTION void printAction( Production handle, GrammarLine gl, Thread th )
@@ -399,6 +461,26 @@ NATIVE_ACTION void parseTreeAction( Production handle, GrammarLine gl, Thread th
 		ob_setField( result, field, value, th->heap );
 		}
 	push( result, th );
+	}
+
+static void addTagPlaceholdersToBindings( Object prmBindings, Production pn, Grammar gr, Thread th )
+	{
+	int i;
+	for( i = 0; i < pn_length( pn, gr ); i++ )
+		{
+		Symbol name = pn_name( pn, i, gr );
+		if( name )
+			{
+			Symbol tag = pn_token( pn, i, gr );
+			Object value = oh_valuePlaceholder( th->heap, tag, oh_symbolToken( th->heap, name ) );
+			if( os_trace( th->os, on_INTERPRETER, "    -- bound %s@%s to ", sy_name( tag, th->st ), sy_name( name, th->st ) ) )
+				{
+				ob_sendTo( value, os_traceFile( th->os, on_INTERPRETER ), th->heap );
+				os_trace( th->os, on_INTERPRETER, "\n" );
+				}
+			ob_setField( prmBindings, name, value, th->heap );
+			}
+		}
 	}
 
 NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Thread th )
@@ -456,24 +538,11 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 	dumpParserState( interpreterTrace, th );
 
 	// Add bindings with a symbol for each named parameter during recording
-	Object bindings = ob_createX( SYM_BINDINGS, th->heap );
-	ob_setFieldX( bindings, SYM_DELEGATE, currentBindings(th), th->heap );
-	currentContext(th)->bindings = bindings;
-	for( i = 0; i < pn_length( pn, gr ); i++ )
-		{
-		Symbol name = pn_name( pn, i, gr );
-		if( name )
-			{
-			Symbol tag = pn_token( pn, i, gr );
-			Object value = oh_valuePlaceholder( th->heap, tag, oh_symbolToken( th->heap, name ) );
-			if( os_trace( th->os, on_INTERPRETER, "    -- bound %s@%s to ", sy_name( tag, th->st ), sy_name( name, th->st ) ) )
-				{
-				ob_sendTo( value, os_traceFile( th->os, on_INTERPRETER ), th->heap );
-				os_trace( th->os, on_INTERPRETER, "\n" );
-				}
-			ob_setField( bindings, name, value, th->heap );
-			}
-		}
+	Context cx = currentContext( th );
+	digress( th, currentStream( th ), NULL, NULL );
+	initBindingSet( &currentContext( th )->bindings, &cx->bindings, th );
+	Object prmBindings = activeBindings( th );
+	addTagPlaceholdersToBindings( prmBindings, pn, gr, th );
 
 	if( interpreterTrace )
 		{
@@ -492,14 +561,14 @@ NATIVE_ACTION void defAction( Production handle, GrammarLine gl, Thread th )
 	push( oh_symbolToken( th->heap, pn_lhs( handle, ps_grammar(th->ps) ) ), th );
 
 	// Remove argument bindings
-	currentContext(th)->bindings = ob_getFieldX( currentBindings(th), SYM_DELEGATE, th->heap );
+	cancelDigression( th );
 
 	// Store the body from the definition
 	Symbol pnSymbol = ob_getTokenField( production, sy_byName( "productionSymbol", th->st ), th->heap );
 	Function fn = (Function)ml_alloc( ml_indefinite(), sizeof(*fn) );
 	fn->kind       = FN_TOKEN_BLOCK;
 	fn->body.tb    = block;
-	ob_setFunctionField( th->executionBindings, pnSymbol, fn, th->heap );
+	ob_setFunctionField( th->globalBindings.active, pnSymbol, fn, th->heap );
 	if( os_log( th->os, on_EXECUTION, "   Defined production %s: ", sy_name( pnSymbol, th->st ) ) )
 		{
 		tb_sendTo( block, os_logFile( th->os, on_EXECUTION ), th->heap );
@@ -549,7 +618,7 @@ NATIVE_ACTION void setAction( Production handle, GrammarLine gl, Thread th )
 	popToken( th );
 	Symbol name = popToken( th );
 	Object rhs = pop( th );
-	ob_setField( currentBindings(th), name, rhs, th->heap );
+	ob_setField( activeBindings(th), name, rhs, th->heap );
 	push( oh_symbolToken( th->heap, pn_lhs( handle, ps_grammar(th->ps) ) ), th );
 	}
 #endif
@@ -578,14 +647,8 @@ static Object recordified( Object ob, Thread th )
 
 NATIVE_ACTION void optimizeAction( Production handle, GrammarLine gl, Thread th )
 	{
-	th->executionBindings = recordified( th->executionBindings, th );
-	if( 0 )
-		{
-		Symbol tag = ob_tag( th->executionBindings, th->heap );
-		printf( "optimized executionBindings tag is %s, shape %p\n", sy_name( tag, th->st ), PH( sy_instanceShape( tag, th->heap ) ) );
-		rd_sendTo( sy_instanceShape( tag, th->heap ), stdout, th->st );
-		}
-	th->recordingBindings = recordified( th->recordingBindings, th );
+	th->globalBindings.active    = recordified( th->globalBindings.active, th );
+	th->globalBindings.recording = recordified( th->globalBindings.recording, th );
 	nopAction( handle, gl, th );
 	}
 
@@ -603,12 +666,6 @@ NATIVE_ACTION void timeAction( Production handle, GrammarLine gl, Thread th )
 	popToken( th );
 	int delta = (int)( currentTimeMillis() - th->timeBasis );
 	push( ob_fromInt( delta, th->heap ), th );
-	}
-
-NATIVE_ACTION void bindingsAction( Production handle, GrammarLine gl, Thread th )
-	{
-	popToken( th );
-	push( currentBindings(th), th );
 	}
 
 NATIVE_ACTION void createAction( Production handle, GrammarLine gl, Thread th )
@@ -689,8 +746,6 @@ static struct gl_struct grammar1[] =
 	{ { "BOOLEAN",   "INT", "nz!"                                                   }, { nonzeroAction }, PE_SAFE },
 	{ { "BOOLEAN",   "INT", "INT", "le!"                                            }, { leAction },      PE_SAFE },
 
-	{ { "BINDINGS",  "bindings"                                                     }, { bindingsAction } },
-
 	{{NULL}},
 	};
 
@@ -765,9 +820,9 @@ static Grammar populateGrammar( SymbolTable st, Thread th )
 			Function fn = (Function)ml_alloc( ml_indefinite(), sizeof(*fn) );
 			fn->body.gl = line;
 			fn->kind    = FN_NATIVE;
-			ob_setFunctionField( th->executionBindings, pnSymbol, fn, th->heap );
+			ob_setFunctionField( th->globalBindings.active, pnSymbol, fn, th->heap );
 			if( line->peSafe )
-				ob_setFunctionField( th->recordingBindings, pnSymbol, fn, th->heap );
+				ob_setFunctionField( th->globalBindings.recording, pnSymbol, fn, th->heap );
 			}
 		}
 	gr_stopAdding( gr );
@@ -844,10 +899,8 @@ static void record( TokenBlock recording, int lengthToRecord, Stack utilityStack
 		}
 	}
 
-static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread th )
+static Production mainParsingLoop( TokenBlock recording, Thread th )
 	{
-	assert( bindings );
-
 	Production result = NULL;
 
 	int startingDepth = sk_depth( ps_operandStack( th->ps ) );
@@ -861,7 +914,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 			tb_sendTo( recording, interpreterTrace, th->heap );
 		else
 			os_trace( th->os, on_INTERPRETER, "(not recording)" );
-		os_trace( th->os, on_INTERPRETER, ", %p ) startingDepth=%d\n", PH( bindings ), startingDepth );
+		os_trace( th->os, on_INTERPRETER, " ) startingDepth=%d\n", startingDepth );
 		}
 
 	MemoryLifetime parseTime = ml_begin( 100, ml_indefinite() );
@@ -872,9 +925,9 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 		{
 		Symbol handleSymbol;
 		for (
-			handleSymbol = ps_handle( th->ps, currentToken( th, currentBindings(th) ) );
+			handleSymbol = ps_handle( th->ps, currentToken(th) );
 			handleSymbol;
-			handleSymbol = ps_handle( th->ps, currentToken( th, currentBindings(th) ) )
+			handleSymbol = ps_handle( th->ps, currentToken(th) )
 			){
 			Grammar gr = ps_grammar( th->ps ); // Grammar can change as the program proceeds
 			Production handleProduction = gr_production( gr, ob_getIntField( th->productionMap, handleSymbol, th->heap ) );
@@ -882,10 +935,10 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 			int handleLength = pn_length( handleProduction, gr );
 			int depthWithoutHandle = sk_depth( operandStack ) - handleLength;
 
-			Object boundObject = ob_getField( bindings, handleSymbol, th->heap );
+			Object boundObject = boundTo( handleSymbol, NULL, th );
 			Function functionToCall = boundObject? ob_toFunction( boundObject, th->heap ) : NULL;
-			File logThisFunction = functionToCall? os_logFile( th->os, on_EXECUTION ) : NULL;
-			if( logThisFunction )
+			File logThisHandle = os_logFile( th->os, on_EXECUTION );
+			if( functionToCall )
 				{
 				if( functionToCall->kind == FN_NATIVE && os_traceFile( th->os, on_EXECUTION ) == NULL )
 					{
@@ -893,14 +946,14 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 					int i;
 					static const NativeAction silentActions[] = { nopAction, passThrough, parseTreeAction, recordTokenBlockAction, stopRecordingTokenBlockAction };
 					NativeAction action = functionToCall->body.gl->response.action;
-					for( i=0; logThisFunction && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
+					for( i=0; logThisHandle && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
 						if( action == silentActions[i] )
-							logThisFunction = NULL;
+							logThisHandle = NULL;
 					}
 				}
 			if( os_logging( th->os, on_EXECUTION ) )
 				{
-				if( logThisFunction )
+				if( logThisHandle )
 					{
 					os_log( th->os, on_EXECUTION, "#  State:" );
 
@@ -942,7 +995,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 							handleColumn = currentColumn;
 						if( i == firstNewValueIndex )
 							newValuesColumn = currentColumn;
-						currentColumn += ob_sendTo( sk_item( ps_operandStack( th->ps ), i ), logThisFunction, th->heap );
+						currentColumn += ob_sendTo( sk_item( ps_operandStack( th->ps ), i ), logThisHandle, th->heap );
 						}
 					newValuesColumn = min( newValuesColumn, currentColumn );
 					handleColumn    = min( handleColumn,    currentColumn );
@@ -962,7 +1015,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 						itemsFromPrevHandle = depthWithoutHandle;
 					}
 				static const char depthStr[] = ""; //"----+----+----+----+----+----+----+----+----+----+----?";
-				if( logThisFunction && os_log( th->os, on_EXECUTION, "%-17s: %.*s %s <-", sy_name( handleSymbol, th->st ), cxs_count( th->cxs ), depthStr, sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
+				if( logThisHandle && os_log( th->os, on_EXECUTION, "%-17s: %.*s %s <-", sy_name( handleSymbol, th->st ), cxs_count( th->cxs ), depthStr, sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
 					{
 					char *sep = " ";
 					int i;
@@ -975,7 +1028,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 							{
 							os_log( th->os, on_EXECUTION, "@%s=", sy_name( nameSymbol, th->st ) );
 							Object value = sk_item( ps_operandStack( th->ps ), pn_length( handleProduction, gr ) - i - 1 );
-							ob_sendTo( value, logThisFunction, th->heap );
+							ob_sendTo( value, logThisHandle, th->heap );
 							}
 						sep = " ";
 						}
@@ -1001,20 +1054,21 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 					if( ob_isPlaceholder( sk_item( ps_operandStack( th->ps ), i ), th->heap) )
 						{
 						atLeastOneArgumentIsPlaceholder = true;
-						if( logThisFunction )
+						if( logThisHandle )
 							os_trace( th->os, on_EXECUTION, "   Argument at depth %d is a placeholder\n", i );
 						}
 					}
 				}
 			if( atLeastOneArgumentIsPlaceholder )
 				{
+				os_trace( th->os, on_INTERPRETER, "At least one argument is a placeholder\n" );
 				switch( kind )
 					{
 					case FN_TOKEN_BLOCK:
 						if( 1 ) // TODO: Expand token blocks with placeholders.  Need to evaluate arguments before executing the block.
 							{
 							kind = FN_UNKNOWN;
-							if( logThisFunction )
+							if( logThisHandle )
 								os_log( th->os, on_EXECUTION, "   An argument is a placeholder; dont execute\n" );
 							}
 						break;
@@ -1027,6 +1081,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 							}
 						else
 							{
+							os_trace( th->os, on_INTERPRETER, "  Switching to FN_UNKNOWN\n" );
 							kind = FN_UNKNOWN;
 							}
 						}
@@ -1041,7 +1096,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 				case FN_TOKEN_BLOCK:
 					{
 					assert( handleProduction );
-					Object argBindings = ob_createX( SYM_BINDINGS, th->heap ); // TODO: Recycle?
+					Object argBindings = newBindings( activeBindings(th), th );
 					int i;
 					for( i = pn_length( handleProduction, gr ) - 1; i >= 0; i-- )
 						{
@@ -1050,10 +1105,12 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 						if( nameSymbol )
 							ob_setField( argBindings, nameSymbol, value, th->heap );
 						}
-					digress( th, ts_new( functionToCall->body.tb, th->heap ), argBindings );
-					if( logThisFunction && os_trace( th->os, on_EXECUTION, "   Digressing into " ) )
+					Object prmBindings = newBindings( currentContext(th)->bindings.recording, th );
+					addTagPlaceholdersToBindings( prmBindings, handleProduction, gr, th );
+					digress( th, ts_new( functionToCall->body.tb, th->heap ), argBindings, prmBindings );
+					if( logThisHandle && os_trace( th->os, on_EXECUTION, "   Digressing into " ) )
 						{
-						tb_sendTo( functionToCall->body.tb, logThisFunction, th->heap );
+						tb_sendTo( functionToCall->body.tb, logThisHandle, th->heap );
 						os_trace( th->os, on_EXECUTION, "\n" );
 						}
 					}
@@ -1062,7 +1119,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 					{
 					GrammarLine line = functionToCall->body.gl;
 					assert( line );
-					if( logThisFunction && os_trace( th->os, on_EXECUTION, "   Calling native " ) )
+					if( logThisHandle && os_trace( th->os, on_EXECUTION, "   Calling native " ) )
 						{
 						Dl_info nativeInfo;
 						if( dladdr( line->response.action, &nativeInfo ) && nativeInfo.dli_saddr == line->response.action )
@@ -1075,6 +1132,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 					break;
 				case FN_UNKNOWN:
 					{
+					os_trace( th->os, on_EXECUTION, "No action for %s\n", sy_name( handleSymbol, th->st ) );
 					check( recording );
 					// With an unknown action, we give up on trying to do a good job
 					// with the tokens we've seen so far.  Append everything to the
@@ -1113,7 +1171,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 			os_trace( th->os, on_INTERPRETER, "   Raw token is NULL\n" );
 			goto done;
 			}
-		Object toPush = currentToken( th, currentBindings(th) ); // TODO: Change this to make partial eval less aggressive
+		Object toPush = currentToken( th );
 		if( interpreterTrace )
 			{
 			os_trace( th->os, on_INTERPRETER, "Pushing token from %p: ", PH( ts_tokenBlock( currentStream(th) ) ) );
@@ -1166,7 +1224,7 @@ NATIVE_ACTION void recordTokenBlockAction( Production handle, GrammarLine gl, Th
 			}
 		nopAction( handle, gl, th );
 
-		Production finishingHandle = mainParsingLoop( tb, th->recordingBindings, th );
+		Production finishingHandle = mainParsingLoop( tb, th );
 
 		if( interpreterTrace )
 			{
@@ -1279,18 +1337,18 @@ int main( int argc, char **argv )
 	th->heap = theObjectHeap();
 	th->st = theSymbolTable( th->heap );
 	initializeInheritanceRelation( th->heap, th->st, ml_indefinite(), th );
-	th->executionBindings = ob_createX( SYM_BINDINGS, th->heap );
-	th->recordingBindings = ob_createX( SYM_BINDINGS, th->heap );
-	th->concretifications = ob_createX( SYM_BINDINGS, th->heap );
-	th->productionMap     = ob_create( sy_byName( "PRODUCTION_MAP", th->st ), th->heap );
+	initBindingSet( &th->globalBindings, NULL, th );
+	th->concretifications = ob_create( sy_byName( "CONCRETIFICATIONS", th->st ), th->heap );
+	th->productionMap     = ob_create( sy_byName( "PRODUCTION_MAP",    th->st ), th->heap );
+	th->cxs = cxs_new( 10, ml_indefinite() );
+	digress( th, theLexTokenStream( th->heap ), NULL, NULL );
+	initBindingSet( &currentContext(th)->bindings, &th->globalBindings, th );
 	Grammar initialGrammar = populateGrammar( th->st, th );
 	Automaton au = au_new( initialGrammar, th->st, th->heap, ml_indefinite(), th->os, os_logFile( th->os, on_PARSER_CONFLICT ), os_traceFile( th->os, on_PARSER_GEN ) );
 	th->ps = ps_new( au, ml_indefinite(), os_logFile( th->os, on_INTERPRETER ) );
-	th->cxs = cxs_new( 10, ml_indefinite() );
-	digress( th, theLexTokenStream( th->heap ), ob_createX( SYM_BINDINGS, th->heap ) );
 	th->timeBasis = currentTimeMillis();
 
-	mainParsingLoop( NULL, th->executionBindings, th );
+	mainParsingLoop( NULL, th );
 
 #ifndef NDEBUG
 	File memreport = fdopen( 7, "wt" );

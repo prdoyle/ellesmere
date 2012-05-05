@@ -5,6 +5,7 @@
 #include "symbols.h"
 #include "records.h"
 #include "file.h"
+#include <limits.h> // INT_MAX
 
 typedef struct ob_struct *Object;
 typedef struct oh_struct *ObjectHeap;
@@ -46,12 +47,18 @@ FUNC void      cl_uncheck   ( CheckList cl, Object ob );
 FUNC bool      cl_isChecked ( CheckList cl, Object ob );
 
 FUNC int ob_sendTo         ( Object ob, File fl, ObjectHeap heap );
-FUNC int ob_sendDeepTo     ( Object ob, File fl, ObjectHeap heap );
+FUNC int ob_sendGraphTo    ( Object ob, File fl, int depthLimit, ObjectHeap heap );
 FUNC int ob_sendDotEdgesTo ( Object ob, File fl, ObjectHeap heap );
 
 typedef int ( *ObjectFormat )( void *context, Object object, File fl );
 static inline int ob_sendFormattedTo( Object ob, File fl, ObjectFormat format, void *context )
 	{ return format( context, ob, fl ); }
+
+static inline int ob_sendContentsTo ( Object ob, File fl, ObjectHeap heap )
+	{ return ob_sendGraphTo( ob, fl, 1, heap ); }
+
+static inline int ob_sendDeepTo ( Object ob, File fl, ObjectHeap heap )
+	{ return ob_sendGraphTo( ob, fl, INT_MAX, heap ); }
 
 typedef struct oba_struct *ObjectArray;
 #define AR_PREFIX  oba
