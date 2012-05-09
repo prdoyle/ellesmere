@@ -35,6 +35,7 @@ typedef enum
 	on_OPTIONS,
 	on_PARSER_CONFLICT,
 	on_PARSER_GEN,
+	on_TAIL_DIGRESSION_ELIMINATION,
 
 	on_NUM_OPTION_NOUNS
 	} OptionNoun;

@@ -22,13 +22,14 @@ static const struct verb_struct
 	char         *description1;
 	char         *description2;
 	} verbs[] = {
-	{ "l", "log",      {{ oq_LOGGING,    1 }}, "record",  "at a coarse granularity to aid understanding"  },
-	{ "d", "disable",  {{ oq_DISABLED,   1 }}, "prevent", "from occurring"                                },
-	{ "e", "enable",   {{ oq_DISABLED,  -1 }}, "allow",   "to occur"                                      },
-	{ "f", "force",    {{ oq_DISABLED,  -2 }}, "prevent", "from being disabled"                           },
-	{ "k", "kill",     {{ oq_DISABLED,   2 }}, "prevent", "from being enabled"                            },
-	{ "t", "trace",    {{ oq_TRACING,    1 },
-	                    { oq_LOGGING,    1 }}, "record",  "at a fine granularity to aid debugging"        },
+	{ "l", "log",      {{ oq_LOGGING,    2 }}, "record",  "at a coarse granularity to aid understanding"  },
+	{ "d", "disable",  {{ oq_DISABLED,   2 }}, "prevent", "from occurring"                                },
+	{ "e", "enable",   {{ oq_DISABLED,  -2 }}, "allow",   "to occur"                                      },
+	{ "f", "force",    {{ oq_DISABLED,  -3 }}, "prevent", "from being disabled"                           },
+	{ "k", "kill",     {{ oq_DISABLED,   3 }}, "prevent", "from being enabled"                            },
+	{ "a", "ask",      {{ oq_DISABLED,  -1 }}, "allow",   "on a case-by-case basis"                       },
+	{ "t", "trace",    {{ oq_TRACING,    2 },
+	                    { oq_LOGGING,    2 }}, "record",  "at a fine granularity to aid debugging"        },
 	{ 0 }
 	};
 
@@ -39,16 +40,18 @@ static const struct noun_struct
 	char      *name;
 	char      *description;
 	} nouns[] = {
-	{ on_CONCRETIFICATION,      "ccfn",  "concretification",     "substituting arbitrary subtags to make parsing succeed for token block recording"     },
-	{ on_EXECUTION,             "exec",  "execution",            "operations performed by the user program"                                             },
-	{ on_GRAMMAR_AUGMENTATION,  "grau",  "grammarAugmentation",  "adding productions to grammars to handle inheritance"                                 },
-	{ on_HACK,                  "hack",  "hack",                 "temporary experiments"                                                                },
-	{ on_INHERITANCE,           "inh",   "inheritance",          "substitution of one symbol for another"                                               },
-	{ on_INTERPRETER,           "int",   "interpreter",          "reading tokens, walking automata, and computing which operations to perform"          },
-	{ on_OPTIMIZATIONS,         "opts",  "optimizations",        "optional performance enhancements"                                                    },
-	{ on_OPTIONS,               "ops",   "options",              "option parsing and processing"                                                        },
-	{ on_PARSER_CONFLICT,       "pc",    "parserConflict",       "situations where the automaton to generate is ambiguous"                              },
-	{ on_PARSER_GEN,            "pgen",  "parserGen",            "construction of an automaton from a grammar"                                          },
+	{ on_BINDINGS,                    "bind",  "bindings",                   "mapping symbols to values (or placeholders) during execution and recording"                    },
+	{ on_CONCRETIFICATION,            "ccfn",  "concretification",           "substituting arbitrary subtags to make parsing succeed for token block recording"              },
+	{ on_EXECUTION,                   "exec",  "execution",                  "operations performed by the user program"                                                      },
+	{ on_GRAMMAR_AUGMENTATION,        "grau",  "grammarAugmentation",        "adding productions to grammars to handle inheritance"                                          },
+	{ on_HACK,                        "hack",  "hack",                       "temporary experiments"                                                                         },
+	{ on_INHERITANCE,                 "inh",   "inheritance",                "substitution of one symbol for another"                                                        },
+	{ on_INTERPRETER,                 "int",   "interpreter",                "reading tokens, walking automata, and computing which operations to perform"                   },
+	{ on_OPTIMIZATIONS,               "opts",  "optimizations",              "optional performance enhancements"                                                             },
+	{ on_OPTIONS,                     "ops",   "options",                    "option parsing and processing"                                                                 },
+	{ on_PARSER_CONFLICT,             "pc",    "parserConflict",             "situations where the automaton to generate is ambiguous"                                       },
+	{ on_PARSER_GEN,                  "pgen",  "parserGen",                  "construction of an automaton from a grammar"                                                   },
+	{ on_TAIL_DIGRESSION_ELIMINATION, "tde",   "tailDigressionElimination",  "reusing the context of a digression that has just finished to execute its final reduce action" },
 	{ 0 }
 	};
 
@@ -108,10 +111,15 @@ FUNC void os_setLogFile ( OptionSet os, File newLogFile )
 FUNC bool os_isSet( OptionSet os, OptionQuery query, OptionNoun noun ) __attribute__((always_inline));
 FUNC bool os_isSet( OptionSet os, OptionQuery query, OptionNoun noun )
 	{
-	if ( os )
-		return os->optionLevels[ query ][ noun ] > 0;
+	if( !os )
+		return false;
+	int level = os->optionLevels[ query ][ noun ];
+	if( level <= 0 )
+		return false;
+	else if( level >= 2 )
+		return true;
 	else
-		return 0;
+		return optional( "%s %s", queries[ query-1 ].name, nouns[ noun-1 ].name );
 	}
 
 FUNC bool os_areAllSet( OptionSet os, ... )
@@ -177,12 +185,23 @@ static OptionClause defaultSettings[] =
 	{ 0 }
 	};
 
+static const struct consequence_struct
+	{
+	char       *causeVerb;
+	OptionNoun  causeNoun;
+	char       *effectVerb;
+	OptionNoun  effectNoun;
+	} consequences[] = {
+	{ "t", on_INTERPRETER, "t", on_TAIL_DIGRESSION_ELIMINATION },
+	{ 0 }
+	};
+
 FUNC OptionSet os_new( MemoryLifetime ml )
 	{
 	OptionSet result = ml_alloc( ml, sizeof(*result) );
 	memset( result, 0, sizeof(*result) );
 	int i;
-	for( i=0; i < sizeof(defaultSettings)/sizeof(defaultSettings[0]); i++ )
+	for( i=0; i < asizeof( defaultSettings ); i++ )
 		{
 		OptionClause *clause = defaultSettings + i;
 		if( !clause->query )
@@ -249,6 +268,39 @@ static void dumpHelpAndTerminate()
 	exit(1);
 	}
 
+static void addOptionAndConsequences( OptionDelta od, char *verbAbbreviation, const struct noun_struct *noun )
+	{
+	const struct verb_struct *verb;
+	for( verb = verbs; ; verb++ )
+		{
+		if( verb->abbreviation == 0 )
+			{
+			fprintf( stderr, "Unrecognized verb: '%c'\n", verbAbbreviation[0] );
+			dumpHelpAndTerminate();
+			}
+		if( verb->abbreviation[0] == verbAbbreviation[0] )
+			break;
+		}
+	int i;
+	for( i=0; i < asizeof( verb->clauses ); i++ )
+		{
+		OptionClause oc = verb->clauses[ i ];
+		if( oc.query )
+			{
+			oc.noun = noun->id;
+			oca_append( od->clauses, oc );
+			}
+		else
+			break;
+		}
+	const struct consequence_struct *consequence;
+	for( consequence = consequences; consequence->causeNoun; consequence++ )
+		{
+		if( consequence->causeNoun == noun->id && !strcmp( consequence->causeVerb, verb->abbreviation ))
+			addOptionAndConsequences( od, consequence->effectVerb, nouns + consequence->effectNoun-1 );
+		}
+	}
+
 FUNC OptionDelta od_parse( char *start, char *stop, MemoryLifetime ml )
 	{
 	int numClauses = 1;
@@ -258,23 +310,11 @@ FUNC OptionDelta od_parse( char *start, char *stop, MemoryLifetime ml )
 			numClauses++;
 
 	OptionDelta result = ml_alloc( ml, sizeof(*result) );
-	OptionClauseArray clauses = oca_new( numClauses, ml );
-	result->clauses = clauses;
+	result->clauses = oca_new( numClauses, ml );
 
 	opt = start;
 	while( opt < stop )
 		{
-		const struct verb_struct *verb;
-		for( verb = verbs; ; verb++ )
-			{
-			if( verb->abbreviation == 0 )
-				{
-				fprintf( stderr, "Unrecognized verb: '%c'\n", opt[0] );
-				dumpHelpAndTerminate();
-				}
-			if( verb->abbreviation[0] == opt[0] )
-				break;
-			}
 		const struct noun_struct *noun;
 		int length = stop - (opt+1);
 		for( noun = nouns; ; noun++ )
@@ -290,18 +330,7 @@ FUNC OptionDelta od_parse( char *start, char *stop, MemoryLifetime ml )
 			if( matches( noun->abbreviation, opt+1, stop ) )
 				break;
 			}
-		int i;
-		for( i=0; i < sizeof(verb->clauses) / sizeof(verb->clauses[0]); i++ )
-			{
-			OptionClause oc = verb->clauses[ i ];
-			if( oc.query )
-				{
-				oc.noun = noun->id;
-				oca_append( clauses, oc );
-				}
-			else
-				break;
-			}
+		addOptionAndConsequences( result, opt, noun );
 		opt += 1 + length + 1; // verb + noun + comma
 		}
 
