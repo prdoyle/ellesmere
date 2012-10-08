@@ -401,6 +401,26 @@ NATIVE_ACTION void parseTreeAction( Production handle, GrammarLine gl, Thread th
 	push( result, th );
 	}
 
+static void addTagPlaceholdersToBindings( Object prmBindings, Production pn, Grammar gr, Thread th )
+	{
+	int i;
+	for( i = 0; i < pn_length( pn, gr ); i++ )
+		{
+		Symbol name = pn_name( pn, i, gr );
+		if( name )
+			{
+			Symbol tag = pn_token( pn, i, gr );
+			Object value = oh_valuePlaceholder( th->heap, tag, oh_symbolToken( th->heap, name ) );
+			if( os_trace( th->os, on_INTERPRETER, "    -- bound %s@%s to ", sy_name( tag, th->st ), sy_name( name, th->st ) ) )
+				{
+				ob_sendTo( value, os_traceFile( th->os, on_INTERPRETER ), th->heap );
+				os_trace( th->os, on_INTERPRETER, "\n" );
+				}
+			ob_setField( prmBindings, name, value, th->heap );
+			}
+		}
+	}
+
 NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Thread th )
 	{
 	parseTreeAction( handle, gl, th );
@@ -459,21 +479,7 @@ NATIVE_ACTION void addProductionAction( Production handle, GrammarLine gl, Threa
 	Object bindings = ob_createX( SYM_BINDINGS, th->heap );
 	ob_setFieldX( bindings, SYM_DELEGATE, currentBindings(th), th->heap );
 	currentContext(th)->bindings = bindings;
-	for( i = 0; i < pn_length( pn, gr ); i++ )
-		{
-		Symbol name = pn_name( pn, i, gr );
-		if( name )
-			{
-			Symbol tag = pn_token( pn, i, gr );
-			Object value = oh_valuePlaceholder( th->heap, tag, oh_symbolToken( th->heap, name ) );
-			if( os_trace( th->os, on_INTERPRETER, "    -- bound %s@%s to ", sy_name( tag, th->st ), sy_name( name, th->st ) ) )
-				{
-				ob_sendTo( value, os_traceFile( th->os, on_INTERPRETER ), th->heap );
-				os_trace( th->os, on_INTERPRETER, "\n" );
-				}
-			ob_setField( bindings, name, value, th->heap );
-			}
-		}
+	addTagPlaceholdersToBindings( bindings, pn, gr, th );
 
 	if( interpreterTrace )
 		{
