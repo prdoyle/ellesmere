@@ -890,8 +890,8 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 
 			Object boundObject = ob_getField( bindings, handleSymbol, th->heap );
 			Function functionToCall = boundObject? ob_toFunction( boundObject, th->heap ) : NULL;
-			File logThisFunction = functionToCall? os_logFile( th->os, on_EXECUTION ) : NULL;
-			if( logThisFunction )
+			File logThisHandle = os_logFile( th->os, on_EXECUTION );
+			if( functionToCall )
 				{
 				if( functionToCall->kind == FN_NATIVE && os_traceFile( th->os, on_EXECUTION ) == NULL )
 					{
@@ -899,14 +899,14 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 					int i;
 					static const NativeAction silentActions[] = { nopAction, passThrough, parseTreeAction, recordTokenBlockAction, stopRecordingTokenBlockAction };
 					NativeAction action = functionToCall->body.gl->response.action;
-					for( i=0; logThisFunction && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
+					for( i=0; logThisHandle && i < sizeof( silentActions )/sizeof( silentActions[0] ); i++ )
 						if( action == silentActions[i] )
-							logThisFunction = NULL;
+							logThisHandle = NULL;
 					}
 				}
 			if( os_logging( th->os, on_EXECUTION ) )
 				{
-				if( logThisFunction )
+				if( logThisHandle )
 					{
 					os_log( th->os, on_EXECUTION, "#  State:" );
 
@@ -948,7 +948,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 							handleColumn = currentColumn;
 						if( i == firstNewValueIndex )
 							newValuesColumn = currentColumn;
-						currentColumn += ob_sendTo( sk_item( ps_operandStack( th->ps ), i ), logThisFunction, th->heap );
+						currentColumn += ob_sendTo( sk_item( ps_operandStack( th->ps ), i ), logThisHandle, th->heap );
 						}
 					newValuesColumn = min( newValuesColumn, currentColumn );
 					handleColumn    = min( handleColumn,    currentColumn );
@@ -968,7 +968,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 						itemsFromPrevHandle = depthWithoutHandle;
 					}
 				static const char depthStr[] = ""; //"----+----+----+----+----+----+----+----+----+----+----?";
-				if( logThisFunction && os_log( th->os, on_EXECUTION, "%-17s: %.*s %s <-", sy_name( handleSymbol, th->st ), cxs_count( th->cxs ), depthStr, sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
+				if( logThisHandle && os_log( th->os, on_EXECUTION, "%-17s: %.*s %s <-", sy_name( handleSymbol, th->st ), cxs_count( th->cxs ), depthStr, sy_name( pn_lhs( handleProduction, gr ), th->st ) ) )
 					{
 					char *sep = " ";
 					int i;
@@ -981,7 +981,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 							{
 							os_log( th->os, on_EXECUTION, "@%s=", sy_name( nameSymbol, th->st ) );
 							Object value = sk_item( ps_operandStack( th->ps ), pn_length( handleProduction, gr ) - i - 1 );
-							ob_sendTo( value, logThisFunction, th->heap );
+							ob_sendTo( value, logThisHandle, th->heap );
 							}
 						sep = " ";
 						}
@@ -1007,7 +1007,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 					if( ob_isPlaceholder( sk_item( ps_operandStack( th->ps ), i ), th->heap) )
 						{
 						atLeastOneArgumentIsPlaceholder = true;
-						if( logThisFunction )
+						if( logThisHandle )
 							os_trace( th->os, on_EXECUTION, "   Argument at depth %d is a placeholder\n", i );
 						}
 					}
@@ -1020,7 +1020,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 						if( 1 ) // TODO: Expand token blocks with placeholders.  Need to evaluate arguments before executing the block.
 							{
 							kind = FN_UNKNOWN;
-							if( logThisFunction )
+							if( logThisHandle )
 								os_log( th->os, on_EXECUTION, "   An argument is a placeholder; dont execute\n" );
 							}
 						break;
@@ -1033,6 +1033,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 							}
 						else
 							{
+							os_trace( th->os, on_INTERPRETER, "  Switching to FN_UNKNOWN\n" );
 							kind = FN_UNKNOWN;
 							}
 						}
@@ -1057,9 +1058,9 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 							ob_setField( argBindings, nameSymbol, value, th->heap );
 						}
 					digress( th, ts_new( functionToCall->body.tb, th->heap ), argBindings );
-					if( logThisFunction && os_trace( th->os, on_EXECUTION, "   Digressing into " ) )
+					if( logThisHandle && os_trace( th->os, on_EXECUTION, "   Digressing into " ) )
 						{
-						tb_sendTo( functionToCall->body.tb, logThisFunction, th->heap );
+						tb_sendTo( functionToCall->body.tb, logThisHandle, th->heap );
 						os_trace( th->os, on_EXECUTION, "\n" );
 						}
 					}
@@ -1068,7 +1069,7 @@ static Production mainParsingLoop( TokenBlock recording, Object bindings, Thread
 					{
 					GrammarLine line = functionToCall->body.gl;
 					assert( line );
-					if( logThisFunction && os_trace( th->os, on_EXECUTION, "   Calling native " ) )
+					if( logThisHandle && os_trace( th->os, on_EXECUTION, "   Calling native " ) )
 						{
 						Dl_info nativeInfo;
 						if( dladdr( line->response.action, &nativeInfo ) && nativeInfo.dli_saddr == line->response.action )
