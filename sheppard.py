@@ -1,0 +1,204 @@
+#! /usr/bin/python
+
+import string
+
+object_id = 0
+
+class Object:
+
+	def __init__( self, tag, **edges ):
+		global object_id
+		self.TAG = tag
+		self.ELEMENTS = {}
+		self.FIELDS = [ k for k in edges ]
+		self.ID = object_id
+		object_id = object_id+1
+		for ( name, value ) in edges.iteritems():
+			setattr( self, name, value )
+
+	def get( self, key, default ):
+		if key in self:
+			return self[ key ]
+		else:
+			return default
+
+	# Allow map syntax for convenience
+
+	def __getitem__( self, key ):
+		if isinstance( key, int ):
+			return self.ELEMENTS[ key ]
+		else:
+			return getattr( self, key )
+
+	def __setitem__( self, key, value ):
+		if isinstance( key, int ):
+			self.ELEMENTS[ key ] = value
+		else:
+			setattr( self, key, value )
+			if not key in self.FIELDS:
+				self.FIELDS.append( key )
+
+	def __contains__( self, key ):
+		try:
+			self[ key ]
+			return True
+		except:
+			return False
+
+	def __delitem__( self, key ):
+		if key in [ "TAG", "ELEMENTS", "FIELDS", "ID" ]:
+			raise KeyError # TODO: Use a Sheppard exception?
+		else:
+			delattr( self, key )
+			self.FIELDS.remove( key )
+
+	def __iter__( self ): # Range over array (index,value) pairs; TODO: do normal fields too?
+		for key in self.ELEMENTS.iterkeys():
+			yield ( key, self.ELEMENTS[ key ] )
+
+	def __repr__( self ):
+		if self is null:
+			return "null"
+		else:
+			return "%s#%d" % ( self.TAG, self.ID )
+
+	def __str__( self ):
+		if self is null:
+			return "null"
+		else:
+			return repr( self ) + "{ " + string.join([ "%s:%s" % ( field, self[field] ) for field in self.FIELDS ], ', ') + " }"
+
+	# null and zero are false; all else are true
+
+	def __nonzero__( self ): return self != 0 and self != null
+
+class Null( Object ): # Just to make debugging messages more informative
+
+	def __init__( self ):
+		Object.__init__( self, "null" )
+
+def is_int( obj ):    return isinstance( obj, int ) # Sheppard integers are represented by Python ints
+def is_symbol( obj ): return isinstance( obj, str ) # Sheppard symbols are represented by Python strs
+
+def tag( obj ):
+	if is_int( obj ):
+		return "int"
+	elif is_symbol( obj ):
+		return "symbol"
+	else: # All other Sheppard objects are represented by instances of Object
+		return obj.TAG
+
+def pop( stack ):  return ( stack.cur, stack.prev )
+
+def bound( obj, digression ):
+	# This gives dynamic scoping.  TODO: Static scopes would usually be preferable.
+	if digression and is_symbol( obj ):
+		return digression.bindings.get( obj, obj )
+	else:
+		return obj
+
+# Object constructors
+
+null = Null()
+def Stack( cur, prev ): return Object( "stack", cur=cur, prev=prev, FIELDS=['cur','prev'] )
+def Parser( automaton ): return Object( "parser", state=automaton, stack=null )
+def Cons( head, tail ): return Object( "list", head=head, tail=tail, FIELDS=['head','tail'] )
+def List( items ):
+	if items:
+		return Cons( items[0], List( items[1:] ) )
+	else:
+		return null
+
+def Procedure( tokens, dialect ): return Object( "procedure", tokens=tokens, dialect=dialect )
+def Digression( tokens, bindings, prev ): return Object( "digression", tokens=tokens, bindings=bindings, prev=prev )
+
+def Thread( cursor, value_stack, state_stack ): return Object( "thread", cursor=cursor, value_stack=value_stack, state_stack=state_stack )
+
+# Main execute procedure
+
+def debug( message, *args ):
+	if args:
+		message = message % args
+	print message
+
+def to_python_list( sheppard_list, head="head", tail="tail" ):
+	if sheppard_list:
+		return [ sheppard_list[ head ] ] + to_python_list( sheppard_list[ tail ], head, tail )
+	else:
+		return []
+
+def stack_str( stack ):
+	return string.join([ repr(s) for s in to_python_list( stack, "cur", "prev" )], ", " )
+
+def execute( procedure, bindings ):
+	th = Thread(
+		Digression( procedure.tokens, bindings, null ),
+		null,
+		Stack( procedure.dialect, null ) )
+	debug( "starting thread:\n  %s", th )
+	while True:
+		debug( "state_stack: %s", stack_str( th.state_stack ) )
+		command = tag( th.state_stack.cur )
+		if command == "accept":
+			debug( "accept" )
+			break
+		elif command == "shift":
+			debug( "shift" )
+			# Upate thread state as per shift
+			if th.cursor:
+				raw_token = th.cursor.tokens.get( "head", "EOF" )
+				th.cursor.tokens = th.cursor.tokens.tail
+			else:
+				raw_token = "EOF"
+			debug( "  token: %s", repr( raw_token ) )
+			debug( "  cursor: %s", repr( th.cursor ) )
+			current_token = bound( raw_token, th.cursor )
+			if not raw_token is current_token:
+				debug( "    value: %s", repr( raw_token ) )
+			th.value_stack = Stack( current_token, th.value_stack )
+			new_state = th.state_stack.cur[ current_token ]
+			debug( "  new_state: %s", repr( new_state ) )
+			th.state_stack = Stack( new_state, th.state_stack )
+			if th.cursor and not th.cursor.tokens:
+				debug( "  finished digression" )
+				th.cursor = th.cursor.prev
+		elif command == "reduce":
+			debug( "reduce" )
+			action = bound( th.state_stack.cur.action, th.cursor )
+			debug( "  action: %s", repr( action ) )
+			formal_args = action.formal_args
+			arg_bindings = Object( "bindings" )
+			while formal_args:
+				th.state_stack = th.state_stack.prev
+				( formal_arg, formal_args )    = pop( formal_args )
+				( actual_arg, th.value_stack ) = pop( th.value_stack )
+				if formal_arg:
+					debug( "    %s=%s", formal_arg, repr( actual_arg ) )
+					arg_bindings[ formal_arg ] = actual_arg
+				else:
+					debug( "    pop %s", repr( actual_arg ) )
+			if tag( action ) == "primitive":
+				action.function( th, arg_bindings )
+			else:
+				cursor = Digression( action.tokens, arg_bindings, cursor )
+
+# Testing
+x = Stack("first", null)
+x = Stack("second", x)
+
+
+def Shift( **edges ): return Object( "shift", **edges )
+def Reduce( action ): return Object( "reduce", action=action )
+def Accept(): return Object( "accept" )
+def Primitive( function, formal_args ): return Object( "primitive", function=function, formal_args=formal_args )
+
+dialect = Shift(
+	hello=Shift(
+		world=Reduce( Primitive(
+			function=( lambda th, b: debug( "ARGS: %s", b ) ),
+			formal_args=Stack("H", Stack("W", null))
+			))),
+	EOF=Accept())
+
+tokens = List([ "hello", "world" ])
+execute( Procedure( tokens, dialect ), Object("bindings") )
