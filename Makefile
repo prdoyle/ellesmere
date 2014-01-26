@@ -18,7 +18,7 @@ small: CFLAGS    += -Os -DNDEBUG -g0
 #http://gcc.gnu.org/ml/gcc-help/2003-08/msg00128.html    -- doesn't seem to help
 #small: CFLAGS    += -Wl,-static -fdata-sections -ffunction-sections -Wl,--gc-sections
 small: LEXFLAGS  += -Cem
-fast:  CFLAGS    += -O3 -DNDEBUG #-Winline
+fast:  CFLAGS    += -O3 -DNDEBUG -Wno-strict-overflow #-Winline
 fast:  LEXFLAGS  += --Fast
 
 prof:  CFLAGS    += -pg -fprofile-arcs
@@ -115,7 +115,7 @@ bitvector.t: bitvector.t.o bitvector.o $(bitvector_DEPS)
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
 parser.t: CFLAGS += -DPARSER_T
-parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvector.o stack.o records.o
+parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvector.o stack.o records.o options.o walk.o
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
 records.t: records.t.o records.o $(records_DEPS)

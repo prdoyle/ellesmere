@@ -908,8 +908,9 @@ static void pg_computeReduceActions( ParserGenerator pg, File conflictLog, File 
 				{
 				SymbolSideTableEntry reduceOn = sst_element( pg->sst, k );
 				Symbol pnSymbol = pn_symbol( pn, gr );
-				check( pnSymbol ); // TODO: Null symbol = abstract?  Perhaps I should have some default abstract production symbol?
-				ob_setField( stateNode, reduceOn->sy, oh_symbolToken( heap, pnSymbol ), heap );
+				// Ideally: check( pnSymbol ); // TODO: Null symbol = abstract?  Perhaps I should have some default abstract production symbol?
+				if( pnSymbol ) // can be null for parser.t
+					ob_setField( stateNode, reduceOn->sy, oh_symbolToken( heap, pnSymbol ), heap );
 				}
 			}
 		}
@@ -1011,11 +1012,11 @@ static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
 		{
 		ItemSet its = itst_element( pg->itemSets, i );
-		charsSent += fl_write( dotFile, "n%p [label=\"%d %s\\n", PH( its->stateNode ), i, LR0StateKindNames[ its_LR0StateKind( its, pg ) ] );
+		charsSent += fl_write( dotFile, "n%p [label=\"%d %s\\n", its->stateNode, i, LR0StateKindNames[ its_LR0StateKind( its, pg ) ] );
 #ifdef REDUCE_CONTEXT_LENGTH
 		charsSent += fl_write( dotFile, "(reduce context: %d)\\n", ob_getIntFieldX( its->stateNode, SYM_REDUCE_CONTEXT_LENGTH, pg->heap ) );
 #endif
-#if 0
+#if 1
 		int j;
 		for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
 			{
@@ -2260,7 +2261,7 @@ static TestGrammarLine grammar2[] =
 	};
 #endif
 
-#if 1
+#if 0
 static TestGrammarLine grammar[] =
 	{
 	{ ":PROGRAM", ":VOIDS", ":END_OF_INPUT"              },
@@ -2353,6 +2354,32 @@ static TestGrammarLine grammar[] = // LR0
 	};
 #endif
 
+#if 0
+static TestGrammarLine grammar[] =
+	{
+	{ "GOAL",   "ITEM" },
+	{ "ITEM",   "letter" },
+	{ "ITEM",   "LIST" },
+	{ "LIST",   "(", ")" },
+	{ "LIST",   "(", "ITEMS", ")" },
+	{ "ITEMS",  "ITEM" },
+	{ "ITEMS",  "ITEMS", "ITEM" },
+	};
+#endif
+
+#if 1
+static TestGrammarLine grammar[] =
+	{
+	//{ "GOAL",   "LIST" },
+	{ "LIST",   "(", "ITEMS", ")" },
+	{ "LIST",   "(", ")" },
+	{ "ITEMS",  "ITEM" },
+	{ "ITEMS",  "ITEMS", "ITEM" },
+	{ "ITEM",   "var" },
+	{ "ITEM",   "LIST" },
+	};
+#endif
+
 static void dumpItemLookaheads( ParserGenerator pg, File traceFile )
 	{
 	int i;
@@ -2384,9 +2411,10 @@ int main( int argc, char *argv[] )
 		for( j=1; grammar[i][j]; j++ )
 			pn_append( pn, sy_byName( grammar[i][j], st ), gr );
 		pn_stopAppending( pn, gr );
-		pn_setConflictResolution( pn, CR_REDUCE_BEATS_SHIFT, gr );
+		pn_setConflictResolution( pn, CR_SHIFT_BEATS_REDUCE, gr );
 		}
 	gr_stopAdding( gr );
+#if 0 // grammar2
 	gr = gr_nested( gr, asizeof( grammar2 ), ml_indefinite() );
 	for( i=0; i < asizeof( grammar2 ); i++ )
 		{
@@ -2394,11 +2422,13 @@ int main( int argc, char *argv[] )
 		for( j=1; grammar2[i][j]; j++ )
 			pn_append( pn, sy_byName( grammar2[i][j], st ), gr );
 		pn_stopAppending( pn, gr );
-		pn_setConflictResolution( pn, CR_REDUCE_BEATS_SHIFT, gr );
+		pn_setConflictResolution( pn, CR_SHIFT_BEATS_REDUCE, gr );
 		}
 	gr_stopAdding( gr );
+#endif
 	//gr_sendTo( gr, traceFile, st );
 
+#if 0 // subtags
 	InheritanceRelation ir = oh_inheritanceRelation( pg->heap );
 	for( i=0; i < asizeof( subtags ); i++ )
 		{
@@ -2414,8 +2444,9 @@ int main( int argc, char *argv[] )
 		}
 	//fl_write( traceFile, "Inheritance relation:\n" );
 	//ob_sendDeepTo( ir_index(ir), traceFile, heap );
+#endif
 
-	if( false )
+	if( true )
 		{
 		char stateTagName[50];
 		sprintf( stateTagName, "SN_TEST_%d", st_count( st ) );
@@ -2460,7 +2491,7 @@ int main( int argc, char *argv[] )
 			else
 				{
 				fl_write( traceFile, "INDEX MISMATCH: entry %d is symbol %s. index %d, which has entry %d\n",
-					i, sste->sy, symbolIndex, pg->sstIndexes[ symbolIndex ] );
+					i, sy_name( sste->sy, st ), symbolIndex, pg->sstIndexes[ symbolIndex ] );
 				}
 			}
 
@@ -2489,7 +2520,7 @@ int main( int argc, char *argv[] )
 		pg_sendDotTo( pg, dotFile );
 		}
 
-	if(1)
+	if(0)
 		{
 		gr = gr_augmented( gr, ir, ml_indefinite(), traceFile );
 		fl_write( traceFile, "Augmented grammar:\n" );
