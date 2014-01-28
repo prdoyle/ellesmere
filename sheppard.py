@@ -196,7 +196,7 @@ dialect = Shift(
 	hello=Shift(
 		world=Reduce( Primitive(
 			function=( lambda th, b: debug( "ARGS: %s", b ) ),
-			formal_args=Stack("H", Stack("W", null))
+			formal_args=Stack("W", Stack("H", null)) # Formal args get popped, so they must appear in reverse order
 			))),
 	EOF=Accept())
 

@@ -1007,7 +1007,7 @@ static int its_LR0StateKind( ItemSet its, ParserGenerator pg )
 
 static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 	{
-	int charsSent = fl_write( dotFile, "digraph \"G\" { overlap=false \n" );
+	int charsSent = fl_write( dotFile, "digraph \"Automaton\" { overlap=false \n" );
 	int i;
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
 		{
@@ -1016,7 +1016,7 @@ static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 #ifdef REDUCE_CONTEXT_LENGTH
 		charsSent += fl_write( dotFile, "(reduce context: %d)\\n", ob_getIntFieldX( its->stateNode, SYM_REDUCE_CONTEXT_LENGTH, pg->heap ) );
 #endif
-#if 1
+#if 0
 		int j;
 		for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
 			{
@@ -2367,7 +2367,7 @@ static TestGrammarLine grammar[] =
 	};
 #endif
 
-#if 1
+#if 0
 static TestGrammarLine grammar[] =
 	{
 	//{ "GOAL",   "LIST" },
@@ -2377,6 +2377,51 @@ static TestGrammarLine grammar[] =
 	{ "ITEMS",  "ITEMS", "ITEM" },
 	{ "ITEM",   "var" },
 	{ "ITEM",   "LIST" },
+	};
+#endif
+
+#if 1
+// Sheppard
+TestGrammarLine grammar_old[] =
+	{
+	{ "STATEMENTS",   "STATEMENTS", "STATEMENT" },
+	{ "STATEMENTS",   "STATEMENT" },
+	{ "OBJECT",       "name:SYMBOL", "get" },
+	{ "STATEMENT",    "name:SYMBOL", "value:OBJECT", "bind" },
+	{ "OBJECT",       "base:OBJECT", "field:SYMBOL", "field" },
+	{ "NULL",         "Null" },
+	{ "LIST",         "head:OBJECT", "tail:HEAD", "Cons" },
+	{ "PROCEDURE",    "tokens:LIST", "dialect:STATE", "Procedure" },
+	{ "DIGRESSION",   "tokens:LIST", "bindings:CONTEXT", "prev:DIGRESSION", "Digression" },
+	{ "THREAD",       "cursor:OBJECT", "value_stack:LIST", "state_stack:LIST", "Thread" },
+	};
+
+static TestGrammarLine grammar[] =
+	{
+	{ "STATEMENTS",   "STATEMENTS", "STATEMENT" },
+	{ "STATEMENTS",   "STATEMENT" },
+	{ "STATEMENT",    "bind", "name:SYMBOL", "to", "value:OBJECT" },
+	//{ "OBJECT",       "get", "name:SYMBOL" },
+	{ "OBJECT",       "field", "field:SYMBOL", "in", "base:OBJECT" },
+	{ "NULL",         "null" },
+	{ "LIST",         "Cons", "head:OBJECT", "tail:LIST" },
+	{ "PROCEDURE",    "Procedure", "tokens:LIST", "in", "dialect:STATE" },
+	{ "DIGRESSION",   "Digression", "tokens:LIST", "with", "bindings:CONTEXT", "before", "prev:DIGRESSION" },
+	{ "STATEMENT",    "execute", "SHIFT" },
+	{ "STATEMENT",    "execute", "REDUCE" },
+	{ "STATEMENT",    "execute", "ACCEPT" },
+	//{ "LIST",         "list", "name:SYMBOL" },
+	//{ "PROCEDURE",    "procedure", "name:SYMBOL" },
+	//{ "DIGRESSION",   "digression", "name:SYMBOL" },
+	//{ "THREAD",       "Thread", "cursor:OBJECT", "value_stack:LIST", "state_stack:LIST" },
+	};
+
+static TestGrammarLine subtags[] =
+	{
+	{ "OBJECT",    "LIST", "PROCEDURE", "DIGRESSION" },
+	{ "LIST",      "NULL" },
+	{ "DIGRESSION","EOF" },
+	{ "STATE",     "SHIFT", "REDUCE", "ACCEPT" },
 	};
 #endif
 
@@ -2395,6 +2440,12 @@ static void dumpItemLookaheads( ParserGenerator pg, File traceFile )
 		}
 	}
 
+static char *tagPart( char *grammarWord )
+	{
+	char *result = strchr( grammarWord, ':' );
+	return result? result+1 : grammarWord;
+	}
+
 int main( int argc, char *argv[] )
 	{
 	int i, j; SymbolTable st; Symbol goal; Grammar gr; ParserGenerator pg; ObjectHeap heap;
@@ -2409,7 +2460,7 @@ int main( int argc, char *argv[] )
 		{
 		Production pn = pn_new( gr, sy_byName( grammar[i][0], st ), 10 );
 		for( j=1; grammar[i][j]; j++ )
-			pn_append( pn, sy_byName( grammar[i][j], st ), gr );
+			pn_append( pn, sy_byName( tagPart( grammar[i][j] ), st ), gr );
 		pn_stopAppending( pn, gr );
 		pn_setConflictResolution( pn, CR_SHIFT_BEATS_REDUCE, gr );
 		}
@@ -2428,8 +2479,8 @@ int main( int argc, char *argv[] )
 #endif
 	//gr_sendTo( gr, traceFile, st );
 
-#if 0 // subtags
-	InheritanceRelation ir = oh_inheritanceRelation( pg->heap );
+#if 1 // subtags
+	InheritanceRelation ir = oh_inheritanceRelation( theObjectHeap() );
 	for( i=0; i < asizeof( subtags ); i++ )
 		{
 		char **line = subtags[ i ];
@@ -2442,8 +2493,17 @@ int main( int argc, char *argv[] )
 			ir_add( ir, superSym, subSym );
 			}
 		}
-	//fl_write( traceFile, "Inheritance relation:\n" );
-	//ob_sendDeepTo( ir_index(ir), traceFile, heap );
+	fl_write( traceFile, "Inheritance relation:\n" );
+	ob_sendDeepTo( ir_index(ir), traceFile, heap );
+
+	if(1)
+		{
+		Symbol sym_abstract = sy_byName( "ABSTRACT_PRODUCTION", st );
+		gr = gr_augmented( gr, ir, sym_abstract, ml_indefinite(), traceFile );
+		fl_write( traceFile, "Augmented grammar:\n" );
+		gr_sendTo( gr, traceFile, st );
+		}
+
 #endif
 
 	if( true )
@@ -2518,13 +2578,6 @@ int main( int argc, char *argv[] )
 		ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
 
 		pg_sendDotTo( pg, dotFile );
-		}
-
-	if(0)
-		{
-		gr = gr_augmented( gr, ir, ml_indefinite(), traceFile );
-		fl_write( traceFile, "Augmented grammar:\n" );
-		gr_sendTo( gr, traceFile, st );
 		}
 
 	Automaton au = au_new( gr, st, heap, ml_indefinite(), NULL, traceFile, traceFile );

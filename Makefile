@@ -118,6 +118,9 @@ parser.t: CFLAGS += -DPARSER_T
 parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvector.o stack.o records.o options.o walk.o
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
+sheppard.dot: parser.t
+	parser.t > sheppard.dot
+
 records.t: records.t.o records.o $(records_DEPS)
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
 
