@@ -19,6 +19,7 @@ typedef struct it_struct
 	Production pn;
 	int dot; // "Current" position of the dot is before the token at this index
 	SymbolVector lookahead;  // May not be the optimal lookahead (ie. for LALR)
+	int canonical; // lowest-numbered item with the same symbols to the right of the dot, and the same production symbol (ie. reduce action)
 	} *Item;
 
 #ifdef NDEBUG
@@ -252,8 +253,35 @@ static void pg_populateItemTable( ParserGenerator pg, File traceFile )
 			Item it = ita_nextElement( pg->items );
 			it->pn  = pn;
 			it->dot = j;
+			it->canonical = -2;
+			int c,e;
+			for ( c=0; c < ita_count( pg->items ); c++ )
+				{
+				Item candidate = ita_element( pg->items, c );
+				if ( // This could be overly conservative
+					   pn_symbol( pn, gr ) == pn_symbol( candidate->pn, gr )
+					&& pn_length( pn, gr ) == pn_length( candidate->pn, gr )
+					&& it->dot == candidate->dot
+					){
+					for ( e=j; e < pn_length( pn, gr ); e++ )
+						{
+						if (  pn_token( pn, e, gr ) != pn_token( candidate->pn, e, gr )
+							|| pn_name ( pn, e, gr ) != pn_name ( candidate->pn, e, gr )
+							){
+							candidate = NULL;
+							break;
+							}
+						}
+					if ( candidate != NULL )
+						{
+						it->canonical = ita_elementIndex( pg->items, candidate );
+						break;
+						}
+					}
+				}
+			assert( it->canonical >= 0 );
 			pn_sendItemTo( it->pn, it->dot, traceFile, gr, pg->st );
-			TRACE( traceFile, "\n" );
+			TRACE( traceFile, " # canonical: i%d\n", it->canonical );
 			}
 		bv_set( pg->rightmostItems, ita_count(pg->items) - 1 );
 		}
