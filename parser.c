@@ -162,6 +162,17 @@ static void pg_closeItemVector( ParserGenerator pg, ItemVector itemVector, File 
 		}
 	}
 
+static void pg_canonicalizeItemVector( ParserGenerator pg, ItemVector itemVector, File traceFile )
+	{
+	int i;
+	for( i = bv_firstBit( itemVector ); i != bv_END; i = bv_nextBit( itemVector, i ) )
+		{
+		Item it = ita_element( pg->items, i );
+		bv_unset( itemVector, i );
+		bv_set( itemVector, it->canonical );
+		}
+	}
+
 static void pg_computeItemsExpectingToken( ParserGenerator pg, ItemVector result, ItemVector itemSet, Symbol token, File traceFile )
 	{
 	ItemVector expectingItems = pg_sideTableEntry( pg, token, traceFile )->expectingItems;
@@ -254,32 +265,35 @@ static void pg_populateItemTable( ParserGenerator pg, File traceFile )
 			it->pn  = pn;
 			it->dot = j;
 			it->canonical = -2;
-			int c,e;
-			for ( c=0; c < ita_count( pg->items ); c++ )
+			if( USE_CANONICAL_ITEMS )
 				{
-				Item candidate = ita_element( pg->items, c );
-				if ( // This could be overly conservative
-					   pn_symbol( pn, gr ) == pn_symbol( candidate->pn, gr )
-					&& pn_length( pn, gr ) == pn_length( candidate->pn, gr )
-					&& it->dot == candidate->dot
-					){
-					for ( e=j; e < pn_length( pn, gr ); e++ )
-						{
-						if (  pn_token( pn, e, gr ) != pn_token( candidate->pn, e, gr )
-							|| pn_name ( pn, e, gr ) != pn_name ( candidate->pn, e, gr )
-							){
-							candidate = NULL;
+				int c,e;
+				for ( c=0; c < ita_count( pg->items ); c++ )
+					{
+					Item candidate = ita_element( pg->items, c );
+					if ( // This could be overly conservative
+							pn_symbol( pn, gr ) == pn_symbol( candidate->pn, gr )
+						&& pn_length( pn, gr ) == pn_length( candidate->pn, gr )
+						&& it->dot == candidate->dot
+						){
+						for ( e=j; e < pn_length( pn, gr ); e++ )
+							{
+							if (  pn_token( pn, e, gr ) != pn_token( candidate->pn, e, gr )
+								|| pn_name ( pn, e, gr ) != pn_name ( candidate->pn, e, gr )
+								){
+								candidate = NULL;
+								break;
+								}
+							}
+						if ( candidate != NULL )
+							{
+							it->canonical = ita_elementIndex( pg->items, candidate );
 							break;
 							}
 						}
-					if ( candidate != NULL )
-						{
-						it->canonical = ita_elementIndex( pg->items, candidate );
-						break;
-						}
 					}
+				assert( it->canonical >= 0 );
 				}
-			assert( it->canonical >= 0 );
 			pn_sendItemTo( it->pn, it->dot, traceFile, gr, pg->st );
 			TRACE( traceFile, " # canonical: i%d\n", it->canonical );
 			}
@@ -419,6 +433,7 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 	startItemSet = curItemSet = pg_createItemSet( pg, bv_dup( pg_sideTableEntry( pg, gr_goal(pg->gr), traceFile )->leftmostItems, ml ) );
 	Object startState = startItemSet->stateNode;
 	pg_closeItemVector( pg, curItemSet->items, traceFile );
+	pg_canonicalizeItemVector( pg, curItemSet->items, traceFile );
 	st_count( st ); // just to use the variable and silence a warning
 	while( curItemSet )
 		{
@@ -483,6 +498,13 @@ static Object pg_computeLR0StateNodes( ParserGenerator pg, File traceFile )
 
 			pg_closeItemVector( pg, nextItems, traceFile );
 			if( TRACE( traceFile, "             closed: " ) )
+				{
+				traceBVX( nextItems, traceFile, sendBitNumber, "i%d" );
+				TRACE( traceFile, "\n" );
+				}
+
+			pg_canonicalizeItemVector( pg, nextItems, traceFile );
+			if( TRACE( traceFile, "          canonical: " ) )
 				{
 				traceBVX( nextItems, traceFile, sendBitNumber, "i%d" );
 				TRACE( traceFile, "\n" );
@@ -1044,7 +1066,7 @@ static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 #ifdef REDUCE_CONTEXT_LENGTH
 		charsSent += fl_write( dotFile, "(reduce context: %d)\\n", ob_getIntFieldX( its->stateNode, SYM_REDUCE_CONTEXT_LENGTH, pg->heap ) );
 #endif
-#if 0
+#if 1
 		int j;
 		for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
 			{

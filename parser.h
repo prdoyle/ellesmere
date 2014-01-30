@@ -9,6 +9,7 @@
 
 #define ITEM_SET_NUMS
 #define REDUCE_CONTEXT_LENGTH // max tokens that could be involved in a reduce from the given state
+#define USE_CANONICAL_ITEMS (1)
 
 FUNC Automaton  au_new ( Grammar gr, SymbolTable st, ObjectHeap heap, MemoryLifetime ml, OptionSet os, File conflictLog, File diagnostics ) ALWAYS_NEW;
 FUNC Grammar    au_grammar ( Automaton au );
