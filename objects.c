@@ -525,6 +525,11 @@ FUNC bool cl_isChecked( CheckList cl, Object ob )
 		return bv_isSet( cl->checkMarks, ob->checkListIndex );
 	}
 
+FUNC int cl_population( CheckList cl )
+	{
+	return bv_population( cl->checkMarks );
+	}
+
 FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 	{
 	int charsSent=0;

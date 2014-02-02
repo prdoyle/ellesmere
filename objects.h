@@ -45,6 +45,7 @@ FUNC void      cl_check     ( CheckList cl, Object ob ); // Beware large int obj
 FUNC void      cl_checkAll  ( CheckList target, CheckList source );
 FUNC void      cl_uncheck   ( CheckList cl, Object ob );
 FUNC bool      cl_isChecked ( CheckList cl, Object ob );
+FUNC int       cl_population( CheckList cl );
 
 FUNC int ob_sendTo         ( Object ob, File fl, ObjectHeap heap );
 FUNC int ob_sendGraphTo    ( Object ob, File fl, int depthLimit, ObjectHeap heap );

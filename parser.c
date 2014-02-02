@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <stddef.h>
 
+#define INCLUDE_ITEMS_IN_DOT_NODES (1)
+
 #define ITEM_STATE_PREFIX "state"
 
 typedef BitVector ItemVector;   // BitVectors of item indexes
@@ -164,12 +166,15 @@ static void pg_closeItemVector( ParserGenerator pg, ItemVector itemVector, File 
 
 static void pg_canonicalizeItemVector( ParserGenerator pg, ItemVector itemVector, File traceFile )
 	{
-	int i;
-	for( i = bv_firstBit( itemVector ); i != bv_END; i = bv_nextBit( itemVector, i ) )
+	if (USE_CANONICAL_ITEMS)
 		{
-		Item it = ita_element( pg->items, i );
-		bv_unset( itemVector, i );
-		bv_set( itemVector, it->canonical );
+		int i;
+		for( i = bv_firstBit( itemVector ); i != bv_END; i = bv_nextBit( itemVector, i ) )
+			{
+			Item it = ita_element( pg->items, i );
+			bv_unset( itemVector, i );
+			bv_set( itemVector, it->canonical );
+			}
 		}
 	}
 
@@ -1051,6 +1056,8 @@ static int its_LR0StateKind( ItemSet its, ParserGenerator pg )
 			else
 				return ShiftReduceConflict;
 		default:
+			// TODO: Is this right?  Isn't it possible to have two different
+			// reduces as long as they can be disambiguated by the lookahead?
 			return ReduceReduceConflict;
 		}
 	}
@@ -1066,7 +1073,7 @@ static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 #ifdef REDUCE_CONTEXT_LENGTH
 		charsSent += fl_write( dotFile, "(reduce context: %d)\\n", ob_getIntFieldX( its->stateNode, SYM_REDUCE_CONTEXT_LENGTH, pg->heap ) );
 #endif
-#if 1
+#if INCLUDE_ITEMS_IN_DOT_NODES
 		int j;
 		for( j = bv_firstBit( its->items ); j != bv_END; j = bv_nextBit( its->items, j ) )
 			{
@@ -1080,6 +1087,76 @@ static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 	Object startNode = itst_element( pg->itemSets, 0 )->stateNode;
 	charsSent += ob_sendDotEdgesTo( startNode, dotFile, pg->heap );
 	charsSent += fl_write( dotFile, "}\n" );
+	return charsSent;
+	}
+
+static char *LR0StatePythonNames[] =
+	{
+	"shift",
+	"reduce0",
+	"accept",
+	"srconflict",
+	"rrconflict",
+	};
+
+static int pg_sendPythonTo( ParserGenerator pg, File outFile )
+	{
+	int charsSent = fl_write( outFile, "\ndef generated_automaton():\n" );
+	int i;
+	charsSent += fl_write( outFile, "\t# States\n" );
+	CheckList states = cl_open( pg->heap );
+	for( i=0; i < itst_count( pg->itemSets ); i++ )
+		{
+		ItemSet its = itst_element( pg->itemSets, i );
+		Object state = its->stateNode;
+		cl_check( states, state );
+		charsSent += fl_write( outFile, "\t" );
+		charsSent += ob_sendTo( state, outFile, pg->heap );
+		charsSent += fl_write( outFile, " = Object( '%s' )\n", LR0StatePythonNames[ its_LR0StateKind( its, pg ) ] );
+		}
+	charsSent += fl_write( outFile, "\n\t# Edges\n" );
+	MemoryLifetime ml = ml_begin( 20, ml_undecided() );
+	BitVector edges = bv_new( 100, ml );
+	for( i=0; i < itst_count( pg->itemSets ); i++ )
+		{
+		ItemSet its = itst_element( pg->itemSets, i );
+		Object state = its->stateNode;
+		bv_clear( edges );
+		ob_getFieldSymbols( state, edges, pg->heap );
+		int s;
+		for( s = bv_firstBit( edges ); s != bv_END; s = bv_nextBit( edges, s ) )
+			{
+			Symbol edge = sy_byIndex( s, pg->st );
+			Object target = ob_getField( state, edge, pg->heap );
+			if( ob_isToken( target, pg->heap ) )
+				{
+				// LR0 automaton -- we ignore the lookahead and require that all
+				// reduces from the same state are for the same production.  Hence,
+				// only need to consult the first one.
+				//
+				charsSent += fl_write( outFile, "\t" );
+				charsSent += ob_sendTo( state, outFile, pg->heap );
+				charsSent += fl_write( outFile, ".action = '" );
+				charsSent += ob_sendTo( target, outFile, pg->heap );
+				charsSent += fl_write( outFile, "' # " );
+				charsSent += pn_sendTo( ita_element( pg->items, bv_firstBit( its->items ) )->pn, outFile, pg->gr, pg->st );
+				charsSent += fl_write( outFile, "\n" );
+				break;
+				}
+			else if( cl_isChecked( states, target ) )
+				{
+				charsSent += fl_write( outFile, "\t" );
+				charsSent += ob_sendTo( state, outFile, pg->heap );
+				charsSent += fl_write( outFile, "['%s'] = ", sy_name( edge, pg->st ) );
+				charsSent += ob_sendTo( target, outFile, pg->heap );
+				charsSent += fl_write( outFile, "\n" );
+				}
+			}
+		}
+	charsSent += fl_write( outFile, "\treturn " );
+	charsSent += ob_sendTo( itst_element( pg->itemSets, 0 )->stateNode, outFile, pg->heap );
+	charsSent += fl_write( outFile, "\n\n" );
+	ml_end( ml );
 	return charsSent;
 	}
 
@@ -1704,6 +1781,7 @@ static void addAllProductionCombos(
 		else
 			{
 			pn_setConflictResolution( newProduction, CR_ABSTRACT, newGrammar );
+			pn_setSymbol( newProduction, pn_symbol( oldProduction, oldGrammar ), newGrammar );
 			pn_stopAppending( newProduction, newGrammar );
 			if( diagnostics )
 				{
@@ -2432,21 +2510,30 @@ static TestGrammarLine grammar[] =
 
 #if 1
 // Sheppard
-TestGrammarLine grammar_old[] =
+TestGrammarLine grammar_hello[] =
+	{
+	{ "GOAL",   "hello", "world" },
+	};
+
+TestGrammarLine grammar[] =
 	{
 	{ "STATEMENTS",   "STATEMENTS", "STATEMENT" },
 	{ "STATEMENTS",   "STATEMENT" },
 	{ "OBJECT",       "name:SYMBOL", "get" },
 	{ "STATEMENT",    "name:SYMBOL", "value:OBJECT", "bind" },
+	{ "STATEMENT",    "NULL", "value:OBJECT", "bind" }, // Do nothing
 	{ "OBJECT",       "base:OBJECT", "field:SYMBOL", "field" },
 	{ "NULL",         "Null" },
 	{ "LIST",         "head:OBJECT", "tail:HEAD", "Cons" },
 	{ "PROCEDURE",    "tokens:LIST", "dialect:STATE", "Procedure" },
 	{ "DIGRESSION",   "tokens:LIST", "bindings:CONTEXT", "prev:DIGRESSION", "Digression" },
 	{ "THREAD",       "cursor:OBJECT", "value_stack:LIST", "state_stack:LIST", "Thread" },
+	{ "STATEMENT",    "action:SHIFT", "perform" },
+	{ "STATEMENT",    "action:REDUCE", "perform" },
+	{ "STATEMENT",    "action:ACCEPT", "perform" },
 	};
 
-static TestGrammarLine grammar[] =
+TestGrammarLine grammar_old2[] =
 	{
 	{ "STATEMENTS",   "STATEMENTS", "STATEMENT" },
 	{ "STATEMENTS",   "STATEMENT" },
@@ -2500,7 +2587,7 @@ int main( int argc, char *argv[] )
 	{
 	int i, j; SymbolTable st; Symbol goal; Grammar gr; ParserGenerator pg; ObjectHeap heap;
 	File traceFile = fdopen( 3, "wt" );
-	File dotFile   = stdout;
+	File outFile   = stdout;
 
 	heap = theObjectHeap();
 	st = theSymbolTable( heap );
@@ -2513,6 +2600,7 @@ int main( int argc, char *argv[] )
 			pn_append( pn, sy_byName( tagPart( grammar[i][j] ), st ), gr );
 		pn_stopAppending( pn, gr );
 		pn_setConflictResolution( pn, CR_SHIFT_BEATS_REDUCE, gr );
+		pn_autoSymbol( pn, st, gr );
 		}
 	gr_stopAdding( gr );
 #if 0 // grammar2
@@ -2524,6 +2612,7 @@ int main( int argc, char *argv[] )
 			pn_append( pn, sy_byName( grammar2[i][j], st ), gr );
 		pn_stopAppending( pn, gr );
 		pn_setConflictResolution( pn, CR_SHIFT_BEATS_REDUCE, gr );
+		pn_autoSymbol( pn, st, gr );
 		}
 	gr_stopAdding( gr );
 #endif
@@ -2627,7 +2716,8 @@ int main( int argc, char *argv[] )
 		pg_computeReduceActions( pg, traceFile, traceFile );
 		ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
 
-		pg_sendDotTo( pg, dotFile );
+		//pg_sendDotTo( pg, outFile );
+		pg_sendPythonTo( pg, outFile );
 		}
 
 	Automaton au = au_new( gr, st, heap, ml_indefinite(), NULL, traceFile, traceFile );
