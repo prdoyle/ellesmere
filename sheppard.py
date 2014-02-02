@@ -130,6 +130,74 @@ def to_python_list( sheppard_list, head="head", tail="tail" ):
 def stack_str( stack ):
 	return string.join([ repr(s) for s in to_python_list( stack, "cur", "prev" )], ", " )
 
+#
+# The interpreter
+#
+
+def perform_accept( th ):
+	return True
+
+def perform_shift( th ):
+	debug( "shift" )
+	# Upate thread state as per shift
+	if th.cursor:
+		raw_token = th.cursor.tokens.get( "head", "EOF" )
+		th.cursor.tokens = th.cursor.tokens.tail
+	else:
+		raw_token = "EOF"
+	debug( "  token: %s", repr( raw_token ) )
+	debug( "  cursor: %s", repr( th.cursor ) )
+	current_token = bound( raw_token, th.cursor )
+	debug( "    value: %s", repr( raw_token ) )
+	th.value_stack = Stack( current_token, th.value_stack )
+	new_state = th.state_stack.cur[ current_token ]
+	debug( "  new_state: %s", repr( new_state ) )
+	th.state_stack = Stack( new_state, th.state_stack )
+	if th.cursor and not th.cursor.tokens:
+		debug( "  finished digression" )
+		th.cursor = th.cursor.prev
+	return False
+
+def bind_arg( th, formal_arg, actual_arg, arg_bindings ):
+	if formal_arg:
+		arg_bindings[ formal_arg ] = actual_arg
+		debug( "    %s=%s", formal_arg, repr( actual_arg ) )
+	else:
+		debug( "    pop %s", repr( actual_arg ) )
+
+def bind_args( th, formal_args, arg_bindings ):
+	if formal_args:
+		th.state_stack = th.state_stack.prev
+		( formal_arg, formal_args )    = pop( formal_args )
+		( actual_arg, th.value_stack ) = pop( th.value_stack )
+		bind_arg( th, formal_arg, actual_arg, arg_bindings )
+		return bind_args( th, formal_args, arg_bindings )
+	else:
+		return arg_bindings
+
+def do_action( th, action, arg_bindings ):
+	if tag( action ) == "primitive":
+		action.function( th, arg_bindings )
+	else:
+		th.cursor = Digression( action.tokens, arg_bindings, th.cursor )
+
+def perform_reduce0( th ):
+	debug( "reduce0" )
+	action = bound( th.state_stack.cur.action, th.cursor )
+	debug( "  action: %s", repr( action ) )
+	formal_args = action.formal_args
+	arg_bindings = Object( "bindings" )
+	bind_args( th, formal_args, arg_bindings )
+	debug( "  bindings: %s", arg_bindings )
+	do_action( th, action, arg_bindings )
+	return False
+
+perform = {
+	"accept":  perform_accept,
+	"shift":   perform_shift,
+	"reduce0": perform_reduce0,
+	}
+
 def execute( procedure, bindings ):
 	th = Thread(
 		Digression( procedure.tokens, bindings, null ),
@@ -139,62 +207,25 @@ def execute( procedure, bindings ):
 	while True:
 		debug( "state_stack: %s", stack_str( th.state_stack ) )
 		command = tag( th.state_stack.cur )
-		if command == "accept":
-			debug( "accept" )
+		if perform[ command ]( th ):
 			break
-		elif command == "shift":
-			debug( "shift" )
-			# Upate thread state as per shift
-			if th.cursor:
-				raw_token = th.cursor.tokens.get( "head", "EOF" )
-				th.cursor.tokens = th.cursor.tokens.tail
-			else:
-				raw_token = "EOF"
-			debug( "  token: %s", repr( raw_token ) )
-			debug( "  cursor: %s", repr( th.cursor ) )
-			current_token = bound( raw_token, th.cursor )
-			if not raw_token is current_token:
-				debug( "    value: %s", repr( raw_token ) )
-			th.value_stack = Stack( current_token, th.value_stack )
-			new_state = th.state_stack.cur[ current_token ]
-			debug( "  new_state: %s", repr( new_state ) )
-			th.state_stack = Stack( new_state, th.state_stack )
-			if th.cursor and not th.cursor.tokens:
-				debug( "  finished digression" )
-				th.cursor = th.cursor.prev
-		elif command == "reduce":
-			debug( "reduce" )
-			action = bound( th.state_stack.cur.action, th.cursor )
-			debug( "  action: %s", repr( action ) )
-			formal_args = action.formal_args
-			arg_bindings = Object( "bindings" )
-			while formal_args:
-				th.state_stack = th.state_stack.prev
-				( formal_arg, formal_args )    = pop( formal_args )
-				( actual_arg, th.value_stack ) = pop( th.value_stack )
-				if formal_arg:
-					debug( "    %s=%s", formal_arg, repr( actual_arg ) )
-					arg_bindings[ formal_arg ] = actual_arg
-				else:
-					debug( "    pop %s", repr( actual_arg ) )
-			if tag( action ) == "primitive":
-				action.function( th, arg_bindings )
-			else:
-				cursor = Digression( action.tokens, arg_bindings, cursor )
 
+#
 # Testing
+#
+
 x = Stack("first", null)
 x = Stack("second", x)
 
 
 def Shift( **edges ): return Object( "shift", **edges )
-def Reduce( action ): return Object( "reduce", action=action )
+def Reduce0( action ): return Object( "reduce0", action=action )
 def Accept(): return Object( "accept" )
 def Primitive( function, formal_args ): return Object( "primitive", function=function, formal_args=formal_args )
 
 dialect = Shift(
 	hello=Shift(
-		world=Reduce( Primitive(
+		world=Reduce0( Primitive(
 			function=( lambda th, b: debug( "ARGS: %s", b ) ),
 			formal_args=Stack("W", Stack("H", null)) # Formal args get popped, so they must appear in reverse order
 			))),
