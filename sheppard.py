@@ -149,6 +149,7 @@ def Eof():
 eof = Eof()
 false = Object( "FALSE" )
 true  = Object( "TRUE" )
+take_failed = Object( "TAKE_FAILED" )
 
 def Thread( cursor, value_stack, state_stack ): return Object( "THREAD", cursor=cursor, value_stack=value_stack, state_stack=state_stack )
 
@@ -199,8 +200,6 @@ def bind_args( th, formal_args, arg_bindings ):
 		bind_arg( th, formal_arg, actual_arg, arg_bindings )
 		return bind_args( th, formal_args, arg_bindings )
 
-take_failed = Object( "TAKE_FAILED" )
-
 def bound2( obj, environment, probe ):
 	if is_a( probe, "TAKE_FAILED" ):
 		return bound( obj, environment.outer )
@@ -227,7 +226,7 @@ def do_action( th, action, environment ):
 	if is_a( action, "PRIMITIVE" ):
 		action.function( th, **dict( environment.bindings ) )
 	else:
-		th.cursor = Digression( action.tokens, environment, th.cursor )
+		th.cursor = Digression( action.script, environment, th.cursor )
 		debug( "    new_digression: %s", repr( th.cursor.description() ) )
 
 def perform_accept( th ):
@@ -273,7 +272,7 @@ def execute2( th, probe ):
 		execute2( th, perform[ command ]( th ) )
 
 def execute( procedure, environment ):
-	digression = Digression( procedure.tokens, environment, eof )
+	digression = Digression( procedure.script, environment, eof )
 	th = Thread( digression, null, Cons( procedure.dialect, null ) )
 	debug( "starting thread: %s with digression:\n\t%s", repr(th), digression )
 	execute2( th, true )
@@ -293,15 +292,16 @@ def execute( procedure, environment ):
 #
 # In the mean time, we finish_digression right after looking up the reduce
 # action.  That gets us tail digression elimination, and usually does the right
-# thing.  Once I work out how to bind reduce actions, it would probably be
-# better and cleaner to finish_digression as soon as that digression's last
-# token has been bound.
+# thing.  It also makes no difference as long as all the action bindings are in
+# the global_scope anyway.  Once I work out how to bind reduce actions, it
+# would probably be better and cleaner to finish_digression as soon as that
+# digression's last token has been bound.
 
 def Shift( **edges ): return Object( "SHIFT", **edges )
 def Reduce0( action ): return Object( "REDUCE0", action=action )
 def Accept(): return Object( "ACCEPT" )
-def Macro( tokens, formal_args, environment ): return Object( "MACRO", tokens=tokens, formal_args=formal_args, environment=environment )
-def Procedure( tokens, dialect, environment ): return Object( "PROCEDURE", tokens=tokens, dialect=dialect, environment=environment )
+def Macro( script, formal_args, environment ): return Object( "MACRO", script=script, formal_args=formal_args, environment=environment )
+def Procedure( script, dialect, environment ): return Object( "PROCEDURE", script=script, dialect=dialect, environment=environment )
 def Primitive( function, formal_args, environment ): return Object( "PRIMITIVE", function=function, formal_args=formal_args, environment=environment )
 
 #
@@ -313,28 +313,28 @@ if 0:
 	x = Cons("second", x)
 
 if 1:
-	def primitive_go( th, where ):
-		print "!! Called primitive go( %s )" % where
+	def primitive_hello( th, where ):
+		print "!! Called primitive_hello( %s )" % where
 
 	global_scope = Environment( null )
 	bindings = global_scope.bindings
 	bindings[ "A1" ] = Macro(
 		formal_args = Stack([ "H", "W" ]),
-		tokens = List([ "go", "W" ]),
+		script = List([ "hello", "W" ]),
 		environment = global_scope
 		)
 	bindings[ "A2" ] = Primitive(
 		formal_args= Stack([ null, "where" ]), # ignore the "go" keyword
-		function = primitive_go,
+		function = primitive_hello,
 		environment = global_scope
 		)
 	dialect = Shift(
-		hello = Shift( world = Reduce0( "A1" )),
-		go = Shift( world = Reduce0( "A2" )),
+		go = Shift( world = Reduce0( "A1" )),
+		hello = Shift( world = Reduce0( "A2" )),
 		EOF = Accept())
 
 	debug( "Global scope: %s", global_scope )
 	debug( "  bindings: %s", global_scope.bindings )
 	debug( "  dialect: %s", dialect.description() )
-	execute( Procedure( List([ "hello", "world" ]), dialect, global_scope ), Environment( global_scope ) )
+	execute( Procedure( List([ "go", "world" ]), dialect, global_scope ), Environment( global_scope ) )
 
