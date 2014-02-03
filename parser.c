@@ -2525,21 +2525,21 @@ TestGrammarLine grammar_hello[] =
 
 SheppardGrammarLine grammar[] =
 	{
-	{{ "STATEMENTS",   "STATEMENTS", "STATEMENT" },                                             "eat" },
+	{{ "STATEMENTS",   "STATEMENTS",      "STATEMENT" },                                        "eat" },
 	{{ "STATEMENTS",   "STATEMENT" },                                                           "eat" },
-	{{ "CONTEXT",      "bindings" }},
-	{{ "OBJECT",       "base:OBJECT", "field:SYMBOL", "get" }},
-	{{ "STATEMENT",    "base:OBJECT", "field:SYMBOL", "value:OBJECT", "set" }},
+	{{ "FRAME",        "bindings" }},
+	{{ "OBJECT",       "base:OBJECT",     "field:SYMBOL", "get" }},
+	{{ "STATEMENT",    "base:OBJECT",     "field:SYMBOL", "value:OBJECT", "set" }},
 	{{ "NULL",         "Null" }},
-	{{ "CONTEXT",      "EmptyContext" }},
+	{{ "FRAME",        "outer:FRAME",     "NewFrame" }},
 	{{ "EOF",          "Eof" }}, // Digression that keeps returning EOF forever
-	{{ "LIST",         "head:OBJECT", "tail:LIST", "Cons" }},
-	{{ "PROCEDURE",    "tokens:LIST", "dialect:STATE", "Procedure" }},
-	{{ "DIGRESSION",   "tokens:LIST", "bindings:CONTEXT", "prev:DIGRESSION", "Digression" }},
-	{{ "THREAD",       "cursor:OBJECT", "value_stack:LIST", "state_stack:LIST", "Thread" }},
-	{{ "STATEMENT",    "action:SHIFT", "perform" },                                             "perform_shift" },
-	{{ "STATEMENT",    "action:REDUCE", "perform" },                                            "perform_reduce" },
-	{{ "STATEMENT",    "action:ACCEPT", "perform" },                                            "perform_accept" },
+	{{ "LIST",         "head:OBJECT",     "tail:LIST", "Cons" }},
+	{{ "PROCEDURE",    "tokens:LIST",     "dialect:STATE", "Procedure" }},
+	{{ "DIGRESSION",   "tokens:LIST",     "bindings:FRAME", "prev:DIGRESSION", "Digression" }},
+	{{ "THREAD",       "cursor:OBJECT",   "value_stack:LIST", "state_stack:LIST", "Thread" }},
+	{{ "STATEMENT",    "action:SHIFT",    "perform" },                                            "perform_shift" },
+	{{ "STATEMENT",    "action:REDUCE",   "perform" },                                            "perform_reduce" },
+	{{ "STATEMENT",    "action:ACCEPT",   "perform" },                                            "perform_accept" },
 	};
 
 TestGrammarLine grammar_old2[] =
@@ -2564,8 +2564,9 @@ TestGrammarLine grammar_old2[] =
 
 static TestGrammarLine subtags[] =
 	{
-	{ "OBJECT",    "LIST", "PROCEDURE", "DIGRESSION" },
+	{ "OBJECT",    "LIST", "PROCEDURE", "DIGRESSION", "FRAME" },
 	{ "LIST",      "NULL" },
+	{ "FRAME",     "NULL" },
 	{ "DIGRESSION","EOF" },
 	{ "STATE",     "SHIFT", "REDUCE", "ACCEPT" },
 	};

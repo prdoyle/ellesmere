@@ -156,7 +156,6 @@ def bind_args( th, formal_args, arg_bindings ):
 		return arg_bindings
 
 def bound( obj, digression ):
-	# This gives dynamic scoping.  TODO: Static scopes would usually be preferable.
 	if digression and is_symbol( obj ):
 		return digression.bindings.get( obj, obj )
 	else:
