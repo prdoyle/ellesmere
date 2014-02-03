@@ -2525,10 +2525,11 @@ TestGrammarLine grammar_hello[] =
 
 SheppardGrammarLine grammar[] =
 	{
-	{{ "STATEMENTS",   "STATEMENTS",      "STATEMENT" },                                        "eat" },
-	{{ "STATEMENTS",   "STATEMENT" },                                                           "eat" },
+	{{ "STATEMENTS",   "STATEMENTS",      "STATEMENT" },                                        "eat2" },
+	{{ "STATEMENTS",   "STATEMENT" },                                                           "eat1" },
 	{{ "FRAME",        "bindings" }},
-	{{ "OBJECT",       "base:OBJECT",     "field:SYMBOL", "get" }},
+	{{ "OBJECT",       "base:OBJECT",     "field:SYMBOL", "get" }}, // Syntactic sugar for "base field ERROR take"
+	{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:OBJECT", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
 	{{ "STATEMENT",    "base:OBJECT",     "field:SYMBOL", "value:OBJECT", "set" }},
 	{{ "NULL",         "Null" }},
 	{{ "FRAME",        "outer:FRAME",     "NewFrame" }},
@@ -2537,9 +2538,9 @@ SheppardGrammarLine grammar[] =
 	{{ "PROCEDURE",    "tokens:LIST",     "dialect:STATE", "Procedure" }},
 	{{ "DIGRESSION",   "tokens:LIST",     "bindings:FRAME", "prev:DIGRESSION", "Digression" }},
 	{{ "THREAD",       "cursor:OBJECT",   "value_stack:LIST", "state_stack:LIST", "Thread" }},
-	{{ "STATEMENT",    "action:SHIFT",    "perform" },                                            "perform_shift" },
-	{{ "STATEMENT",    "action:REDUCE",   "perform" },                                            "perform_reduce" },
-	{{ "STATEMENT",    "action:ACCEPT",   "perform" },                                            "perform_accept" },
+	{{ "STATEMENT",    "action:SHIFT",    "perform" },                                          "perform_shift" },
+	{{ "STATEMENT",    "action:REDUCE",   "perform" },                                          "perform_reduce" },
+	{{ "STATEMENT",    "action:ACCEPT",   "perform" },                                          "perform_accept" },
 	};
 
 TestGrammarLine grammar_old2[] =

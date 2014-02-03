@@ -8,16 +8,18 @@ class Object:
 
 	def __init__( self, tag, **edges ):
 		global object_id
-		self.TAG = tag
-		self.ELEMENTS = {}
-		self.FIELDS = [ k for k in edges ]
-		self.ID = object_id
+		assert( tag.isupper() )
+		self._tag = tag
+		self._elements = {}
+		self._fields = sorted([ k for k in edges ]) # _fields can be adjusted if we want a particular field ordering
+		self._id = object_id
 		object_id = object_id+1
 		for ( name, value ) in edges.iteritems():
 			setattr( self, name, value )
 
-	def get( self, key, default ):
-		if key in self:
+	def take( self, key, default ):
+		#debug( "--    %s.take( %s, %s )", repr(self), repr(key), repr(default) )
+		if is_symbol( key ) and key in self:
 			return self[ key ]
 		else:
 			return default
@@ -26,17 +28,17 @@ class Object:
 
 	def __getitem__( self, key ):
 		if isinstance( key, int ):
-			return self.ELEMENTS[ key ]
+			return self._elements[ key ]
 		else:
 			return getattr( self, key )
 
 	def __setitem__( self, key, value ):
 		if isinstance( key, int ):
-			self.ELEMENTS[ key ] = value
+			self._elements[ key ] = value
 		else:
 			setattr( self, key, value )
-			if not key in self.FIELDS:
-				self.FIELDS.append( key )
+			if not key in self._fields:
+				self._fields.append( key )
 
 	def __contains__( self, key ):
 		try:
@@ -46,27 +48,44 @@ class Object:
 			return False
 
 	def __delitem__( self, key ):
-		if key in [ "TAG", "ELEMENTS", "FIELDS", "ID" ]:
+		if key in [ "_tag", "_elements", "_fields", "_id" ]:
 			raise KeyError # TODO: Use a Sheppard exception?
 		else:
 			delattr( self, key )
-			self.FIELDS.remove( key )
+			self._fields.remove( key )
 
 	def __iter__( self ): # Range over array (index,value) pairs; TODO: do normal fields too?
-		for key in self.ELEMENTS.iterkeys():
-			yield ( key, self.ELEMENTS[ key ] )
+		for key in self._elements.iterkeys():
+			yield ( key, self._elements[ key ] )
 
 	def __repr__( self ):
 		if self is null:
 			return "null"
 		else:
-			return "%s#%d" % ( self.TAG, self.ID )
+			return "%s#%d" % ( self._tag, self._id )
 
 	def __str__( self ):
 		if self is null:
 			return "null"
 		else:
-			return repr( self ) + "{ " + string.join([ "%s:%s" % ( field, self[field] ) for field in self.FIELDS ], ', ') + " }"
+			return repr( self ) + "{ " + string.join([ "%s:%s" % ( field, repr( self[field] ) ) for field in self._fields ], ', ') + " }"
+
+	def description( self, already_described=None ):
+		if already_described is None:
+			already_described = set()
+		if self is null:
+			return "null"
+		elif self in already_described:
+			return repr( self )
+		else:
+			already_described.add( self )
+			return repr( self ) + "{ " + string.join([ "%s:%s" % ( field, self._description( self[ field ], already_described ) ) for field in self._fields ], ', ') + " }"
+
+	def _description( self, value, already_described ):
+		if isinstance( value, Object ):
+			return value.description( already_described )
+		else:
+			return str( value )
 
 	# null and zero are false; all else are true
 
@@ -75,35 +94,59 @@ class Object:
 class Null( Object ): # Just to make debugging messages more informative
 
 	def __init__( self ):
-		Object.__init__( self, "null" )
+		Object.__init__( self, "NULL" )
 
 def is_int( obj ):    return isinstance( obj, int ) # Sheppard integers are represented by Python ints
 def is_symbol( obj ): return isinstance( obj, str ) # Sheppard symbols are represented by Python strs
 
 def tag( obj ):
 	if is_int( obj ):
-		return "int"
+		result = "INT"
 	elif is_symbol( obj ):
-		return "symbol"
+		result = "SYMBOL"
 	else: # All other Sheppard objects are represented by instances of Object
-		return obj.TAG
+		result = obj._tag
+	assert( result.isupper() )
+	return result
+
+def is_a( obj, t ):
+	assert( t.isupper() )
+	return tag( obj ) == t # TODO: inheritance
 
 def pop( stack ):  return ( stack.head, stack.tail )
 
 # Object constructors
 
 null = Null()
-def Parser( automaton ): return Object( "parser", state=automaton, stack=null )
-def Cons( head, tail ): return Object( "list", head=head, tail=tail, FIELDS=['head','tail'] )
+def Parser( automaton ): return Object( "PARSER", state=automaton, stack=null )
+def Cons( head, tail ): return Object( "LIST", head=head, tail=tail, _fields=['head','tail'] )
 def List( items ):
 	if items:
 		return Cons( items[0], List( items[1:] ) )
 	else:
 		return null
+def Stack( items ):
+	if items:
+		return Cons( items[-1], List( items[:-1] ) )
+	else:
+		return null
 
-def Digression( tokens, bindings, prev ): return Object( "digression", tokens=tokens, bindings=bindings, prev=prev )
+def Environment( outer, **bindings ): return Object( "ENVIRONMENT", outer=outer, bindings=Object("BINDINGS", **bindings) )
 
-def Thread( cursor, value_stack, state_stack ): return Object( "thread", cursor=cursor, value_stack=value_stack, state_stack=state_stack )
+def Digression( tokens, environment, prev ): return Object( "DIGRESSION", tokens=tokens, environment=environment, prev=prev )
+
+def Eof():
+	# An endless stack of digressions each returning an endless stream of EOFs
+	result = Object( "EOF", environment=Environment(null) )
+	endless_eof = Cons( result, null )
+	endless_eof.tail = endless_eof
+	result.tokens = endless_eof
+	result.prev   = result
+	return result
+
+eof = Eof()
+
+def Thread( cursor, value_stack, state_stack ): return Object( "THREAD", cursor=cursor, value_stack=value_stack, state_stack=state_stack )
 
 # Main execute procedure
 
@@ -122,103 +165,141 @@ def stack_str( stack ):
 	return string.join([ repr(s) for s in python_list( stack )], ", " )
 
 #
-# The interpreter
+# The interpreter.
+# Some rules to make it look more like Sheppard code:
+#  - Procedures are only allowed one if statement sequence.  It must be at the
+#  top level, and must use is_a.  This represents sheppard automaton-based dispatch.
+#  - Loops will be replaced with tail digression.  There's only one loop anyway
+#  so that's no big deal.
 #
 
-def get_raw_token( th ):
-	if th.cursor:
-		raw_token = th.cursor.tokens.get( "head", "EOF" )
-		th.cursor.tokens = th.cursor.tokens.tail
-	else:
-		raw_token = "EOF"
-	return raw_token
-
 def finish_digression( th ):
-	if th.cursor and not th.cursor.tokens:
-		debug( "  finished digression" )
+	if is_a( th.cursor.tokens, "NULL" ):
+		debug( "    finished %s", repr( th.cursor ) )
 		th.cursor = th.cursor.prev
 
 def bind_arg( th, formal_arg, actual_arg, arg_bindings ):
-	if formal_arg:
+	if is_a( formal_arg, "SYMBOL" ):
 		arg_bindings[ formal_arg ] = actual_arg
 		debug( "    %s=%s", formal_arg, repr( actual_arg ) )
 	else:
 		debug( "    pop %s", repr( actual_arg ) )
 
 def bind_args( th, formal_args, arg_bindings ):
-	if formal_args:
+	if is_a( formal_args, "NULL" ):
+		return arg_bindings
+	else:
 		th.state_stack = th.state_stack.tail
 		( formal_arg, formal_args )    = pop( formal_args )
 		( actual_arg, th.value_stack ) = pop( th.value_stack )
 		bind_arg( th, formal_arg, actual_arg, arg_bindings )
 		return bind_args( th, formal_args, arg_bindings )
-	else:
-		return arg_bindings
 
-def bound( obj, digression ):
-	if digression and is_symbol( obj ):
-		return digression.bindings.get( obj, obj )
+take_failed = Object( "TAKE_FAILED" )
+
+def bound2( obj, environment, probe ):
+	if is_a( probe, "TAKE_FAILED" ):
+		return bound( obj, environment.outer )
 	else:
+		return probe
+
+def bound( obj, environment ):
+	if is_a( environment, "NULL" ):
 		return obj
+	else:
+		#debug( "-- looking up %s in: %s", repr(obj), environment.bindings )
+		return bound2( obj, environment, environment.bindings.take( obj, take_failed ) )
+
+def next_state2( state, obj, probe ):
+	if is_a( probe, "TAKE_FAILED" ): # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj] exists and state[ tag(obj) ] does not, we can't evaluate the latter
+		return state[ tag(obj) ]
+	else:
+		return probe
+
+def next_state( state, obj ):
+	return next_state2( state, obj, state.take( obj, take_failed ) )
 
 def do_action( th, action, arg_bindings ):
-	if tag( action ) == "primitive":
+	if is_a( action, "PRIMITIVE" ):
 		action.function( th, arg_bindings )
 	else:
 		th.cursor = Digression( action.tokens, arg_bindings, th.cursor )
+		debug( "    new_digression: %s", repr( th.cursor.description() ) )
 
 def perform_accept( th ):
+	debug( "accept" )
 	return True
 
 def perform_shift( th ):
 	debug( "shift" )
 	debug( "  cursor: %s", repr( th.cursor ) )
-	raw_token = get_raw_token( th )
+	raw_token = th.cursor.tokens.take( "head", eof )
+	th.cursor.tokens = th.cursor.tokens.tail
 	debug( "  token: %s", repr( raw_token ) )
-	current_token = bound( raw_token, th.cursor )
-	debug( "    value: %s", repr( raw_token ) )
+	current_token = bound( raw_token, th.cursor.environment )
+	debug( "    value: %s", repr( current_token ) )
 	th.value_stack = Cons( current_token, th.value_stack )
-	new_state = th.state_stack.head[ current_token ]
+	new_state = next_state( th.state_stack.head, current_token )
 	debug( "  new_state: %s", repr( new_state ) )
 	th.state_stack = Cons( new_state, th.state_stack )
-	finish_digression( th )
 	return False
+
+# PROBLEM: as I write this, perform_reduce contains a call to finish_digression.
+# The motivation for this is tail digression elimination: we want to clean up an
+# exhausted digression before starting a new one.  Really, since environments
+# are for looking up the values bound to shifted tokens, this could be done
+# even earlier, right after the last shift from the digression.  However, we
+# also use the environment to look up the reduce actions, and this is where the
+# problem comes from.  There could be multiple consectuve reduce actions (with
+# no intervening shifts) at the end of a digression, and we may want to use
+# that digression's environment to look up the actions to take.  Or, we might
+# not want that.  The environment to use for binding reduce actions is, I
+# think, ill-defined under the digression model.  That binding operation may
+# need to use a separate mechanism entirely.
+#
+# In the mean time, we finish_digression right after looking up the reduce
+# action.  That gets us tail digression elimination, and usually does the right
+# thing.  Once I work out how to bind reduce actions, it would probably be
+# better and cleaner to finish_digression as soon as that digression's last
+# token has been bound.
 
 def perform_reduce0( th ):
 	debug( "reduce0" )
-	action = bound( th.state_stack.head.action, th.cursor )
+	action = bound( th.state_stack.head.action, th.cursor.environment )
 	debug( "  action: %s", repr( action ) )
+	finish_digression( th )
 	formal_args = action.formal_args
-	arg_bindings = Object( "bindings" )
-	bind_args( th, formal_args, arg_bindings )
-	debug( "  bindings: %s", arg_bindings )
-	do_action( th, action, arg_bindings )
+	environment = Environment( action.environment )
+	bind_args( th, formal_args, environment.bindings )
+	debug( "  environment: %s", environment )
+	do_action( th, action, environment )
 	return False
 
 perform = {
-	"accept":  perform_accept,
-	"shift":   perform_shift,
-	"reduce0": perform_reduce0,
+	"ACCEPT":  perform_accept,
+	"SHIFT":   perform_shift,
+	"REDUCE0": perform_reduce0,
 	}
 
-def execute( procedure, bindings ):
+def execute( procedure, environment ):
+	digression = Digression( procedure.tokens, environment, eof )
 	th = Thread(
-		Digression( procedure.tokens, bindings, null ),
+		digression,
 		null,
 		Cons( procedure.dialect, null ) )
-	debug( "starting thread:\n  %s", th )
+	debug( "starting thread: %s with digression:\n\t%s", repr(th), digression )
 	while True:
 		debug( "state_stack: %s", stack_str( th.state_stack ) )
 		command = tag( th.state_stack.head )
 		if perform[ command ]( th ):
 			break
 
-def Shift( **edges ): return Object( "shift", **edges )
-def Reduce0( action ): return Object( "reduce0", action=action )
-def Accept(): return Object( "accept" )
-def Macro( tokens, formal_args ): return Object( "macro", tokens=tokens, formal_args=formal_args )
-def Procedure( tokens, dialect ): return Object( "procedure", tokens=tokens, dialect=dialect )
-def Primitive( function, formal_args ): return Object( "primitive", function=function, formal_args=formal_args )
+def Shift( **edges ): return Object( "SHIFT", **edges )
+def Reduce0( action ): return Object( "REDUCE0", action=action )
+def Accept(): return Object( "ACCEPT" )
+def Macro( tokens, formal_args, environment ): return Object( "MACRO", tokens=tokens, formal_args=formal_args, environment=environment )
+def Procedure( tokens, dialect, environment ): return Object( "PROCEDURE", tokens=tokens, dialect=dialect, environment=environment )
+def Primitive( function, formal_args, environment ): return Object( "PRIMITIVE", function=function, formal_args=formal_args, environment=environment )
 
 #
 # Testing
@@ -229,17 +310,25 @@ if 0:
 	x = Cons("second", x)
 
 if 1:
+	global_scope = Environment( null )
+	bindings = global_scope.bindings
+	bindings[ "A1" ] = Macro(
+		formal_args = Stack([ "H", "W" ]),
+		tokens = List([ "go", "W" ]),
+		environment = global_scope
+		)
+	bindings[ "A2" ] = Primitive(
+		formal_args= Stack([ null, "arg" ]), # ignore the "go" keyword
+		function = ( lambda th, b: debug( "ARGS: %s", b ) ),
+		environment = global_scope
+		)
 	dialect = Shift(
-		hello = Shift(
-			world = Reduce0( Macro(
-				tokens = List([ "go" ]),
-				formal_args = List([ "W", "H" ])  # Formal args get popped, so they must appear in reverse order
-				))),
-		go = Reduce0( Primitive(
-			function = ( lambda th, b: debug( "ARGS: %s", b ) ),
-			formal_args=Cons("arg", null)
-			)),
+		hello = Shift( world = Reduce0( "A1" )),
+		go = Shift( world = Reduce0( "A2" )),
 		EOF = Accept())
 
-	execute( Procedure( List([ "hello", "world" ]), dialect ), Object("bindings") )
+	debug( "Global scope: %s", global_scope )
+	debug( "  bindings: %s", global_scope.bindings )
+	debug( "  dialect: %s", dialect.description() )
+	execute( Procedure( List([ "hello", "world" ]), dialect, global_scope ), Environment( global_scope ) )
 
