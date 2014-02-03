@@ -55,6 +55,8 @@ class Object:
 			self._fields.remove( key )
 
 	def __iter__( self ): # Range over array (index,value) pairs; TODO: do normal fields too?
+		for key in self._fields:
+			yield ( key, getattr( self, key ) )
 		for key in self._elements.iterkeys():
 			yield ( key, self._elements[ key ] )
 
@@ -145,6 +147,8 @@ def Eof():
 	return result
 
 eof = Eof()
+false = Object( "FALSE" )
+true  = Object( "TRUE" )
 
 def Thread( cursor, value_stack, state_stack ): return Object( "THREAD", cursor=cursor, value_stack=value_stack, state_stack=state_stack )
 
@@ -219,16 +223,16 @@ def next_state2( state, obj, probe ):
 def next_state( state, obj ):
 	return next_state2( state, obj, state.take( obj, take_failed ) )
 
-def do_action( th, action, arg_bindings ):
+def do_action( th, action, environment ):
 	if is_a( action, "PRIMITIVE" ):
-		action.function( th, arg_bindings )
+		action.function( th, **dict( environment.bindings ) )
 	else:
-		th.cursor = Digression( action.tokens, arg_bindings, th.cursor )
+		th.cursor = Digression( action.tokens, environment, th.cursor )
 		debug( "    new_digression: %s", repr( th.cursor.description() ) )
 
 def perform_accept( th ):
 	debug( "accept" )
-	return True
+	return false
 
 def perform_shift( th ):
 	debug( "shift" )
@@ -242,7 +246,37 @@ def perform_shift( th ):
 	new_state = next_state( th.state_stack.head, current_token )
 	debug( "  new_state: %s", repr( new_state ) )
 	th.state_stack = Cons( new_state, th.state_stack )
-	return False
+	return true
+
+def perform_reduce0( th ):
+	debug( "reduce0" )
+	action = bound( th.state_stack.head.action, th.cursor.environment )
+	debug( "  action: %s", repr( action ) )
+	finish_digression( th )
+	formal_args = action.formal_args
+	environment = Environment( action.environment )
+	bind_args( th, formal_args, environment.bindings )
+	debug( "  environment: %s", environment )
+	do_action( th, action, environment )
+	return true
+
+perform = {
+	"ACCEPT":  perform_accept,
+	"SHIFT":   perform_shift,
+	"REDUCE0": perform_reduce0,
+	}
+
+def execute2( th, probe ):
+	if is_a( probe, "TRUE" ):
+		debug( "state_stack: %s", stack_str( th.state_stack ) )
+		command = tag( th.state_stack.head )
+		execute2( th, perform[ command ]( th ) )
+
+def execute( procedure, environment ):
+	digression = Digression( procedure.tokens, environment, eof )
+	th = Thread( digression, null, Cons( procedure.dialect, null ) )
+	debug( "starting thread: %s with digression:\n\t%s", repr(th), digression )
+	execute2( th, true )
 
 # PROBLEM: as I write this, perform_reduce contains a call to finish_digression.
 # The motivation for this is tail digression elimination: we want to clean up an
@@ -263,37 +297,6 @@ def perform_shift( th ):
 # better and cleaner to finish_digression as soon as that digression's last
 # token has been bound.
 
-def perform_reduce0( th ):
-	debug( "reduce0" )
-	action = bound( th.state_stack.head.action, th.cursor.environment )
-	debug( "  action: %s", repr( action ) )
-	finish_digression( th )
-	formal_args = action.formal_args
-	environment = Environment( action.environment )
-	bind_args( th, formal_args, environment.bindings )
-	debug( "  environment: %s", environment )
-	do_action( th, action, environment )
-	return False
-
-perform = {
-	"ACCEPT":  perform_accept,
-	"SHIFT":   perform_shift,
-	"REDUCE0": perform_reduce0,
-	}
-
-def execute( procedure, environment ):
-	digression = Digression( procedure.tokens, environment, eof )
-	th = Thread(
-		digression,
-		null,
-		Cons( procedure.dialect, null ) )
-	debug( "starting thread: %s with digression:\n\t%s", repr(th), digression )
-	while True:
-		debug( "state_stack: %s", stack_str( th.state_stack ) )
-		command = tag( th.state_stack.head )
-		if perform[ command ]( th ):
-			break
-
 def Shift( **edges ): return Object( "SHIFT", **edges )
 def Reduce0( action ): return Object( "REDUCE0", action=action )
 def Accept(): return Object( "ACCEPT" )
@@ -310,6 +313,9 @@ if 0:
 	x = Cons("second", x)
 
 if 1:
+	def primitive_go( th, where ):
+		print "!! Called primitive go( %s )" % where
+
 	global_scope = Environment( null )
 	bindings = global_scope.bindings
 	bindings[ "A1" ] = Macro(
@@ -318,8 +324,8 @@ if 1:
 		environment = global_scope
 		)
 	bindings[ "A2" ] = Primitive(
-		formal_args= Stack([ null, "arg" ]), # ignore the "go" keyword
-		function = ( lambda th, b: debug( "ARGS: %s", b ) ),
+		formal_args= Stack([ null, "where" ]), # ignore the "go" keyword
+		function = primitive_go,
 		environment = global_scope
 		)
 	dialect = Shift(
