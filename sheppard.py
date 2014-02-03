@@ -114,7 +114,7 @@ def debug( message, *args ):
 
 def python_list( sheppard_list, head="head", tail="tail" ):
 	if sheppard_list:
-		return [ sheppard_list[ head ] ] + to_python_list( sheppard_list[ tail ], head, tail )
+		return [ sheppard_list[ head ] ] + python_list( sheppard_list[ tail ], head, tail )
 	else:
 		return []
 
