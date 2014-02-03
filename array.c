@@ -78,7 +78,7 @@ static void ar_changeCapacity( Array ar, int newCapacity, int elementSize )
 	{
 	assert( newCapacity != ar->capacity );
 	if( newCapacity * elementSize > 30000 )
-		printf( "Hey!  Allocated big array: %d bytes\n", newCapacity * elementSize );
+		printf( "# Hey!  Allocated big array: %d bytes\n", newCapacity * elementSize );
 	ar->storage = ml_realloc( ar->ml, ar->storage, ar->capacity * elementSize, newCapacity * elementSize );
 	ar->capacity = newCapacity;
 	if( newCapacity < ar->count )

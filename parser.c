@@ -1134,12 +1134,13 @@ static int pg_sendPythonTo( ParserGenerator pg, File outFile )
 				// reduces from the same state are for the same production.  Hence,
 				// only need to consult the first one.
 				//
+				Production firstProduction = ita_element( pg->items, bv_firstBit( its->items ) )->pn;
 				charsSent += fl_write( outFile, "\t" );
 				charsSent += ob_sendTo( state, outFile, pg->heap );
 				charsSent += fl_write( outFile, ".action = '" );
 				charsSent += ob_sendTo( target, outFile, pg->heap );
 				charsSent += fl_write( outFile, "' # " );
-				charsSent += pn_sendTo( ita_element( pg->items, bv_firstBit( its->items ) )->pn, outFile, pg->gr, pg->st );
+				charsSent += pn_sendTo( firstProduction, outFile, pg->gr, pg->st );
 				charsSent += fl_write( outFile, "\n" );
 				break;
 				}
@@ -2509,28 +2510,36 @@ static TestGrammarLine grammar[] =
 #endif
 
 #if 1
+
+typedef struct
+	{
+	char *tokens[10];
+	char *response;
+	} SheppardGrammarLine;
+
 // Sheppard
 TestGrammarLine grammar_hello[] =
 	{
 	{ "GOAL",   "hello", "world" },
 	};
 
-TestGrammarLine grammar[] =
+SheppardGrammarLine grammar[] =
 	{
-	{ "STATEMENTS",   "STATEMENTS", "STATEMENT" },
-	{ "STATEMENTS",   "STATEMENT" },
-	{ "OBJECT",       "name:SYMBOL", "get" },
-	{ "STATEMENT",    "name:SYMBOL", "value:OBJECT", "bind" },
-	{ "STATEMENT",    "NULL", "value:OBJECT", "bind" }, // Do nothing
-	{ "OBJECT",       "base:OBJECT", "field:SYMBOL", "field" },
-	{ "NULL",         "Null" },
-	{ "LIST",         "head:OBJECT", "tail:HEAD", "Cons" },
-	{ "PROCEDURE",    "tokens:LIST", "dialect:STATE", "Procedure" },
-	{ "DIGRESSION",   "tokens:LIST", "bindings:CONTEXT", "prev:DIGRESSION", "Digression" },
-	{ "THREAD",       "cursor:OBJECT", "value_stack:LIST", "state_stack:LIST", "Thread" },
-	{ "STATEMENT",    "action:SHIFT", "perform" },
-	{ "STATEMENT",    "action:REDUCE", "perform" },
-	{ "STATEMENT",    "action:ACCEPT", "perform" },
+	{{ "STATEMENTS",   "STATEMENTS", "STATEMENT" },                                             "eat" },
+	{{ "STATEMENTS",   "STATEMENT" },                                                           "eat" },
+	{{ "CONTEXT",      "bindings" }},
+	{{ "OBJECT",       "base:OBJECT", "field:SYMBOL", "get" }},
+	{{ "STATEMENT",    "base:OBJECT", "field:SYMBOL", "value:OBJECT", "set" }},
+	{{ "NULL",         "Null" }},
+	{{ "CONTEXT",      "EmptyContext" }},
+	{{ "EOF",          "Eof" }}, // Digression that keeps returning EOF forever
+	{{ "LIST",         "head:OBJECT", "tail:LIST", "Cons" }},
+	{{ "PROCEDURE",    "tokens:LIST", "dialect:STATE", "Procedure" }},
+	{{ "DIGRESSION",   "tokens:LIST", "bindings:CONTEXT", "prev:DIGRESSION", "Digression" }},
+	{{ "THREAD",       "cursor:OBJECT", "value_stack:LIST", "state_stack:LIST", "Thread" }},
+	{{ "STATEMENT",    "action:SHIFT", "perform" },                                             "perform_shift" },
+	{{ "STATEMENT",    "action:REDUCE", "perform" },                                            "perform_reduce" },
+	{{ "STATEMENT",    "action:ACCEPT", "perform" },                                            "perform_accept" },
 	};
 
 TestGrammarLine grammar_old2[] =
@@ -2577,10 +2586,13 @@ static void dumpItemLookaheads( ParserGenerator pg, File traceFile )
 		}
 	}
 
-static char *tagPart( char *grammarWord )
+static char *dup( char *str, int maxLength )
 	{
-	char *result = strchr( grammarWord, ':' );
-	return result? result+1 : grammarWord;
+	int length = min( maxLength, strlen(str) );
+	char *result = ml_alloc( ml_undecided(), length+1 );
+	memcpy( result, str, length );
+	result[ length ] = 0;
+	return result;
 	}
 
 int main( int argc, char *argv[] )
@@ -2591,16 +2603,33 @@ int main( int argc, char *argv[] )
 
 	heap = theObjectHeap();
 	st = theSymbolTable( heap );
-	goal = sy_byName( grammar[0][0], st );
+	goal = sy_byName( grammar[0].tokens[0], st );
 	gr = gr_new( goal, asizeof( grammar ), ml_indefinite() );
 	for( i=0; i < asizeof( grammar ); i++ )
 		{
-		Production pn = pn_new( gr, sy_byName( grammar[i][0], st ), 10 );
-		for( j=1; grammar[i][j]; j++ )
-			pn_append( pn, sy_byName( tagPart( grammar[i][j] ), st ), gr );
+		Production pn = pn_new( gr, sy_byName( grammar[i].tokens[0], st ), 10 );
+		for( j=1; grammar[i].tokens[j]; j++ )
+			{
+			char *token = grammar[i].tokens[j];
+			char *colon = strchr( token, ':' );
+			if( colon )
+				{
+				char *name = dup( token, colon-token );
+				char *tag = colon+1;
+				pn_appendWithName( pn, sy_byName( name, st ), sy_byName( tag, st ), gr );
+				}
+			else
+				{
+				pn_append( pn, sy_byName( token, st ), gr );
+				}
+			}
 		pn_stopAppending( pn, gr );
 		pn_setConflictResolution( pn, CR_SHIFT_BEATS_REDUCE, gr );
-		pn_autoSymbol( pn, st, gr );
+		char *response = grammar[i].response;
+		if( !response )
+			response = grammar[i].tokens[j-1];
+		//pn_autoSymbol( pn, st, gr );
+		pn_setSymbol( pn, sy_byName( response, st ), gr );
 		}
 	gr_stopAdding( gr );
 #if 0 // grammar2

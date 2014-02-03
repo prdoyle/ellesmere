@@ -88,19 +88,11 @@ def tag( obj ):
 	else: # All other Sheppard objects are represented by instances of Object
 		return obj.TAG
 
-def pop( stack ):  return ( stack.cur, stack.prev )
-
-def bound( obj, digression ):
-	# This gives dynamic scoping.  TODO: Static scopes would usually be preferable.
-	if digression and is_symbol( obj ):
-		return digression.bindings.get( obj, obj )
-	else:
-		return obj
+def pop( stack ):  return ( stack.head, stack.tail )
 
 # Object constructors
 
 null = Null()
-def Stack( cur, prev ): return Object( "stack", cur=cur, prev=prev, FIELDS=['cur','prev'] )
 def Parser( automaton ): return Object( "parser", state=automaton, stack=null )
 def Cons( head, tail ): return Object( "list", head=head, tail=tail, FIELDS=['head','tail'] )
 def List( items ):
@@ -109,7 +101,6 @@ def List( items ):
 	else:
 		return null
 
-def Procedure( tokens, dialect ): return Object( "procedure", tokens=tokens, dialect=dialect )
 def Digression( tokens, bindings, prev ): return Object( "digression", tokens=tokens, bindings=bindings, prev=prev )
 
 def Thread( cursor, value_stack, state_stack ): return Object( "thread", cursor=cursor, value_stack=value_stack, state_stack=state_stack )
@@ -121,42 +112,31 @@ def debug( message, *args ):
 		message = message % args
 	print message
 
-def to_python_list( sheppard_list, head="head", tail="tail" ):
+def python_list( sheppard_list, head="head", tail="tail" ):
 	if sheppard_list:
 		return [ sheppard_list[ head ] ] + to_python_list( sheppard_list[ tail ], head, tail )
 	else:
 		return []
 
 def stack_str( stack ):
-	return string.join([ repr(s) for s in to_python_list( stack, "cur", "prev" )], ", " )
+	return string.join([ repr(s) for s in python_list( stack )], ", " )
 
 #
 # The interpreter
 #
 
-def perform_accept( th ):
-	return True
-
-def perform_shift( th ):
-	debug( "shift" )
-	# Upate thread state as per shift
+def get_raw_token( th ):
 	if th.cursor:
 		raw_token = th.cursor.tokens.get( "head", "EOF" )
 		th.cursor.tokens = th.cursor.tokens.tail
 	else:
 		raw_token = "EOF"
-	debug( "  token: %s", repr( raw_token ) )
-	debug( "  cursor: %s", repr( th.cursor ) )
-	current_token = bound( raw_token, th.cursor )
-	debug( "    value: %s", repr( raw_token ) )
-	th.value_stack = Stack( current_token, th.value_stack )
-	new_state = th.state_stack.cur[ current_token ]
-	debug( "  new_state: %s", repr( new_state ) )
-	th.state_stack = Stack( new_state, th.state_stack )
+	return raw_token
+
+def finish_digression( th ):
 	if th.cursor and not th.cursor.tokens:
 		debug( "  finished digression" )
 		th.cursor = th.cursor.prev
-	return False
 
 def bind_arg( th, formal_arg, actual_arg, arg_bindings ):
 	if formal_arg:
@@ -167,7 +147,7 @@ def bind_arg( th, formal_arg, actual_arg, arg_bindings ):
 
 def bind_args( th, formal_args, arg_bindings ):
 	if formal_args:
-		th.state_stack = th.state_stack.prev
+		th.state_stack = th.state_stack.tail
 		( formal_arg, formal_args )    = pop( formal_args )
 		( actual_arg, th.value_stack ) = pop( th.value_stack )
 		bind_arg( th, formal_arg, actual_arg, arg_bindings )
@@ -175,15 +155,39 @@ def bind_args( th, formal_args, arg_bindings ):
 	else:
 		return arg_bindings
 
+def bound( obj, digression ):
+	# This gives dynamic scoping.  TODO: Static scopes would usually be preferable.
+	if digression and is_symbol( obj ):
+		return digression.bindings.get( obj, obj )
+	else:
+		return obj
+
 def do_action( th, action, arg_bindings ):
 	if tag( action ) == "primitive":
 		action.function( th, arg_bindings )
 	else:
 		th.cursor = Digression( action.tokens, arg_bindings, th.cursor )
 
+def perform_accept( th ):
+	return True
+
+def perform_shift( th ):
+	debug( "shift" )
+	debug( "  cursor: %s", repr( th.cursor ) )
+	raw_token = get_raw_token( th )
+	debug( "  token: %s", repr( raw_token ) )
+	current_token = bound( raw_token, th.cursor )
+	debug( "    value: %s", repr( raw_token ) )
+	th.value_stack = Cons( current_token, th.value_stack )
+	new_state = th.state_stack.head[ current_token ]
+	debug( "  new_state: %s", repr( new_state ) )
+	th.state_stack = Cons( new_state, th.state_stack )
+	finish_digression( th )
+	return False
+
 def perform_reduce0( th ):
 	debug( "reduce0" )
-	action = bound( th.state_stack.cur.action, th.cursor )
+	action = bound( th.state_stack.head.action, th.cursor )
 	debug( "  action: %s", repr( action ) )
 	formal_args = action.formal_args
 	arg_bindings = Object( "bindings" )
@@ -202,34 +206,41 @@ def execute( procedure, bindings ):
 	th = Thread(
 		Digression( procedure.tokens, bindings, null ),
 		null,
-		Stack( procedure.dialect, null ) )
+		Cons( procedure.dialect, null ) )
 	debug( "starting thread:\n  %s", th )
 	while True:
 		debug( "state_stack: %s", stack_str( th.state_stack ) )
-		command = tag( th.state_stack.cur )
+		command = tag( th.state_stack.head )
 		if perform[ command ]( th ):
 			break
+
+def Shift( **edges ): return Object( "shift", **edges )
+def Reduce0( action ): return Object( "reduce0", action=action )
+def Accept(): return Object( "accept" )
+def Macro( tokens, formal_args ): return Object( "macro", tokens=tokens, formal_args=formal_args )
+def Procedure( tokens, dialect ): return Object( "procedure", tokens=tokens, dialect=dialect )
+def Primitive( function, formal_args ): return Object( "primitive", function=function, formal_args=formal_args )
 
 #
 # Testing
 #
 
-x = Stack("first", null)
-x = Stack("second", x)
+if 0:
+	x = Cons("first", null)
+	x = Cons("second", x)
 
+if 1:
+	dialect = Shift(
+		hello = Shift(
+			world = Reduce0( Macro(
+				tokens = List([ "go" ]),
+				formal_args = List([ "W", "H" ])  # Formal args get popped, so they must appear in reverse order
+				))),
+		go = Reduce0( Primitive(
+			function = ( lambda th, b: debug( "ARGS: %s", b ) ),
+			formal_args=Cons("arg", null)
+			)),
+		EOF = Accept())
 
-def Shift( **edges ): return Object( "shift", **edges )
-def Reduce0( action ): return Object( "reduce0", action=action )
-def Accept(): return Object( "accept" )
-def Primitive( function, formal_args ): return Object( "primitive", function=function, formal_args=formal_args )
+	execute( Procedure( List([ "hello", "world" ]), dialect ), Object("bindings") )
 
-dialect = Shift(
-	hello=Shift(
-		world=Reduce0( Primitive(
-			function=( lambda th, b: debug( "ARGS: %s", b ) ),
-			formal_args=Stack("W", Stack("H", null)) # Formal args get popped, so they must appear in reverse order
-			))),
-	EOF=Accept())
-
-tokens = List([ "hello", "world" ])
-execute( Procedure( tokens, dialect ), Object("bindings") )
