@@ -115,7 +115,7 @@ def is_a( obj, t ):
 	assert( t.isupper() )
 	return tag( obj ) == t # TODO: inheritance
 
-def pop( stack ):  return ( stack.head, stack.tail )
+def popped( stack ):  return ( stack.head, stack.tail )
 
 # Object constructors
 
@@ -178,12 +178,17 @@ def stack_str( stack ):
 #  so that's no big deal.
 #
 
+def pop( base, field ):
+	result = base[field].head
+	base[field] = base[field].tail
+	return result
+
 def finish_digression( th ):
 	if is_a( th.cursor.tokens, "NULL" ):
 		debug( "    finished %s", repr( th.cursor ) )
 		th.cursor = th.cursor.prev
 
-def bind_arg( th, formal_arg, actual_arg, arg_bindings ):
+def bind_arg( formal_arg, actual_arg, arg_bindings ):
 	if is_a( formal_arg, "SYMBOL" ):
 		arg_bindings[ formal_arg ] = actual_arg
 		debug( "    %s=%s", formal_arg, repr( actual_arg ) )
@@ -195,10 +200,8 @@ def bind_args( th, formal_args, arg_bindings ):
 		return arg_bindings
 	else:
 		th.state_stack = th.state_stack.tail
-		( formal_arg, formal_args )    = pop( formal_args )
-		( actual_arg, th.value_stack ) = pop( th.value_stack )
-		bind_arg( th, formal_arg, actual_arg, arg_bindings )
-		return bind_args( th, formal_args, arg_bindings )
+		bind_arg( formal_args.head, pop( th, "value_stack" ), arg_bindings )
+		return bind_args( th, formal_args.tail, arg_bindings )
 
 def bound2( obj, environment, probe ):
 	if is_a( probe, "TAKE_FAILED" ):
@@ -220,6 +223,7 @@ def next_state2( state, obj, probe ):
 		return probe
 
 def next_state( state, obj ):
+	# Note: this gives priority to SYMBOL over specific symbols, which might make keywords impossible.  We might want to rethink this.
 	return next_state2( state, obj, state.take( obj, take_failed ) )
 
 def do_action( th, action, environment ):
@@ -308,19 +312,50 @@ def Primitive( function, formal_args, environment ): return Object( "PRIMITIVE",
 # Testing
 #
 
+class Start_script:
+
+	""" This just permits me to write some Sheppard code without enclosing every word in quotes
+	"""
+
+	def __init__( self ):
+		self._tokens = []
+
+	def __getattr__( self, key ):
+		if key == "_tokens":
+			return getattr( self, "_tokens" )
+		else:
+			self._tokens.append( key )
+			return self
+
+	def __getitem__( self, key ):
+		return self.__getattr__( key )
+
+	def End_script( self ):
+		return List( self._tokens )
+
+	def __call__( self, key ):
+		# Without this syntactic sugar, programs are unbearably verbose
+		return self["*"][key]
+
+	def __str__( self ):
+		return str( self._tokens )
+
+	def __repr__( self ):
+		return "Script_builder()" + string.join([ '.' + str(t) for t in self._tokens ])
+
 if 0:
 	x = Cons("first", null)
 	x = Cons("second", x)
 
-if 1:
+if 0:
 	def primitive_hello( th, where ):
 		print "!! Called primitive_hello( %s )" % where
 
 	global_scope = Environment( null )
 	bindings = global_scope.bindings
 	bindings[ "A1" ] = Macro(
-		formal_args = Stack([ "H", "W" ]),
-		script = List([ "hello", "W" ]),
+		formal_args = Stack([ null, "arg" ]),
+		script = List([ "hello", "arg" ]),
 		environment = global_scope
 		)
 	bindings[ "A2" ] = Primitive(
@@ -329,12 +364,57 @@ if 1:
 		environment = global_scope
 		)
 	dialect = Shift(
-		go = Shift( world = Reduce0( "A1" )),
-		hello = Shift( world = Reduce0( "A2" )),
+		go = Shift( SYMBOL = Reduce0( "A1" )),
+		hello = Shift( SYMBOL = Reduce0( "A2" )),
 		EOF = Accept())
 
 	debug( "Global scope: %s", global_scope )
 	debug( "  bindings: %s", global_scope.bindings )
 	debug( "  dialect: %s", dialect.description() )
-	execute( Procedure( List([ "go", "world" ]), dialect, global_scope ), Environment( global_scope ) )
+	execute( Procedure(
+		Start_script().
+			go.world.
+		End_script(),
+		dialect, global_scope ), Environment( global_scope ) )
+else:
+	scripts = {
+		"pop": Start_script()
+				("base")("field").get.head.get
+			.frame.result.put
+				("base")("field").get.tail.get
+			("base")("field").put
+			("result")
+			.End_script(),
+		"finish_digression": Start_script()
+				("th").cursor.get.prev.get
+			("th").cursor.put
+			.End_script(),
+		"bind_arg_NULL": Start_script()
+			.End_script(),
+		"bind_arg_SYMBOL": Start_script()
+				("actual_arg")
+			("arg_bindings")("formal_arg").put
+			.End_script(),
+		"bind_args_NULL": Start_script()
+			("arg_bindings")
+			.End_script(),
+		"bind_args_LIST": Start_script()
+				("th").state_stack.get.tail.get
+			("th").state_stack.put
+				("th")
+				("formal_args").tail.get
+					("th")
+					.value_stack
+				.pop
+				("arg_bindings")
+			.bind_arg
+				("formal_args").tail.get
+				("arg_bindings")
+			.bind_args
+			.End_script(),
+		"bound2": Start_script()
+
+			.End_script(),
+		}
+	print scripts
 

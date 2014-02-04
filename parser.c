@@ -2527,10 +2527,11 @@ SheppardGrammarLine grammar[] =
 	{
 	{{ "STATEMENTS",   "STATEMENTS",      "STATEMENT" },                                        "eat2" },
 	{{ "STATEMENTS",   "STATEMENT" },                                                           "eat1" },
-	{{ "FRAME",        "bindings" }},
+	{{ "FRAME",        "frame" }},
+	{{ "OBJECT",       "*",               "field:SYMBOL" }}, // Syntactic sugar for "frame field get"
 	{{ "OBJECT",       "base:OBJECT",     "field:SYMBOL", "get" }}, // Syntactic sugar for "base field ERROR take"
 	{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:OBJECT", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
-	{{ "STATEMENT",    "base:OBJECT",     "field:SYMBOL", "value:OBJECT", "set" }},
+	{{ "STATEMENT",    "value:OBJECT",    "base:OBJECT", "field:SYMBOL", "put" }}, // "set" is a python keyword which is awkward
 	{{ "NULL",         "Null" }},
 	{{ "FRAME",        "outer:FRAME",     "NewFrame" }},
 	{{ "EOF",          "Eof" }}, // Digression that keeps returning EOF forever
