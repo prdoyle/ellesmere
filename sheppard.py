@@ -423,8 +423,7 @@ def parse_script( string ):
 	# Start_script is still too cumbersome
 	result = {}
 	( name, script ) = ( "main", [] )
-	for word in re.split( '[^a-zA-Z0-9_:]+', string.strip() ):
-		print word
+	for word in re.findall( r'[a-zA-Z0-9_:]+|\$', string.strip() ):
 		if word[-1] == ':':
 			result[ name ] = List( script )
 			( name, script ) = ( word[:-1], [] )
@@ -449,8 +448,8 @@ finish_digression_NULL:
 finish_digression_OBJECT:
 
 bind_arg_SYMBOL:
-		$actual_arg
-	arg_bindings$ $formal_arg set
+		actual_arg$
+	arg_bindings$ formal_arg$ set
 
 bind_arg_NULL:
 
@@ -458,48 +457,48 @@ bind_args_NULL:
 	arg_bindings$
 
 bind_args_OBJECT:
-		$th state_stack get tail get
-	$th state_stack set
-		$formal_args head get
-		$th value_stack pop
-		$arg_bindings
+		th$ state_stack get tail get
+	th$ state_stack set
+		formal_args$ head get
+		th$ value_stack pop
+		arg_bindings$
 	bind_arg
-		$th
-		$formal_args tail get
-		$arg_bindings
+		th$
+		formal_args$ tail get
+		arg_bindings$
 	bind_args
 
 bound2_TAKE_FAILED:
-		$obj
-		$environment outer get
+		obj$
+		environment$ outer get
 	bound
 
 bound2_OBJECT:
-	$probe
+	probe$
 
 bound_NULL:
-	$obj
+	obj$
 
 bound_OBJECT:
-		$obj
-		$environment
-			$environment bindings get
-			$obj
+		obj$
+		environment$
+			environment$ bindings get
+			obj$
 			take_failed
 		take
 	bound2
 
 next_state2_TAKE_FAILED:
-	$state $obj tag get
+	state$ obj$ tag get
 
 next_state2_OBJECT:
-	$probe
+	probe$
 
 next_state:
-		$state
-		$obj
-			$state
-			$obj
+		state$
+		obj$
+			state$
+			obj$
 			take_failed
 		take
 	next_state2
@@ -507,74 +506,74 @@ next_state:
 do_action_PRIMITIVE: REPLACE WITH NATIVE
 
 do_action_MACRO:
-			$action script get
-			$environment
-			$th cursor get
+			action$ script get
+			environment$
+			th$ cursor get
 		Digression
-	$th cursor set
+	th$ cursor set
 
 perform_accept: FALSE
 
 perform_shift:
-			$th cursor get tokens get
+			th$ cursor get tokens get
 			head
 			Eof
 		take
 	raw_token setlocal
-		$th cursor get tokens get tail get
-	$th cursor get tokens set
+		th$ cursor get tokens get tail get
+	th$ cursor get tokens set
 			raw_token
-			$th cursor get environment get
+			th$ cursor get environment get
 		bound
 	current_token setlocal
-			$current_token
-			$th.value_stack
+			current_token$
+			th$.value_stack
 		Cons
-	$th value_stack set
-			$th state_stack get head get
-			$current_token
+	th$ value_stack set
+			th$ state_stack get head get
+			current_token$
 		next_state
 	new_state setlocal
-			$new_state
-			$th state_stack get
+			new_state$
+			th$ state_stack get
 		Cons
-	$th state_stack set
+	th$ state_stack set
 	TRUE
 
 perform_reduce0:
-			$th state_stack get head get action get
-			$th cursor get environment get
+			th$ state_stack get head get action get
+			th$ cursor get environment get
 		bound
 	action setlocal
-	$th finish_digression
-		$action formal_args get
+	th$ finish_digression
+		action$ formal_args get
 	formal_args setlocal
-		$action environment get Environment
+		action$ environment get Environment
 	environment setlocal
-		$th
-		$action
-		$environment
+		th$
+		action$
+		environment$
 	do_action
 	TRUE
 
 execute2_FALSE:
 execute2_TRUE:
-		$th state_stack get head get tag
+		th$ state_stack get head get tag
 	command setlocal
-		$th
-		$command $th perform
+		th$
+		command$ th$ perform
 	execute2
 
 execute:
-		$procedure script get
-		$environment
+		procedure$ script get
+		environment$
 		Eof
 	Digression digression setlocal
-		$digression
+		digression$
 		null
-		$procedure dialect get null Cons
+		procedure$ dialect get null Cons
 	Thread th setlocal
-		$th
+		th$
 		TRUE
 	execute2
 
