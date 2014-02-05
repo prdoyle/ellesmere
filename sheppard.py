@@ -1,6 +1,6 @@
 #! /usr/bin/python
 
-import string
+import string, re
 
 object_id = 0
 
@@ -376,7 +376,8 @@ if 0:
 			go.world.
 		End_script(),
 		dialect, global_scope ), Environment( global_scope ) )
-else:
+
+if 0:
 	scripts = {
 		"pop": Start_script()
 				("base")("field").get.head.get
@@ -418,3 +419,165 @@ else:
 		}
 	print scripts
 
+def parse_script( string ):
+	# Start_script is still too cumbersome
+	result = {}
+	( name, script ) = ( "main", [] )
+	for word in re.split( '[^a-zA-Z0-9_:]+', string.strip() ):
+		print word
+		if word[-1] == ':':
+			result[ name ] = List( script )
+			( name, script ) = ( word[:-1], [] )
+		else:
+			script.append( word )
+	if script:
+		result[ name ] = List( script )
+	return result
+
+post_order = parse_script("""
+pop:
+		base$ field$ get head get
+	result setlocal
+		base$ field$ get tail get
+	base$ field$ set
+	result$
+
+finish_digression_NULL:
+		th$ cursor get prev get
+	th$ cursor set
+
+finish_digression_OBJECT:
+
+bind_arg_SYMBOL:
+		$actual_arg
+	arg_bindings$ $formal_arg set
+
+bind_arg_NULL:
+
+bind_args_NULL:
+	arg_bindings$
+
+bind_args_OBJECT:
+		$th state_stack get tail get
+	$th state_stack set
+		$formal_args head get
+		$th value_stack pop
+		$arg_bindings
+	bind_arg
+		$th
+		$formal_args tail get
+		$arg_bindings
+	bind_args
+
+bound2_TAKE_FAILED:
+		$obj
+		$environment outer get
+	bound
+
+bound2_OBJECT:
+	$probe
+
+bound_NULL:
+	$obj
+
+bound_OBJECT:
+		$obj
+		$environment
+			$environment bindings get
+			$obj
+			take_failed
+		take
+	bound2
+
+next_state2_TAKE_FAILED:
+	$state $obj tag get
+
+next_state2_OBJECT:
+	$probe
+
+next_state:
+		$state
+		$obj
+			$state
+			$obj
+			take_failed
+		take
+	next_state2
+
+do_action_PRIMITIVE: REPLACE WITH NATIVE
+
+do_action_MACRO:
+			$action script get
+			$environment
+			$th cursor get
+		Digression
+	$th cursor set
+
+perform_accept: FALSE
+
+perform_shift:
+			$th cursor get tokens get
+			head
+			Eof
+		take
+	raw_token setlocal
+		$th cursor get tokens get tail get
+	$th cursor get tokens set
+			raw_token
+			$th cursor get environment get
+		bound
+	current_token setlocal
+			$current_token
+			$th.value_stack
+		Cons
+	$th value_stack set
+			$th state_stack get head get
+			$current_token
+		next_state
+	new_state setlocal
+			$new_state
+			$th state_stack get
+		Cons
+	$th state_stack set
+	TRUE
+
+perform_reduce0:
+			$th state_stack get head get action get
+			$th cursor get environment get
+		bound
+	action setlocal
+	$th finish_digression
+		$action formal_args get
+	formal_args setlocal
+		$action environment get Environment
+	environment setlocal
+		$th
+		$action
+		$environment
+	do_action
+	TRUE
+
+execute2_FALSE:
+execute2_TRUE:
+		$th state_stack get head get tag
+	command setlocal
+		$th
+		$command $th perform
+	execute2
+
+execute:
+		$procedure script get
+		$environment
+		Eof
+	Digression digression setlocal
+		$digression
+		null
+		$procedure dialect get null Cons
+	Thread th setlocal
+		$th
+		TRUE
+	execute2
+
+""")
+
+print post_order
