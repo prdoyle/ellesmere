@@ -2528,7 +2528,6 @@ SheppardGrammarLine grammar[] =
 	{{ "STATEMENTS",   "STATEMENTS",      "STATEMENT" },                                        "eat2" },
 	{{ "STATEMENTS",   "STATEMENT" },                                                           "eat1" },
 	{{ "FRAME",        "frame" }},
-	{{ "OBJECT",       "*",               "field:SYMBOL" }}, // Syntactic sugar for "frame field get"
 	{{ "OBJECT",       "base:OBJECT",     "field:SYMBOL", "get" }}, // Syntactic sugar for "base field ERROR take"
 	{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:OBJECT", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
 	{{ "STATEMENT",    "value:OBJECT",    "base:OBJECT", "field:SYMBOL", "put" }}, // "set" is a python keyword which is awkward
@@ -2542,6 +2541,49 @@ SheppardGrammarLine grammar[] =
 	{{ "STATEMENT",    "action:SHIFT",    "perform" },                                          "perform_shift" },
 	{{ "STATEMENT",    "action:REDUCE",   "perform" },                                          "perform_reduce" },
 	{{ "STATEMENT",    "action:ACCEPT",   "perform" },                                          "perform_accept" },
+	// Syntactic sugar
+	{{ "OBJECT",       "field:SYMBOL", "$" }}, // Syntactic sugar for "frame field get"
+	{{ "STATEMENT",    "symbol:SYMBOL", "putlocal" }},
+	// Procedures from the self-interpreter
+
+	{{ "OBJECT",       "base:OBJECT", "field:SYMBOL", "pop" }},
+
+	{{ "STATEMENT",    "th:THREAD", "remaining_tokens:NULL",   "finish_digression" },            "finish_digression_NULL" },
+	{{ "STATEMENT",    "th:THREAD", "remaining_tokens:OBJECT", "finish_digression" },            "finish_digression_NULL" },
+
+	{{ "STATEMENT",    "formal_arg:SYMBOL", "actual_arg:OBJECT", "arg_bindings:OBJECT", "bind_arg" },   "bind_arg_SYMBOL" },
+	{{ "STATEMENT",    "formal_arg:NULL",   "actual_arg:OBJECT", "arg_bindings:OBJECT", "bind_arg" },   "bind_arg_NULL" },
+	{{ "STATEMENT",    "th:THREAD", "formal_args:OBJECT", "arg_bindings:OBJECT", "bind_args" },     "bind_args_OBJECT" },
+	{{ "STATEMENT",    "th:THREAD", "formal_args:NULL",   "arg_bindings:OBJECT", "bind_args" },     "bind_args_NULL" },
+	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "probe:OBJECT",      "bound2" },     "bound2_OBJECT" },
+	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "probe:TAKE_FAILED", "bound2" },     "bound2_TAKE_FAILED" },
+	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "bound" },     "bound_OBJECT" },
+	{{ "OBJECT",       "obj:OBJECT", "environment:NULL",        "bound" },     "bound_NULL" },
+
+	{{ "STATEMENT",    "state:OBJECT", "obj:OBJECT", "probe:OBJECT",      "next_state2"},  "next_state2_OBJECT" },
+	{{ "STATEMENT",    "state:OBJECT", "obj:OBJECT", "probe:TAKE_FAILED", "next_state2"},  "next_state2_TAKE_FAILED" },
+	{{ "STATEMENT",    "state:OBJECT", "obj:OBJECT", "next_state"}},
+
+	{{ "STATEMENT",    "th:THREAD", "action:PRIMITIVE", "environment:ENVIRONMENT", "do_action" }, "do_action_PRIMITIVE" },
+	{{ "STATEMENT",    "th:THREAD", "action:MACRO",     "environment:ENVIRONMENT", "do_action" }, "do_action_MACRO" },
+
+	{{ "BOOLEAN",      "th:THREAD", "state:ACCEPT",  "perform" },   "perform_ACCEPT" },
+	{{ "BOOLEAN",      "th:THREAD", "state:SHIFT",   "perform" },   "perform_SHIFT" },
+	{{ "BOOLEAN",      "th:THREAD", "state:REDUCE0", "perform" },   "perform_REDUCE0" },
+
+	{{ "STATEMENT",    "th:THREAD", "probe:FALSE", "execute2" },   "execute2_FALSE" },
+	{{ "STATEMENT",    "th:THREAD", "probe:TRUE",  "execute2" },   "execute2_TRUE" },
+	{{ "STATEMENT",    "procedure:PROCEDURE", "environment:ENVIRONMENT", "execute" }},
+	};
+
+static TestGrammarLine subtags[] =
+	{
+	{ "OBJECT",    "LIST", "PROCEDURE", "DIGRESSION", "FRAME", "SYMBOL" },
+	{ "LIST",      "NULL" },
+	{ "FRAME",     "NULL" },
+	{ "DIGRESSION","EOF" },
+	{ "STATE",     "SHIFT", "REDUCE", "ACCEPT" },
+	{ "BOOLEAN",   "FALSE", "TRUE" },
 	};
 
 TestGrammarLine grammar_old2[] =
@@ -2564,14 +2606,6 @@ TestGrammarLine grammar_old2[] =
 	//{ "THREAD",       "Thread", "cursor:OBJECT", "value_stack:LIST", "state_stack:LIST" },
 	};
 
-static TestGrammarLine subtags[] =
-	{
-	{ "OBJECT",    "LIST", "PROCEDURE", "DIGRESSION", "FRAME" },
-	{ "LIST",      "NULL" },
-	{ "FRAME",     "NULL" },
-	{ "DIGRESSION","EOF" },
-	{ "STATE",     "SHIFT", "REDUCE", "ACCEPT" },
-	};
 #endif
 
 static void dumpItemLookaheads( ParserGenerator pg, File traceFile )

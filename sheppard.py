@@ -120,27 +120,26 @@ def popped( stack ):  return ( stack.head, stack.tail )
 # Object constructors
 
 null = Null()
-def Parser( automaton ): return Object( "PARSER", state=automaton, stack=null )
-def Cons( head, tail ): return Object( "LIST", head=head, tail=tail, _fields=['head','tail'] )
+def LIST( head, tail ): return Object( "LIST", head=head, tail=tail, _fields=['head','tail'] )
 def List( items ):
 	if items:
-		return Cons( items[0], List( items[1:] ) )
+		return LIST( items[0], List( items[1:] ) )
 	else:
 		return null
 def Stack( items ):
 	if items:
-		return Cons( items[-1], List( items[:-1] ) )
+		return LIST( items[-1], List( items[:-1] ) )
 	else:
 		return null
 
-def Environment( outer, **bindings ): return Object( "ENVIRONMENT", outer=outer, bindings=Object("BINDINGS", **bindings) )
+def ENVIRONMENT( outer, **bindings ): return Object( "ENVIRONMENT", outer=outer, bindings=Object("BINDINGS", **bindings) )
 
-def Digression( tokens, environment, prev ): return Object( "DIGRESSION", tokens=tokens, environment=environment, prev=prev )
+def DIGRESSION( tokens, environment, prev ): return Object( "DIGRESSION", tokens=tokens, environment=environment, prev=prev )
 
 def Eof():
 	# An endless stack of digressions each returning an endless stream of EOFs
-	result = Object( "EOF", environment=Environment(null) )
-	endless_eof = Cons( result, null )
+	result = Object( "EOF", environment=ENVIRONMENT(null) )
+	endless_eof = LIST( result, null )
 	endless_eof.tail = endless_eof
 	result.tokens = endless_eof
 	result.prev   = result
@@ -151,7 +150,7 @@ false = Object( "FALSE" )
 true  = Object( "TRUE" )
 take_failed = Object( "TAKE_FAILED" )
 
-def Thread( cursor, value_stack, state_stack ): return Object( "THREAD", cursor=cursor, value_stack=value_stack, state_stack=state_stack )
+def THREAD( cursor, value_stack, state_stack ): return Object( "THREAD", cursor=cursor, value_stack=value_stack, state_stack=state_stack )
 
 # Main execute procedure
 
@@ -230,7 +229,7 @@ def do_action( th, action, environment ):
 	if is_a( action, "PRIMITIVE" ):
 		action.function( th, **dict( environment.bindings ) )
 	else:
-		th.cursor = Digression( action.script, environment, th.cursor )
+		th.cursor = DIGRESSION( action.script, environment, th.cursor )
 		debug( "    new_digression: %s", repr( th.cursor.description() ) )
 
 def perform_accept( th ):
@@ -245,10 +244,10 @@ def perform_shift( th ):
 	debug( "  token: %s", repr( raw_token ) )
 	current_token = bound( raw_token, th.cursor.environment )
 	debug( "    value: %s", repr( current_token ) )
-	th.value_stack = Cons( current_token, th.value_stack )
+	th.value_stack = LIST( current_token, th.value_stack )
 	new_state = next_state( th.state_stack.head, current_token )
 	debug( "  new_state: %s", repr( new_state ) )
-	th.state_stack = Cons( new_state, th.state_stack )
+	th.state_stack = LIST( new_state, th.state_stack )
 	return true
 
 def perform_reduce0( th ):
@@ -257,7 +256,7 @@ def perform_reduce0( th ):
 	debug( "  action: %s", repr( action ) )
 	finish_digression( th )
 	formal_args = action.formal_args
-	environment = Environment( action.environment )
+	environment = ENVIRONMENT( action.environment )
 	bind_args( th, formal_args, environment.bindings )
 	debug( "  environment: %s", environment )
 	do_action( th, action, environment )
@@ -276,8 +275,8 @@ def execute2( th, probe ):
 		execute2( th, perform[ command ]( th ) )
 
 def execute( procedure, environment ):
-	digression = Digression( procedure.script, environment, eof )
-	th = Thread( digression, null, Cons( procedure.dialect, null ) )
+	digression = DIGRESSION( procedure.script, environment, eof )
+	th = THREAD( digression, null, LIST( procedure.dialect, null ) )
 	debug( "starting thread: %s with digression:\n\t%s", repr(th), digression )
 	execute2( th, true )
 
@@ -304,9 +303,9 @@ def execute( procedure, environment ):
 def Shift( **edges ): return Object( "SHIFT", **edges )
 def Reduce0( action ): return Object( "REDUCE0", action=action )
 def Accept(): return Object( "ACCEPT" )
-def Macro( script, formal_args, environment ): return Object( "MACRO", script=script, formal_args=formal_args, environment=environment )
-def Procedure( script, dialect, environment ): return Object( "PROCEDURE", script=script, dialect=dialect, environment=environment )
-def Primitive( function, formal_args, environment ): return Object( "PRIMITIVE", function=function, formal_args=formal_args, environment=environment )
+def MACRO( script, formal_args, environment ): return Object( "MACRO", script=script, formal_args=formal_args, environment=environment )
+def PROCEDURE( script, dialect, environment ): return Object( "PROCEDURE", script=script, dialect=dialect, environment=environment )
+def PRIMITIVE( function, formal_args, environment ): return Object( "PRIMITIVE", function=function, formal_args=formal_args, environment=environment )
 
 #
 # Testing
@@ -344,21 +343,21 @@ class Start_script:
 		return "Script_builder()" + string.join([ '.' + str(t) for t in self._tokens ])
 
 if 0:
-	x = Cons("first", null)
-	x = Cons("second", x)
+	x = LIST("first", null)
+	x = LIST("second", x)
 
 if 0:
 	def primitive_hello( th, where ):
 		print "!! Called primitive_hello( %s )" % where
 
-	global_scope = Environment( null )
+	global_scope = ENVIRONMENT( null )
 	bindings = global_scope.bindings
-	bindings[ "A1" ] = Macro(
+	bindings[ "A1" ] = MACRO(
 		formal_args = Stack([ null, "arg" ]),
 		script = List([ "hello", "arg" ]),
 		environment = global_scope
 		)
-	bindings[ "A2" ] = Primitive(
+	bindings[ "A2" ] = PRIMITIVE(
 		formal_args= Stack([ null, "where" ]), # ignore the "go" keyword
 		function = primitive_hello,
 		environment = global_scope
@@ -371,11 +370,11 @@ if 0:
 	debug( "Global scope: %s", global_scope )
 	debug( "  bindings: %s", global_scope.bindings )
 	debug( "  dialect: %s", dialect.description() )
-	execute( Procedure(
+	execute( PROCEDURE(
 		Start_script().
 			go.world.
 		End_script(),
-		dialect, global_scope ), Environment( global_scope ) )
+		dialect, global_scope ), ENVIRONMENT( global_scope ) )
 
 if 0:
 	scripts = {
@@ -419,46 +418,61 @@ if 0:
 		}
 	print scripts
 
-def parse_script( string ):
+def parse_macros( string ):
 	# Start_script is still too cumbersome
-	result = {}
-	( name, script ) = ( "main", [] )
-	for word in re.findall( r'[a-zA-Z0-9_:]+|\$', string.strip() ):
-		if word[-1] == ':':
-			result[ name ] = List( script )
-			( name, script ) = ( word[:-1], [] )
+	result = Object("BINDINGS")
+	( name, args, script ) = ( None, None, [] )
+	def done( result, name, args, script ):
+		if name != None:
+			args.append( null ) # Automatically add a don't-care arg for the macro name
+			result[ name ] = MACRO( script, Stack( args ), null )
+	for word in re.findall( r'\w+|\$|\([^)]*\)', string.strip() ):
+		if word[0] == '(':
+			done( result, name, args, script )
+			name = None
+			args = word[1:-1].split()
+			script = []
+		elif name == None:
+			name = word
 		else:
 			script.append( word )
-	if script:
-		result[ name ] = List( script )
+	done( result, name, args, script )
 	return result
 
-post_order = parse_script("""
-pop:
+bindings = parse_macros("""
+( symbol ) $
+		frame
+		frame symbol get
+	get
+
+( value symbol ) putlocal 
+	value$ frame symbol$ put
+
+( base field ) pop
 		base$ field$ get head get
-	result setlocal
+	result putlocal
 		base$ field$ get tail get
-	base$ field$ set
+	base$ field$ put
 	result$
 
-finish_digression_NULL:
+( th ) finish_digression_NULL
 		th$ cursor get prev get
-	th$ cursor set
+	th$ cursor put
 
-finish_digression_OBJECT:
+( th ) finish_digression_OBJECT
 
-bind_arg_SYMBOL:
+( formal_arg, actual_arg, arg_bindings ) bind_arg_SYMBOL
 		actual_arg$
-	arg_bindings$ formal_arg$ set
+	arg_bindings$ formal_arg$ put
 
-bind_arg_NULL:
+( formal_arg, actual_arg, arg_bindings ) bind_arg_NULL
 
-bind_args_NULL:
+( th, formal_args, arg_bindings ) bind_args_NULL
 	arg_bindings$
 
-bind_args_OBJECT:
+( th, formal_args, arg_bindings ) bind_args_OBJECT
 		th$ state_stack get tail get
-	th$ state_stack set
+	th$ state_stack put
 		formal_args$ head get
 		th$ value_stack pop
 		arg_bindings$
@@ -468,18 +482,18 @@ bind_args_OBJECT:
 		arg_bindings$
 	bind_args
 
-bound2_TAKE_FAILED:
+( obj, environment, probe ) bound2_TAKE_FAILED
 		obj$
 		environment$ outer get
 	bound
 
-bound2_OBJECT:
+( obj, environment, probe ) bound2_OBJECT
 	probe$
 
-bound_NULL:
+( obj, environment ) bound_NULL
 	obj$
 
-bound_OBJECT:
+( obj, environment ) bound_OBJECT
 		obj$
 		environment$
 			environment$ bindings get
@@ -488,13 +502,13 @@ bound_OBJECT:
 		take
 	bound2
 
-next_state2_TAKE_FAILED:
+( state, obj, probe ) next_state2_TAKE_FAILED
 	state$ obj$ tag get
 
-next_state2_OBJECT:
+( state, obj, probe ) next_state2_OBJECT
 	probe$
 
-next_state:
+( state, obj ) next_state
 		state$
 		obj$
 			state$
@@ -503,80 +517,144 @@ next_state:
 		take
 	next_state2
 
-do_action_PRIMITIVE: REPLACE WITH NATIVE
+( th, action, environment ) do_action_PRIMITIVE: REPLACE WITH NATIV
 
-do_action_MACRO:
+( th, action, environment ) do_action_MACRO
 			action$ script get
 			environment$
 			th$ cursor get
 		Digression
-	th$ cursor set
+	th$ cursor put
 
-perform_accept: FALSE
+( th ) perform_ACCEPT
+	FALSE
 
-perform_shift:
+( th ) perform_SHIFT
 			th$ cursor get tokens get
 			head
 			Eof
 		take
-	raw_token setlocal
+	raw_token putlocal
 		th$ cursor get tokens get tail get
-	th$ cursor get tokens set
+	th$ cursor get tokens put
 			raw_token
 			th$ cursor get environment get
 		bound
-	current_token setlocal
+	current_token putlocal
 			current_token$
 			th$.value_stack
 		Cons
-	th$ value_stack set
+	th$ value_stack put
 			th$ state_stack get head get
 			current_token$
 		next_state
-	new_state setlocal
+	new_state putlocal
 			new_state$
 			th$ state_stack get
 		Cons
-	th$ state_stack set
+	th$ state_stack put
 	TRUE
 
-perform_reduce0:
+( th ) perform_REDUCE0
 			th$ state_stack get head get action get
 			th$ cursor get environment get
 		bound
-	action setlocal
+	action putlocal
 	th$ finish_digression
 		action$ formal_args get
-	formal_args setlocal
+	formal_args putlocal
 		action$ environment get Environment
-	environment setlocal
+	environment putlocal
 		th$
 		action$
 		environment$
 	do_action
 	TRUE
 
-execute2_FALSE:
-execute2_TRUE:
+( th, probe ) execute2_FALSE
+
+( th, probe ) execute2_TRUE
 		th$ state_stack get head get tag
-	command setlocal
+	command putlocal
 		th$
 		command$ th$ perform
 	execute2
 
-execute:
+( procedure, environment ) execute
 		procedure$ script get
 		environment$
 		Eof
-	Digression digression setlocal
+	Digression digression putlocal
 		digression$
-		null
-		procedure$ dialect get null Cons
-	Thread th setlocal
+		Null
+		procedure$ dialect get Null Cons
+	Thread th putlocal
 		th$
 		TRUE
 	execute2
 
 """)
 
-print post_order
+# Sheppard builtins
+
+def define_builtins( bindings, global_scope ):
+	def digress( th, *values ):
+		th.cursor = DIGRESSION( List( values ), th.cursor.environment, th.cursor )
+
+	def bind( func, args ):
+		bindings[ func.func_name ] = PRIMITIVE( func, List( args ), global_scope )
+
+	def eat1( th ): pass
+	bind( eat1, [ 'th' ] )
+
+	def eat2( th ): pass
+	bind( eat2, [ 'th' ] )
+
+	def frame( th ):
+		digress( th, th.cursor.environment )
+	bind( frame, [ 'th' ] )
+
+	def get( th, base, field ):
+		digress( th, base[ field ] )
+	bind( frame, [ 'th', 'base', 'field' ] )
+
+	def take( th, base, field, default ):
+		digress( th, base.take( field, default ) )
+	bind( frame, [ 'th', 'base', 'field', 'default' ] )
+
+	def put( th, value, base, field ):
+		base, [ field ] = value
+	bind( put, [ 'th', 'value', 'base', 'field' ] )
+
+	def Null( th ): return null
+	bind( Null, [ 'th' ] )
+
+	def Eof( th ): return eof
+	bind( Eof, [ 'th' ] )
+
+	def Cons( th, **args ):
+		digress( th, LIST(**args) )
+	bind( Cons, [ 'th', 'head', 'tail' ] )
+
+	def Procedure( th, **args ):
+		digress( th, PROCEDURE( **args ) )
+	bind( Procedure, [ 'th', 'script', 'dialect', 'environment' ] )
+
+	def Digression( th, **args ):
+		digress( th, DIGRESSION( **args ) )
+	bind( Digression, [ 'th', 'tokens', 'environment', 'prev' ] )
+
+	def Thread( th, **args ):
+		digress( th, THREAD( **args ) )
+	bind( Thread, [ 'th', 'cursor', 'value_stack', 'state_stack' ] )
+
+global_scope = ENVIRONMENT( null )
+global_scope.bindings = bindings
+define_builtins( global_scope.bindings, global_scope )
+
+if 1:
+	for ( symbol, binding ) in sorted( global_scope.bindings ):
+		print "%s: %s" % ( symbol, binding )
+		#global_scope[ symbol ] = MACRO
+
+
