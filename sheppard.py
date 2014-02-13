@@ -1,125 +1,13 @@
 #! /usr/bin/python
 
 import string, re
-
-object_id = 0
-
-class Object:
-
-	def __init__( self, tag, **edges ):
-		global object_id
-		assert( tag.isupper() )
-		self._tag = tag
-		self._elements = {}
-		self._fields = sorted([ k for k in edges ]) # _fields can be adjusted if we want a particular field ordering
-		self._id = object_id
-		object_id = object_id+1
-		for ( name, value ) in edges.iteritems():
-			setattr( self, name, value )
-
-	def take( self, key, default ):
-		#debug( "--    %s.take( %s, %s )", repr(self), repr(key), repr(default) )
-		if is_symbol( key ) and key in self:
-			return self[ key ]
-		else:
-			return default
-
-	# Allow map syntax for convenience
-
-	def __getitem__( self, key ):
-		if isinstance( key, int ):
-			return self._elements[ key ]
-		else:
-			return getattr( self, key )
-
-	def __setitem__( self, key, value ):
-		if isinstance( key, int ):
-			self._elements[ key ] = value
-		else:
-			setattr( self, key, value )
-			if not key in self._fields:
-				self._fields.append( key )
-
-	def __contains__( self, key ):
-		try:
-			self[ key ]
-			return True
-		except:
-			return False
-
-	def __delitem__( self, key ):
-		if key in [ "_tag", "_elements", "_fields", "_id" ]:
-			raise KeyError # TODO: Use a Sheppard exception?
-		else:
-			delattr( self, key )
-			self._fields.remove( key )
-
-	def __iter__( self ): # Range over array (index,value) pairs; TODO: do normal fields too?
-		for key in self._fields:
-			yield ( key, getattr( self, key ) )
-		for key in self._elements.iterkeys():
-			yield ( key, self._elements[ key ] )
-
-	def __repr__( self ):
-		if self is null:
-			return "null"
-		else:
-			return "%s#%d" % ( self._tag, self._id )
-
-	def __str__( self ):
-		if self is null:
-			return "null"
-		else:
-			return repr( self ) + "{ " + string.join([ "%s:%s" % ( field, repr( self[field] ) ) for field in self._fields ], ', ') + " }"
-
-	def description( self, already_described=None ):
-		if already_described is None:
-			already_described = set()
-		if self is null:
-			return "null"
-		elif self in already_described:
-			return repr( self )
-		else:
-			already_described.add( self )
-			return repr( self ) + "{ " + string.join([ "%s:%s" % ( field, self._description( self[ field ], already_described ) ) for field in self._fields ], ', ') + " }"
-
-	def _description( self, value, already_described ):
-		if isinstance( value, Object ):
-			return value.description( already_described )
-		else:
-			return str( value )
-
-	# null and zero are false; all else are true
-
-	def __nonzero__( self ): return self != 0 and self != null
-
-class Null( Object ): # Just to make debugging messages more informative
-
-	def __init__( self ):
-		Object.__init__( self, "NULL" )
-
-def is_int( obj ):    return isinstance( obj, int ) # Sheppard integers are represented by Python ints
-def is_symbol( obj ): return isinstance( obj, str ) # Sheppard symbols are represented by Python strs
-
-def tag( obj ):
-	if is_int( obj ):
-		result = "INT"
-	elif is_symbol( obj ):
-		result = "SYMBOL"
-	else: # All other Sheppard objects are represented by instances of Object
-		result = obj._tag
-	assert( result.isupper() )
-	return result
-
-def is_a( obj, t ):
-	assert( t.isupper() )
-	return tag( obj ) == t # TODO: inheritance
+from sheppard_gen import generated_automaton
+from sheppard_object import *
 
 def popped( stack ):  return ( stack.head, stack.tail )
 
 # Object constructors
 
-null = Null()
 def LIST( head, tail ): return Object( "LIST", head=head, tail=tail, _fields=['head','tail'] )
 def List( items ):
 	if items:
@@ -128,7 +16,7 @@ def List( items ):
 		return null
 def Stack( items ):
 	if items:
-		return LIST( items[-1], List( items[:-1] ) )
+		return LIST( items[-1], Stack( items[:-1] ) )
 	else:
 		return null
 
@@ -177,6 +65,13 @@ def stack_str( stack ):
 #  so that's no big deal.
 #
 
+def take( obj, key, default ):
+	#debug( "--    %s.take( %s, %s )", repr(obj), repr(key), repr(default) )
+	if is_symbol( key ) and key in obj:
+		return obj[ key ]
+	else:
+		return default
+
 def pop( base, field ):
 	result = base[field].head
 	base[field] = base[field].tail
@@ -213,7 +108,7 @@ def bound( obj, environment ):
 		return obj
 	else:
 		#debug( "-- looking up %s in: %s", repr(obj), environment.bindings )
-		return bound2( obj, environment, environment.bindings.take( obj, take_failed ) )
+		return bound2( obj, environment, take( environment.bindings, obj, take_failed ) )
 
 def next_state2( state, obj, probe ):
 	if is_a( probe, "TAKE_FAILED" ): # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj] exists and state[ tag(obj) ] does not, we can't evaluate the latter
@@ -223,14 +118,14 @@ def next_state2( state, obj, probe ):
 
 def next_state( state, obj ):
 	# Note: this gives priority to SYMBOL over specific symbols, which might make keywords impossible.  We might want to rethink this.
-	return next_state2( state, obj, state.take( obj, take_failed ) )
+	return next_state2( state, obj, take( state, obj, take_failed ) )
 
 def do_action( th, action, environment ):
 	if is_a( action, "PRIMITIVE" ):
 		action.function( th, **dict( environment.bindings ) )
 	else:
 		th.cursor = DIGRESSION( action.script, environment, th.cursor )
-		debug( "    new_digression: %s", repr( th.cursor.description() ) )
+		debug( "    new_digression: %s", repr( th.cursor ) )
 
 def perform_accept( th ):
 	debug( "accept" )
@@ -239,7 +134,7 @@ def perform_accept( th ):
 def perform_shift( th ):
 	debug( "shift" )
 	debug( "  cursor: %s", repr( th.cursor ) )
-	raw_token = th.cursor.tokens.take( "head", eof )
+	raw_token = take( th.cursor.tokens, "head", eof )
 	th.cursor.tokens = th.cursor.tokens.tail
 	debug( "  token: %s", repr( raw_token ) )
 	current_token = bound( raw_token, th.cursor.environment )
@@ -271,6 +166,7 @@ perform = {
 def execute2( th, probe ):
 	if is_a( probe, "TRUE" ):
 		debug( "state_stack: %s", stack_str( th.state_stack ) )
+		debug( "value_stack: %s", stack_str( th.value_stack ) )
 		command = tag( th.state_stack.head )
 		execute2( th, perform[ command ]( th ) )
 
@@ -346,7 +242,7 @@ if 0:
 	x = LIST("first", null)
 	x = LIST("second", x)
 
-if 0:
+def go_world():
 	def primitive_hello( th, where ):
 		print "!! Called primitive_hello( %s )" % where
 
@@ -370,11 +266,16 @@ if 0:
 	debug( "Global scope: %s", global_scope )
 	debug( "  bindings: %s", global_scope.bindings )
 	debug( "  dialect: %s", dialect.description() )
-	execute( PROCEDURE(
+
+	return PROCEDURE(
 		Start_script().
 			go.world.
 		End_script(),
-		dialect, global_scope ), ENVIRONMENT( global_scope ) )
+		dialect, global_scope )
+
+if 0:
+	procedure = go_world()
+	execute( procedure, ENVIRONMENT( procedure.environment ) )
 
 if 0:
 	scripts = {
@@ -418,14 +319,19 @@ if 0:
 		}
 	print scripts
 
-def parse_macros( string ):
+if 0:
+	for ( symbol, binding ) in sorted( global_scope.bindings ):
+		print "%s: %s" % ( symbol, binding )
+		#global_scope[ symbol ] = MACRO
+
+def parse_macros( string, environment ):
 	# Start_script is still too cumbersome
 	result = Object("BINDINGS")
 	( name, args, script ) = ( None, None, [] )
 	def done( result, name, args, script ):
 		if name != None:
 			args.append( null ) # Automatically add a don't-care arg for the macro name
-			result[ name ] = MACRO( script, Stack( args ), null )
+			result[ name ] = MACRO( List( script ), Stack( args ), environment )
 	for word in re.findall( r'\w+|\$|\([^)]*\)', string.strip() ):
 		if word[0] == '(':
 			done( result, name, args, script )
@@ -433,12 +339,13 @@ def parse_macros( string ):
 			args = word[1:-1].split()
 			script = []
 		elif name == None:
-			name = word
+			name = "ACTION_" + word
 		else:
 			script.append( word )
 	done( result, name, args, script )
 	return result
 
+global_scope = ENVIRONMENT( null )
 bindings = parse_macros("""
 ( symbol ) $
 		frame
@@ -446,154 +353,154 @@ bindings = parse_macros("""
 	get
 
 ( value symbol ) putlocal 
-	value$ frame symbol$ put
+	value frame symbol put
 
 ( base field ) pop
-		base$ field$ get head get
+		base field get head get
 	result putlocal
-		base$ field$ get tail get
-	base$ field$ put
-	result$
+		base field get tail get
+	base field put
+	result
 
 ( th ) finish_digression_NULL
-		th$ cursor get prev get
-	th$ cursor put
+		th cursor get prev get
+	th cursor put
 
 ( th ) finish_digression_OBJECT
 
-( formal_arg, actual_arg, arg_bindings ) bind_arg_SYMBOL
-		actual_arg$
-	arg_bindings$ formal_arg$ put
+( formal_arg actual_arg arg_bindings ) bind_arg_SYMBOL
+		actual_arg
+	arg_bindings formal_arg put
 
-( formal_arg, actual_arg, arg_bindings ) bind_arg_NULL
+( formal_arg actual_arg arg_bindings ) bind_arg_NULL
 
-( th, formal_args, arg_bindings ) bind_args_NULL
-	arg_bindings$
+( th formal_args arg_bindings ) bind_args_NULL
+	arg_bindings
 
-( th, formal_args, arg_bindings ) bind_args_OBJECT
-		th$ state_stack get tail get
-	th$ state_stack put
-		formal_args$ head get
-		th$ value_stack pop
-		arg_bindings$
+( th formal_args arg_bindings ) bind_args_OBJECT
+		th state_stack get tail get
+	th state_stack put
+		formal_args head get
+		th value_stack pop
+		arg_bindings
 	bind_arg
-		th$
-		formal_args$ tail get
-		arg_bindings$
+		th
+		formal_args tail get
+		arg_bindings
 	bind_args
 
-( obj, environment, probe ) bound2_TAKE_FAILED
-		obj$
-		environment$ outer get
+( obj environment probe ) bound2_TAKE_FAILED
+		obj
+		environment outer get
 	bound
 
-( obj, environment, probe ) bound2_OBJECT
-	probe$
+( obj environment probe ) bound2_OBJECT
+	probe
 
-( obj, environment ) bound_NULL
-	obj$
+( obj environment ) bound_NULL
+	obj
 
-( obj, environment ) bound_OBJECT
-		obj$
-		environment$
-			environment$ bindings get
-			obj$
+( obj environment ) bound_OBJECT
+		obj
+		environment
+			environment bindings get
+			obj
 			take_failed
 		take
 	bound2
 
-( state, obj, probe ) next_state2_TAKE_FAILED
-	state$ obj$ tag get
+( state obj probe ) next_state2_TAKE_FAILED
+	state obj tag get
 
-( state, obj, probe ) next_state2_OBJECT
-	probe$
+( state obj probe ) next_state2_OBJECT
+	probe
 
-( state, obj ) next_state
-		state$
-		obj$
-			state$
-			obj$
+( state obj ) next_state
+		state
+		obj
+			state
+			obj
 			take_failed
 		take
 	next_state2
 
-( th, action, environment ) do_action_PRIMITIVE: REPLACE WITH NATIV
+( th action environment ) do_action_PRIMITIVE: REPLACE WITH NATIV
 
-( th, action, environment ) do_action_MACRO
-			action$ script get
-			environment$
-			th$ cursor get
+( th action environment ) do_action_MACRO
+			action script get
+			environment
+			th cursor get
 		Digression
-	th$ cursor put
+	th cursor put
 
 ( th ) perform_ACCEPT
 	FALSE
 
 ( th ) perform_SHIFT
-			th$ cursor get tokens get
+			th cursor get tokens get
 			head
 			Eof
 		take
 	raw_token putlocal
-		th$ cursor get tokens get tail get
-	th$ cursor get tokens put
+		th cursor get tokens get tail get
+	th cursor get tokens put
 			raw_token
-			th$ cursor get environment get
+			th cursor get environment get
 		bound
 	current_token putlocal
-			current_token$
-			th$.value_stack
+			current_token
+			th.value_stack
 		Cons
-	th$ value_stack put
-			th$ state_stack get head get
-			current_token$
+	th value_stack put
+			th state_stack get head get
+			current_token
 		next_state
 	new_state putlocal
-			new_state$
-			th$ state_stack get
+			new_state
+			th state_stack get
 		Cons
-	th$ state_stack put
+	th state_stack put
 	TRUE
 
 ( th ) perform_REDUCE0
-			th$ state_stack get head get action get
-			th$ cursor get environment get
+			th state_stack get head get action get
+			th cursor get environment get
 		bound
 	action putlocal
-	th$ finish_digression
-		action$ formal_args get
+	th finish_digression
+		action formal_args get
 	formal_args putlocal
-		action$ environment get Environment
+		action environment get Environment
 	environment putlocal
-		th$
-		action$
-		environment$
+		th
+		action
+		environment
 	do_action
 	TRUE
 
-( th, probe ) execute2_FALSE
+( th probe ) execute2_FALSE
 
-( th, probe ) execute2_TRUE
-		th$ state_stack get head get tag
+( th probe ) execute2_TRUE
+		th state_stack get head get tag
 	command putlocal
-		th$
-		command$ th$ perform
+		th
+		command th perform
 	execute2
 
-( procedure, environment ) execute
-		procedure$ script get
-		environment$
+( procedure environment ) execute
+		procedure script get
+		environment
 		Eof
 	Digression digression putlocal
-		digression$
+		digression
 		Null
-		procedure$ dialect get Null Cons
+		procedure dialect get Null Cons
 	Thread th putlocal
-		th$
+		th
 		TRUE
 	execute2
 
-""")
+""", global_scope )
 
 # Sheppard builtins
 
@@ -601,60 +508,59 @@ def define_builtins( bindings, global_scope ):
 	def digress( th, *values ):
 		th.cursor = DIGRESSION( List( values ), th.cursor.environment, th.cursor )
 
-	def bind( func, args ):
-		bindings[ func.func_name ] = PRIMITIVE( func, List( args ), global_scope )
+	def bind( func, *args ):
+		bindings[ "ACTION_" + func.func_name ] = PRIMITIVE( func, Stack( list( args ) + [null] ), global_scope )
 
 	def eat1( th ): pass
-	bind( eat1, [ 'th' ] )
+	bind( eat1 )
 
 	def eat2( th ): pass
-	bind( eat2, [ 'th' ] )
+	bind( eat2 )
 
 	def frame( th ):
 		digress( th, th.cursor.environment )
-	bind( frame, [ 'th' ] )
+	bind( frame )
 
 	def get( th, base, field ):
 		digress( th, base[ field ] )
-	bind( frame, [ 'th', 'base', 'field' ] )
+	bind( get, 'base', 'field' )
 
 	def take( th, base, field, default ):
-		digress( th, base.take( field, default ) )
-	bind( frame, [ 'th', 'base', 'field', 'default' ] )
+		digress( th, take( base, field, default ) )
+	bind( take, 'base', 'field', 'default' )
 
 	def put( th, value, base, field ):
 		base, [ field ] = value
-	bind( put, [ 'th', 'value', 'base', 'field' ] )
+	bind( put, 'value', 'base', 'field' )
 
 	def Null( th ): return null
-	bind( Null, [ 'th' ] )
+	bind( Null )
 
 	def Eof( th ): return eof
-	bind( Eof, [ 'th' ] )
+	bind( Eof )
 
 	def Cons( th, **args ):
 		digress( th, LIST(**args) )
-	bind( Cons, [ 'th', 'head', 'tail' ] )
+	bind( Cons, 'head', 'tail' )
 
 	def Procedure( th, **args ):
 		digress( th, PROCEDURE( **args ) )
-	bind( Procedure, [ 'th', 'script', 'dialect', 'environment' ] )
+	bind( Procedure, 'script', 'dialect', 'environment' )
 
 	def Digression( th, **args ):
 		digress( th, DIGRESSION( **args ) )
-	bind( Digression, [ 'th', 'tokens', 'environment', 'prev' ] )
+	bind( Digression, 'tokens', 'environment', 'prev' )
 
 	def Thread( th, **args ):
 		digress( th, THREAD( **args ) )
-	bind( Thread, [ 'th', 'cursor', 'value_stack', 'state_stack' ] )
+	bind( Thread, 'cursor', 'value_stack', 'state_stack' )
 
-global_scope = ENVIRONMENT( null )
 global_scope.bindings = bindings
+print "global_scope: " + str( global_scope )
+print "  bindings: " + str( global_scope.bindings )
 define_builtins( global_scope.bindings, global_scope )
 
 if 1:
-	for ( symbol, binding ) in sorted( global_scope.bindings ):
-		print "%s: %s" % ( symbol, binding )
-		#global_scope[ symbol ] = MACRO
-
-
+	inner_procedure = go_world()
+	outer_procedure = PROCEDURE( List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), "execute" ]), generated_automaton(), global_scope )
+	execute( outer_procedure, ENVIRONMENT( global_scope ) )

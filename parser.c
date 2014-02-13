@@ -1092,17 +1092,18 @@ static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 
 static char *LR0StatePythonNames[] =
 	{
-	"shift",
-	"reduce0",
-	"accept",
-	"srconflict",
-	"rrconflict",
+	"SHIFT",
+	"REDUCE0",
+	"ACCEPT",
+	"SRCONFLICT",
+	"RRCONFLICT",
 	};
 
 static int pg_sendPythonTo( ParserGenerator pg, File outFile )
 	{
-	int charsSent = fl_write( outFile, "\ndef generated_automaton():\n" );
 	int i;
+	int charsSent = fl_write( outFile, "\nfrom sheppard_object import *\n" );
+	charsSent += fl_write( outFile, "\ndef generated_automaton global_scope ():\n" );
 	charsSent += fl_write( outFile, "\t# States\n" );
 	CheckList states = cl_open( pg->heap );
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
@@ -1137,7 +1138,7 @@ static int pg_sendPythonTo( ParserGenerator pg, File outFile )
 				Production firstProduction = ita_element( pg->items, bv_firstBit( its->items ) )->pn;
 				charsSent += fl_write( outFile, "\t" );
 				charsSent += ob_sendTo( state, outFile, pg->heap );
-				charsSent += fl_write( outFile, ".action = '" );
+				charsSent += fl_write( outFile, ".action = 'ACTION_" );
 				charsSent += ob_sendTo( target, outFile, pg->heap );
 				charsSent += fl_write( outFile, "' # " );
 				charsSent += pn_sendTo( firstProduction, outFile, pg->gr, pg->st );
