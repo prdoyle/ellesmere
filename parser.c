@@ -269,13 +269,14 @@ static void pg_populateItemTable( ParserGenerator pg, File traceFile )
 			Item it = ita_nextElement( pg->items );
 			it->pn  = pn;
 			it->dot = j;
-			it->canonical = -2;
+			pn_sendItemTo( it->pn, it->dot, traceFile, gr, pg->st );
+			it->canonical = ita_elementIndex( pg->items, it );
 			if( USE_CANONICAL_ITEMS )
 				{
-				int c,e;
-				for ( c=0; c < ita_count( pg->items ); c++ )
+				int candidateIndex,e;
+				for ( candidateIndex=0; candidateIndex < it->canonical; candidateIndex++ )
 					{
-					Item candidate = ita_element( pg->items, c );
+					Item candidate = ita_element( pg->items, candidateIndex );
 					if ( // This could be overly conservative
 							pn_symbol( pn, gr ) == pn_symbol( candidate->pn, gr )
 						&& pn_length( pn, gr ) == pn_length( candidate->pn, gr )
@@ -292,17 +293,25 @@ static void pg_populateItemTable( ParserGenerator pg, File traceFile )
 							}
 						if ( candidate != NULL )
 							{
-							it->canonical = ita_elementIndex( pg->items, candidate );
+							it->canonical = candidateIndex;
 							break;
 							}
 						}
 					}
 				assert( it->canonical >= 0 );
+				if( it->canonical != ita_elementIndex( pg->items, it ) )
+					{
+					TRACE( traceFile, " # canonical: i%d\n", it->canonical );
+					break;
+					}
+				else
+					{
+					TRACE( traceFile, "\n" );
+					}
 				}
-			pn_sendItemTo( it->pn, it->dot, traceFile, gr, pg->st );
-			TRACE( traceFile, " # canonical: i%d\n", it->canonical );
 			}
-		bv_set( pg->rightmostItems, ita_count(pg->items) - 1 );
+		if( ita_last( pg->items, 0 )->dot == pn_length( pn, gr ) )
+			bv_set( pg->rightmostItems, ita_count(pg->items) - 1 );
 		}
 	ita_shrinkWrap( pg->items );
 	 bv_shrinkWrap( pg->rightmostItems );
@@ -371,7 +380,6 @@ static int pg_sendSymbolSideTableTo( ParserGenerator pg, File diagnostics )
 
 static void pg_populateSymbolSideTable( ParserGenerator pg, File traceFile )
 	{
-	int i,j;
 	MemoryLifetime ml = pg->generateTime;
 	Grammar gr = pg->gr;
 	SymbolTable st = pg->st;
@@ -380,38 +388,33 @@ static void pg_populateSymbolSideTable( ParserGenerator pg, File traceFile )
 	pg->sst = sst_new( 100, ml );
 	sst_incCount( pg->sst ); // sst index zero is used for "null" so skip that one
 	pg->nullableSymbols = bv_new( 100, ml );
-	itemIndex = 0;
-	for( i=0; i < gr_numProductions(gr); i++ )
+	for( itemIndex = 0; itemIndex < ita_count( pg->items ); itemIndex++ )
 		{
-		Production pn = gr_production( gr, i );
-		Symbol lhs = pn_lhs( pn, gr );
-		SymbolSideTableEntry entry = pg_sideTableEntry( pg, lhs, traceFile );
 		Item it = ita_element( pg->items, itemIndex );
-		if( !entry->leftmostItems )
-			entry->leftmostItems = bv_new( ita_count( pg->items ), ml );
-		assert( it->pn == pn && it->dot == 0 );
-		assert( pn_lhs( it->pn, gr ) == lhs );
-		bv_set( entry->leftmostItems, itemIndex );
-		for( j=0; j < pn_length( pn, gr ); j++ )
+		Production pn = it->pn;
+		Symbol lhs = pn_lhs( pn, gr );
+		SymbolSideTableEntry lhsEntry = pg_sideTableEntry( pg, lhs, traceFile );
+		if( !lhsEntry->leftmostItems )
+			lhsEntry->leftmostItems = bv_new( ita_count( pg->items ), ml );
+		if( it->dot == 0 )
+			bv_set( lhsEntry->leftmostItems, itemIndex );
+		if( it->dot < pn_length( pn, gr ) )
 			{
-			it = ita_element( pg->items, itemIndex );
-			entry = pg_sideTableEntry( pg, pn_token( it->pn, j, gr ), traceFile );
-			if( !entry->expectingItems )
-				entry->expectingItems = bv_new( ita_count( pg->items ), ml );
-			bv_set( entry->expectingItems, itemIndex );
-			itemIndex++;
+			SymbolSideTableEntry dotEntry = pg_sideTableEntry( pg, pn_token( it->pn, it->dot, gr ), traceFile );
+			if( !dotEntry->expectingItems )
+				dotEntry->expectingItems = bv_new( ita_count( pg->items ), ml );
+			bv_set( dotEntry->expectingItems, itemIndex );
 			}
-		if( j==0 )
+		if( pn_length( pn, gr ) == 0 )
 			bv_set( pg->nullableSymbols, pg_symbolSideTableIndex( pg, lhs ) );
-		itemIndex++; // Account for the item where j == pn_length
 		}
-	assert( itemIndex == gr_numItems( pg->gr ) );
 	sst_shrinkWrap( pg->sst );
 	bv_shrinkWrap( pg->nullableSymbols );
 
 	// Some more initialization now that we know how many side table entries there are
 	int numSymbols = sst_count( pg->sst );
 	BitVector stateNodeFields = bv_new( numSymbols, pg->generateTime );
+	int i;
 	for( i=1; i < numSymbols; i++ )
 		{
 		SymbolSideTableEntry sste = sst_element( pg->sst, i );
@@ -1103,7 +1106,7 @@ static int pg_sendPythonTo( ParserGenerator pg, File outFile )
 	{
 	int i;
 	int charsSent = fl_write( outFile, "\nfrom sheppard_object import *\n" );
-	charsSent += fl_write( outFile, "\ndef generated_automaton global_scope ():\n" );
+	charsSent += fl_write( outFile, "\ndef generated_automaton():\n" );
 	charsSent += fl_write( outFile, "\t# States\n" );
 	CheckList states = cl_open( pg->heap );
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
@@ -2526,44 +2529,44 @@ TestGrammarLine grammar_hello[] =
 
 SheppardGrammarLine grammar[] =
 	{
+	// Builtins
 	{{ "STATEMENTS",   "STATEMENTS",      "STATEMENT" },                                        "eat2" },
 	{{ "STATEMENTS",   "STATEMENT" },                                                           "eat1" },
-	{{ "FRAME",        "frame" }},
+	{{ "ENVIRONMENT",  "frame" }},
 	{{ "OBJECT",       "base:OBJECT",     "field:SYMBOL", "get" }}, // Syntactic sugar for "base field ERROR take"
-	{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:OBJECT", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
+	//{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:OBJECT", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
+	{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:TAKE_FAILED", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
+	{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:EOF",         "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
 	{{ "STATEMENT",    "value:OBJECT",    "base:OBJECT", "field:SYMBOL", "put" }}, // "set" is a python keyword which is awkward
 	{{ "NULL",         "Null" }},
-	{{ "FRAME",        "outer:FRAME",     "NewFrame" }},
+	{{ "ENVIRONMENT",  "outer:ENVIRONMENT", "Environment" }},
 	{{ "EOF",          "Eof" }}, // Digression that keeps returning EOF forever
 	{{ "LIST",         "head:OBJECT",     "tail:LIST", "Cons" }},
-	{{ "PROCEDURE",    "tokens:LIST",     "dialect:STATE", "Procedure" }},
-	{{ "DIGRESSION",   "tokens:LIST",     "bindings:FRAME", "prev:DIGRESSION", "Digression" }},
+	{{ "PROCEDURE",    "tokens:LIST",     "dialect:STATE", "environment:ENVIRONMENT", "Procedure" }},
+	{{ "DIGRESSION",   "tokens:LIST",     "bindings:ENVIRONMENT", "prev:DIGRESSION", "Digression" }},
 	{{ "THREAD",       "cursor:OBJECT",   "value_stack:LIST", "state_stack:LIST", "Thread" }},
-	{{ "STATEMENT",    "action:SHIFT",    "perform" },                                          "perform_shift" },
-	{{ "STATEMENT",    "action:REDUCE",   "perform" },                                          "perform_reduce" },
-	{{ "STATEMENT",    "action:ACCEPT",   "perform" },                                          "perform_accept" },
 	// Syntactic sugar
-	{{ "OBJECT",       "field:SYMBOL", "$" }}, // Syntactic sugar for "frame field get"
-	{{ "STATEMENT",    "symbol:SYMBOL", "putlocal" }},
+	{{ "STATEMENT",    "value:OBJECT", "symbol:SYMBOL", "bind" }},
+
 	// Procedures from the self-interpreter
 
 	{{ "OBJECT",       "base:OBJECT", "field:SYMBOL", "pop" }},
 
 	{{ "STATEMENT",    "th:THREAD", "remaining_tokens:NULL",   "finish_digression" },            "finish_digression_NULL" },
-	{{ "STATEMENT",    "th:THREAD", "remaining_tokens:OBJECT", "finish_digression" },            "finish_digression_NULL" },
+	{{ "STATEMENT",    "th:THREAD", "remaining_tokens:OBJECT", "finish_digression" },            "finish_digression_OBJECT" },
 
-	{{ "STATEMENT",    "formal_arg:SYMBOL", "actual_arg:OBJECT", "arg_bindings:OBJECT", "bind_arg" },   "bind_arg_SYMBOL" },
-	{{ "STATEMENT",    "formal_arg:NULL",   "actual_arg:OBJECT", "arg_bindings:OBJECT", "bind_arg" },   "bind_arg_NULL" },
-	{{ "STATEMENT",    "th:THREAD", "formal_args:OBJECT", "arg_bindings:OBJECT", "bind_args" },     "bind_args_OBJECT" },
-	{{ "STATEMENT",    "th:THREAD", "formal_args:NULL",   "arg_bindings:OBJECT", "bind_args" },     "bind_args_NULL" },
+	{{ "STATEMENT",    "formal_arg:SYMBOL", "actual_arg:OBJECT", "arg_bindings:BINDINGS", "bind_arg" },   "bind_arg_SYMBOL" },
+	{{ "STATEMENT",    "formal_arg:NULL",   "actual_arg:OBJECT", "arg_bindings:BINDINGS", "bind_arg" },   "bind_arg_NULL" },
+	{{ "STATEMENT",    "th:THREAD", "formal_args:NULL",   "arg_bindings:BINDINGS", "bind_args" },     "bind_args_NULL" },
+	{{ "STATEMENT",    "th:THREAD", "formal_args:OBJECT", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_OBJECT" },
 	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "probe:OBJECT",      "bound2" },     "bound2_OBJECT" },
 	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "probe:TAKE_FAILED", "bound2" },     "bound2_TAKE_FAILED" },
-	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "bound" },     "bound_OBJECT" },
 	{{ "OBJECT",       "obj:OBJECT", "environment:NULL",        "bound" },     "bound_NULL" },
+	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "bound" },     "bound_OBJECT" },
 
-	{{ "STATEMENT",    "state:OBJECT", "obj:OBJECT", "probe:OBJECT",      "next_state2"},  "next_state2_OBJECT" },
-	{{ "STATEMENT",    "state:OBJECT", "obj:OBJECT", "probe:TAKE_FAILED", "next_state2"},  "next_state2_TAKE_FAILED" },
-	{{ "STATEMENT",    "state:OBJECT", "obj:OBJECT", "next_state"}},
+	{{ "STATEMENT",    "state:STATE", "obj:OBJECT", "probe:STATE",      "next_state2"},  "next_state2_STATE" },
+	{{ "STATEMENT",    "state:STATE", "obj:OBJECT", "probe:TAKE_FAILED", "next_state2"},  "next_state2_TAKE_FAILED" },
+	{{ "STATEMENT",    "state:STATE", "obj:OBJECT", "next_state"}},
 
 	{{ "STATEMENT",    "th:THREAD", "action:PRIMITIVE", "environment:ENVIRONMENT", "do_action" }, "do_action_PRIMITIVE" },
 	{{ "STATEMENT",    "th:THREAD", "action:MACRO",     "environment:ENVIRONMENT", "do_action" }, "do_action_MACRO" },
@@ -2579,12 +2582,12 @@ SheppardGrammarLine grammar[] =
 
 static TestGrammarLine subtags[] =
 	{
-	{ "OBJECT",    "LIST", "PROCEDURE", "DIGRESSION", "FRAME", "SYMBOL" },
-	{ "LIST",      "NULL" },
-	{ "FRAME",     "NULL" },
-	{ "DIGRESSION","EOF" },
-	{ "STATE",     "SHIFT", "REDUCE", "ACCEPT" },
-	{ "BOOLEAN",   "FALSE", "TRUE" },
+	{ "OBJECT",      "LIST", "PROCEDURE", "DIGRESSION", "ENVIRONMENT", "BINDINGS", "SYMBOL", "STATE" },
+	{ "LIST",        "NULL" },
+	{ "ENVIRONMENT", "NULL" },
+	{ "DIGRESSION",  "EOF" },
+	{ "STATE",       "SHIFT", "REDUCE", "ACCEPT" },
+	{ "BOOLEAN",     "FALSE", "TRUE" },
 	};
 
 TestGrammarLine grammar_old2[] =
@@ -2720,13 +2723,16 @@ int main( int argc, char *argv[] )
 		pg = pg_new( gr, st, stateNodeTag, ml_begin( 10000, ml_indefinite() ), ml_indefinite(), theObjectHeap() );
 
 		pg_populateItemTable( pg, traceFile );
-		fl_write( traceFile, "Items:\n" );
-		for( i=0; i < ita_count( pg->items ); i++ )
+		if(0)
 			{
-			Item it = ita_element( pg->items, i );
-			fl_write( traceFile, "  %3d: ", i );
-			pn_sendItemTo( it->pn, it->dot, traceFile, gr, st );
-			fl_write( traceFile, "\n" );
+			fl_write( traceFile, "Items:\n" );
+			for( i=0; i < ita_count( pg->items ); i++ )
+				{
+				Item it = ita_element( pg->items, i );
+				fl_write( traceFile, "  %3d: ", i );
+				pn_sendItemTo( it->pn, it->dot, traceFile, gr, st );
+				fl_write( traceFile, "\n" );
+				}
 			}
 		fl_write( traceFile, "  rightmostItems: " );
 		bv_sendFormattedTo( pg->rightmostItems, traceFile, sendBitNumber, "i%d" );
