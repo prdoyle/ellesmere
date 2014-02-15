@@ -137,8 +137,10 @@ def perform_shift( th ):
 	raw_token = take( th.cursor.tokens, "head", eof )
 	th.cursor.tokens = th.cursor.tokens.tail
 	debug( "  token: %s", repr( raw_token ) )
+	debug( "    environment: %s", th.cursor.environment )
 	current_token = bound( raw_token, th.cursor.environment )
-	debug( "    value: %s", repr( current_token ) )
+	finish_digression( th )
+	debug( "    value: %s", current_token )
 	th.value_stack = LIST( current_token, th.value_stack )
 	new_state = next_state( th.state_stack.head, current_token )
 	debug( "  new_state: %s", repr( new_state ) )
@@ -146,10 +148,12 @@ def perform_shift( th ):
 	return true
 
 def perform_reduce0( th ):
-	debug( "reduce0" )
-	action = bound( th.state_stack.head.action, th.cursor.environment )
+	debug( "-- reduce0 --" )
+	#debug( "stack: %s", zip( python_list( th.state_stack ), python_list( th.value_stack ) ) )
+	action = bound( th.state_stack.head.action, th.reduce_environment )
 	debug( "  action: %s", repr( action ) )
-	finish_digression( th )
+	if is_a( action, "MACRO" ):
+		debug( "    %s", python_list( action.script ) )
 	formal_args = action.formal_args
 	environment = ENVIRONMENT( action.environment )
 	bind_args( th, formal_args, environment.bindings )
@@ -164,15 +168,19 @@ perform = {
 	}
 
 def execute2( th, probe ):
-	if is_a( probe, "TRUE" ):
-		debug( "state_stack: %s", stack_str( th.state_stack ) )
-		debug( "value_stack: %s", stack_str( th.value_stack ) )
+	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
+	while is_a( probe, "TRUE" ):
+		debug( "stack: %s", zip( python_list( th.state_stack ), python_list( th.value_stack ) ) )
+		#debug( "state_stack: %s", stack_str( th.state_stack ) )
+		#debug( "value_stack: %s", stack_str( th.value_stack ) )
 		command = tag( th.state_stack.head )
-		execute2( th, perform[ command ]( th ) )
+		#execute2( th, perform[ command ]( th ) )
+		probe = perform[ command ]( th )
 
 def execute( procedure, environment ):
 	digression = DIGRESSION( procedure.script, environment, eof )
 	th = THREAD( digression, null, LIST( procedure.dialect, null ) )
+	th.reduce_environment = environment # TODO: This should be in the constructor
 	debug( "starting thread: %s with digression:\n\t%s", repr(th), digression )
 	execute2( th, true )
 
@@ -195,6 +203,11 @@ def execute( procedure, environment ):
 # the global_scope anyway.  Once I work out how to bind reduce actions, it
 # would probably be better and cleaner to finish_digression as soon as that
 # digression's last token has been bound.
+#
+# WORSE PROBLEM: what happens if the digressions ends without doing a reduce?
+# Then we need to finish the digression, but if we're only doing that at reduce
+# actions, then it never happens.  I really need to figure out how to bind
+# reduce actions, and I don't think I can do it using digressions at all.
 
 def Shift( **edges ): return Object( "SHIFT", **edges )
 def Reduce0( action ): return Object( "REDUCE0", action=action )
@@ -347,26 +360,23 @@ def parse_macros( string, environment ):
 
 global_scope = ENVIRONMENT( null )
 bindings = parse_macros("""
-( symbol ) $
-		frame
-		frame symbol get
-	get
-
-( value symbol ) putlocal 
-	value frame symbol put
+( value symbol ) bind 
+		value
+		frame bindings get
+	symbol put
 
 ( base field ) pop
 		base field get head get
-	result putlocal
+	result bind
 		base field get tail get
 	base field put
 	result
 
-( th ) finish_digression_NULL
+( th remaining_tokens ) finish_digression_NULL
 		th cursor get prev get
 	th cursor put
 
-( th ) finish_digression_OBJECT
+( th remaining_tokens ) finish_digression_OBJECT
 
 ( formal_arg actual_arg arg_bindings ) bind_arg_SYMBOL
 		actual_arg
@@ -389,13 +399,13 @@ bindings = parse_macros("""
 		arg_bindings
 	bind_args
 
+( obj environment probe ) bound2_OBJECT
+	probe
+
 ( obj environment probe ) bound2_TAKE_FAILED
 		obj
 		environment outer get
 	bound
-
-( obj environment probe ) bound2_OBJECT
-	probe
 
 ( obj environment ) bound_NULL
 	obj
@@ -412,7 +422,7 @@ bindings = parse_macros("""
 ( state obj probe ) next_state2_TAKE_FAILED
 	state obj tag get
 
-( state obj probe ) next_state2_OBJECT
+( state obj probe ) next_state2_STATE
 	probe
 
 ( state obj ) next_state
@@ -423,8 +433,6 @@ bindings = parse_macros("""
 			take_failed
 		take
 	next_state2
-
-( th action environment ) do_action_PRIMITIVE: REPLACE WITH NATIV
 
 ( th action environment ) do_action_MACRO
 			action script get
@@ -441,13 +449,14 @@ bindings = parse_macros("""
 			head
 			Eof
 		take
-	raw_token putlocal
+	raw_token bind
 		th cursor get tokens get tail get
 	th cursor get tokens put
 			raw_token
 			th cursor get environment get
 		bound
-	current_token putlocal
+	current_token bind
+	th finish_digression
 			current_token
 			th.value_stack
 		Cons
@@ -455,7 +464,7 @@ bindings = parse_macros("""
 			th state_stack get head get
 			current_token
 		next_state
-	new_state putlocal
+	new_state bind
 			new_state
 			th state_stack get
 		Cons
@@ -464,14 +473,13 @@ bindings = parse_macros("""
 
 ( th ) perform_REDUCE0
 			th state_stack get head get action get
-			th cursor get environment get
+			th reduce_environment get
 		bound
-	action putlocal
-	th finish_digression
+	action bind
 		action formal_args get
-	formal_args putlocal
+	formal_args bind
 		action environment get Environment
-	environment putlocal
+	environment bind
 		th
 		action
 		environment
@@ -482,7 +490,7 @@ bindings = parse_macros("""
 
 ( th probe ) execute2_TRUE
 		th state_stack get head get tag
-	command putlocal
+	command bind
 		th
 		command th perform
 	execute2
@@ -491,11 +499,12 @@ bindings = parse_macros("""
 		procedure script get
 		environment
 		Eof
-	Digression digression putlocal
+	Digression digression bind
 		digression
 		Null
 		procedure dialect get Null Cons
-	Thread th putlocal
+	th environment reduce_environment put
+	Thread th bind
 		th
 		TRUE
 	execute2
@@ -530,13 +539,15 @@ def define_builtins( bindings, global_scope ):
 	bind( take, 'base', 'field', 'default' )
 
 	def put( th, value, base, field ):
-		base, [ field ] = value
+		base[ field ] = value
 	bind( put, 'value', 'base', 'field' )
 
-	def Null( th ): return null
+	def Null( th ):
+		digress( th, null )
 	bind( Null )
 
-	def Eof( th ): return eof
+	def Eof( th ):
+		digress( th, eof )
 	bind( Eof )
 
 	def Cons( th, **args ):
@@ -555,12 +566,23 @@ def define_builtins( bindings, global_scope ):
 		digress( th, THREAD( **args ) )
 	bind( Thread, 'cursor', 'value_stack', 'state_stack' )
 
+	def Environment( th, **args ):
+		digress( th, ENVIRONMENT( **args ) )
+	bind( Thread, 'outer' )
+
+	def do_action_PRIMITIVE( th, **args ):
+		print "Huh?? What do I do for do_action_PRIMITIVE?"
+	bind( Thread, 'th', 'action', 'environment' )
+
 global_scope.bindings = bindings
 print "global_scope: " + str( global_scope )
 print "  bindings: " + str( global_scope.bindings )
 define_builtins( global_scope.bindings, global_scope )
+dialect = generated_automaton()
+print "  dialect:\n" + dialect.description()
+print "\n===================\n"
 
 if 1:
 	inner_procedure = go_world()
-	outer_procedure = PROCEDURE( List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), "execute" ]), generated_automaton(), global_scope )
+	outer_procedure = PROCEDURE( List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), "execute" ]), dialect, global_scope )
 	execute( outer_procedure, ENVIRONMENT( global_scope ) )

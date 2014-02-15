@@ -53,6 +53,8 @@ class Object:
 			yield ( key, self._elements[ key ] )
 
 	def __repr__( self ):
+		if is_a( self, "ENVIRONMENT" ):
+			return "%s#%d{ %s }" % ( self._tag, self._id, repr( self.outer ) )
 		if self is null:
 			return "null"
 		else:
@@ -64,7 +66,7 @@ class Object:
 		else:
 			return repr( self ) + "{ " + string.join([ "%s:%s" % ( field, repr( self[field] ) ) for field in self._fields ], ', ') + " }"
 
-	def description( self, already_described=None ):
+	def description( self, already_described=None, indent=1 ):
 		if already_described is None:
 			already_described = set()
 		if self is null:
@@ -73,11 +75,12 @@ class Object:
 			return repr( self )
 		else:
 			already_described.add( self )
-			return repr( self ) + "{ " + string.join([ "%s:%s" % ( field, self._description( self[ field ], already_described ) ) for field in self._fields ], ', ') + " }"
+			indent_str = " |" * indent
+			return repr( self ) + "{" + string.join([ "\n%s%s:%s" % ( indent_str, field, self._description( self[ field ], already_described, indent+1 ) ) for field in self._fields ], ',' ) + " }"
 
-	def _description( self, value, already_described ):
+	def _description( self, value, already_described, indent ):
 		if isinstance( value, Object ):
-			return value.description( already_described )
+			return value.description( already_described, indent )
 		else:
 			return str( value )
 
