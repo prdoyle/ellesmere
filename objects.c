@@ -592,7 +592,7 @@ FUNC int ob_sendTo( Object ob, File fl, ObjectHeap heap )
 				}
 			default:
 				{
-				charsSent += fl_write( fl, "%s_x%x", sy_name( ob_tag(ob,heap), heap->st ), ob->checkListIndex );
+				charsSent += fl_write( fl, "%s_q%d", sy_name( ob_tag(ob,heap), heap->st ), ob->checkListIndex );
 				break;
 				}
 			}
@@ -727,6 +727,40 @@ FUNC int ob_sendDotEdgesTo( Object ob, File fl, ObjectHeap heap )
 	int result = sendDotEdgesTo( ob, fl, heap, cl );
 	cl_close( cl );
 	return result;
+	}
+
+FUNC int sy_sendHeaderTo( Symbol sy, File fl, ObjectHeap heap )
+	{
+	int charsSent = 0;
+	SymbolTable st = heap->st;
+	Record shape = sy_instanceShape( sy, heap );
+	if( shape )
+		{
+		int fieldIndex;
+		for( fieldIndex = rd_firstField(shape); fieldIndex != rd_NONE; fieldIndex = rd_nextField( shape, fieldIndex ) )
+			{
+			Symbol sy = sy_byIndex( fieldIndex, st );
+			charsSent += fl_write( fl, "\t%s", sy_name( sy, st ) );
+			}
+		}
+	return charsSent + fl_write( fl, "\n" );
+	}
+
+FUNC int ob_sendRowTo( Object ob, File fl, ObjectHeap heap )
+	{
+	int charsSent = ob_sendTo( ob, fl, heap );
+	Record shape = sy_instanceShape( ob_tag( ob, heap ), heap );
+	if( shape )
+		{
+		int fieldIndex;
+		for( fieldIndex = rd_firstField(shape); fieldIndex != rd_NONE; fieldIndex = rd_nextField( shape, fieldIndex ) )
+			{
+			charsSent += fl_write( fl, "\t" );
+			charsSent += ob_sendTo( ob_getFieldX( ob, fieldIndex, heap ), fl, heap );
+			}
+		}
+	// TODO: Print additional fields that aren't in the instance shape
+	return charsSent + fl_write( fl, "\n" );
 	}
 
 static SymbolDescriptor sy_descriptor( Symbol sy, ObjectHeap heap )

@@ -24,16 +24,19 @@ def ENVIRONMENT( outer, **bindings ): return Object( "ENVIRONMENT", outer=outer,
 
 def DIGRESSION( tokens, environment, prev ): return Object( "DIGRESSION", tokens=tokens, environment=environment, prev=prev )
 
-def Eof():
+def Eof(): return Object( "EOF" )
+
+def Nothing():
 	# An endless stack of digressions each returning an endless stream of EOFs
-	result = Object( "EOF", environment=ENVIRONMENT(null) )
-	endless_eof = LIST( result, null )
+	result = Object( "NOTHING", environment=ENVIRONMENT(null) )
+	endless_eof = LIST( Eof(), null )
 	endless_eof.tail = endless_eof
 	result.tokens = endless_eof
 	result.prev   = result
 	return result
 
 eof = Eof()
+nothing = Nothing()
 false = Object( "FALSE" )
 true  = Object( "TRUE" )
 take_failed = Object( "TAKE_FAILED" )
@@ -122,6 +125,7 @@ def next_state( state, obj ):
 
 def do_action( th, action, environment ):
 	if is_a( action, "PRIMITIVE" ):
+		debug( "  Primitive bindings: %s", dict( environment.bindings ) )
 		action.function( th, **dict( environment.bindings ) )
 	else:
 		th.cursor = DIGRESSION( action.script, environment, th.cursor )
@@ -132,18 +136,18 @@ def perform_accept( th ):
 	return false
 
 def perform_shift( th ):
-	debug( "shift" )
-	debug( "  cursor: %s", repr( th.cursor ) )
+	#debug( "shift" )
+	#debug( "  cursor: %s", repr( th.cursor ) )
 	raw_token = take( th.cursor.tokens, "head", eof )
 	th.cursor.tokens = th.cursor.tokens.tail
-	debug( "  token: %s", repr( raw_token ) )
-	debug( "    environment: %s", th.cursor.environment )
+	#debug( "  token: %s", repr( raw_token ) )
+	#debug( "    environment: %s", th.cursor.environment )
 	current_token = bound( raw_token, th.cursor.environment )
 	finish_digression( th )
-	debug( "    value: %s", current_token )
+	#debug( "    value: %s", current_token )
 	th.value_stack = LIST( current_token, th.value_stack )
 	new_state = next_state( th.state_stack.head, current_token )
-	debug( "  new_state: %s", repr( new_state ) )
+	#debug( "  new_state: %s", repr( new_state ) )
 	th.state_stack = LIST( new_state, th.state_stack )
 	return true
 
@@ -155,7 +159,8 @@ def perform_reduce0( th ):
 	if is_a( action, "MACRO" ):
 		debug( "    %s", python_list( action.script ) )
 	formal_args = action.formal_args
-	environment = ENVIRONMENT( action.environment )
+	#environment = ENVIRONMENT( action.environment )  # More appropriate for a procedure call than a macro
+	environment = ENVIRONMENT( th.cursor.environment )  # Need this in order to make "put" a macro, or else I can't access the environment I'm trying to bind
 	bind_args( th, formal_args, environment.bindings )
 	debug( "  environment: %s", environment )
 	do_action( th, action, environment )
@@ -167,18 +172,26 @@ perform = {
 	"REDUCE0": perform_reduce0,
 	}
 
+def cursor_description( cursor ):
+	if cursor == nothing:
+		return ""
+	else:
+		return string.join( [ repr(x) for x in python_list( cursor.tokens ) ], " " ) + " | " + cursor_description( cursor.prev )
+
 def execute2( th, probe ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
 	while is_a( probe, "TRUE" ):
-		debug( "stack: %s", zip( python_list( th.state_stack ), python_list( th.value_stack ) ) )
-		#debug( "state_stack: %s", stack_str( th.state_stack ) )
-		#debug( "value_stack: %s", stack_str( th.value_stack ) )
+		debug( "-------execute2 loop---------" )
+		#debug( "stack: %s", zip( python_list( th.state_stack ), python_list( th.value_stack ) ) )
+		debug( "state_stack: %s", stack_str( th.state_stack ) )
+		debug( "value_stack: %s", stack_str( th.value_stack ) )
+		debug( "cursor: %s", cursor_description( th.cursor ) )
 		command = tag( th.state_stack.head )
 		#execute2( th, perform[ command ]( th ) )
 		probe = perform[ command ]( th )
 
 def execute( procedure, environment ):
-	digression = DIGRESSION( procedure.script, environment, eof )
+	digression = DIGRESSION( procedure.script, environment, nothing )
 	th = THREAD( digression, null, LIST( procedure.dialect, null ) )
 	th.reduce_environment = environment # TODO: This should be in the constructor
 	debug( "starting thread: %s with digression:\n\t%s", repr(th), digression )
@@ -362,7 +375,7 @@ global_scope = ENVIRONMENT( null )
 bindings = parse_macros("""
 ( value symbol ) bind 
 		value
-		frame bindings get
+		frame outer get bindings get
 	symbol put
 
 ( base field ) pop
@@ -478,7 +491,7 @@ bindings = parse_macros("""
 	action bind
 		action formal_args get
 	formal_args bind
-		action environment get Environment
+		th cursor get environment get Environment
 	environment bind
 		th
 		action
@@ -498,13 +511,13 @@ bindings = parse_macros("""
 ( procedure environment ) execute
 		procedure script get
 		environment
-		Eof
+		Nothing
 	Digression digression bind
 		digression
 		Null
 		procedure dialect get Null Cons
-	th environment reduce_environment put
 	Thread th bind
+	th environment reduce_environment put
 		th
 		TRUE
 	execute2
@@ -519,6 +532,7 @@ def define_builtins( bindings, global_scope ):
 
 	def bind( func, *args ):
 		bindings[ "ACTION_" + func.func_name ] = PRIMITIVE( func, Stack( list( args ) + [null] ), global_scope )
+		debug( "Binding primitive: %s %s", func.func_name, list(args) )
 
 	def eat1( th ): pass
 	bind( eat1 )
@@ -550,6 +564,10 @@ def define_builtins( bindings, global_scope ):
 		digress( th, eof )
 	bind( Eof )
 
+	def Nothing( th ):
+		digress( th, nothing )
+	bind( Nothing )
+
 	def Cons( th, **args ):
 		digress( th, LIST(**args) )
 	bind( Cons, 'head', 'tail' )
@@ -568,18 +586,18 @@ def define_builtins( bindings, global_scope ):
 
 	def Environment( th, **args ):
 		digress( th, ENVIRONMENT( **args ) )
-	bind( Thread, 'outer' )
+	bind( Environment, 'outer' )
 
 	def do_action_PRIMITIVE( th, **args ):
 		print "Huh?? What do I do for do_action_PRIMITIVE?"
-	bind( Thread, 'th', 'action', 'environment' )
+	bind( do_action_PRIMITIVE, 'th', 'action', 'environment' )
 
 global_scope.bindings = bindings
 print "global_scope: " + str( global_scope )
-print "  bindings: " + str( global_scope.bindings )
 define_builtins( global_scope.bindings, global_scope )
+print "  bindings: " + str( global_scope.bindings )
 dialect = generated_automaton()
-print "  dialect:\n" + dialect.description()
+#print "  dialect:\n" + dialect.description()
 print "\n===================\n"
 
 if 1:

@@ -53,10 +53,14 @@ class Object:
 			yield ( key, self._elements[ key ] )
 
 	def __repr__( self ):
-		if is_a( self, "ENVIRONMENT" ):
-			return "%s#%d{ %s }" % ( self._tag, self._id, repr( self.outer ) )
+		try:
+			return self._name
+		except AttributeError:
+			pass
 		if self is null:
 			return "null"
+#		elif is_a( self, "ENVIRONMENT" ):
+#			return "%s#%d{ %s }" % ( self._tag, self._id, repr( self.outer ) )
 		else:
 			return "%s#%d" % ( self._tag, self._id )
 

@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 
-#define INCLUDE_ITEMS_IN_DOT_NODES (1)
+#define INCLUDE_ITEMS_IN_DOT_NODES (0)
 
 #define ITEM_STATE_PREFIX "state"
 
@@ -1116,7 +1116,11 @@ static int pg_sendPythonTo( ParserGenerator pg, File outFile )
 		cl_check( states, state );
 		charsSent += fl_write( outFile, "\t" );
 		charsSent += ob_sendTo( state, outFile, pg->heap );
-		charsSent += fl_write( outFile, " = Object( '%s' )\n", LR0StatePythonNames[ its_LR0StateKind( its, pg ) ] );
+		charsSent += fl_write( outFile, " = Object( '%s' ); ", LR0StatePythonNames[ its_LR0StateKind( its, pg ) ] );
+		charsSent += ob_sendTo( state, outFile, pg->heap );
+		charsSent += fl_write( outFile, "._name = '" );
+		charsSent += ob_sendTo( state, outFile, pg->heap );
+		charsSent += fl_write( outFile, "'\n" );
 		}
 	charsSent += fl_write( outFile, "\n\t# Edges\n" );
 	MemoryLifetime ml = ml_begin( 20, ml_undecided() );
@@ -1162,6 +1166,19 @@ static int pg_sendPythonTo( ParserGenerator pg, File outFile )
 	charsSent += ob_sendTo( itst_element( pg->itemSets, 0 )->stateNode, outFile, pg->heap );
 	charsSent += fl_write( outFile, "\n\n" );
 	ml_end( ml );
+	return charsSent;
+	}
+
+static int pg_sendTableTo( ParserGenerator pg, File outFile )
+	{
+	int i;
+	int charsSent = sy_sendHeaderTo( pg->stateNodeTag, outFile, pg->heap );
+	for( i=0; i < itst_count( pg->itemSets ); i++ )
+		{
+		ItemSet its = itst_element( pg->itemSets, i );
+		Object state = its->stateNode;
+		charsSent += ob_sendRowTo( state, outFile, pg->heap );
+		}
 	return charsSent;
 	}
 
@@ -2540,7 +2557,8 @@ SheppardGrammarLine grammar[] =
 	{{ "STATEMENT",    "value:OBJECT",    "base:OBJECT", "field:SYMBOL", "put" }}, // "set" is a python keyword which is awkward
 	{{ "NULL",         "Null" }},
 	{{ "ENVIRONMENT",  "outer:ENVIRONMENT", "Environment" }},
-	{{ "EOF",          "Eof" }}, // Digression that keeps returning EOF forever
+	{{ "EOF",          "Eof" }},
+	{{ "NOTHING",      "Nothing" }}, // Digression that keeps returning EOF forever
 	{{ "LIST",         "head:OBJECT",     "tail:LIST", "Cons" }},
 	{{ "PROCEDURE",    "tokens:LIST",     "dialect:STATE", "environment:ENVIRONMENT", "Procedure" }},
 	{{ "DIGRESSION",   "tokens:LIST",     "bindings:ENVIRONMENT", "prev:DIGRESSION", "Digression" }},
@@ -2585,7 +2603,7 @@ static TestGrammarLine subtags[] =
 	{ "OBJECT",      "LIST", "PROCEDURE", "DIGRESSION", "ENVIRONMENT", "BINDINGS", "SYMBOL", "STATE" },
 	{ "LIST",        "NULL" },
 	{ "ENVIRONMENT", "NULL" },
-	{ "DIGRESSION",  "EOF" },
+	{ "DIGRESSION",  "NOTHING" },
 	{ "STATE",       "SHIFT", "REDUCE", "ACCEPT" },
 	{ "BOOLEAN",     "FALSE", "TRUE" },
 	};
@@ -2789,8 +2807,12 @@ int main( int argc, char *argv[] )
 		pg_computeReduceActions( pg, traceFile, traceFile );
 		ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
 
-		//pg_sendDotTo( pg, outFile );
-		pg_sendPythonTo( pg, outFile );
+		if( 0 )
+			pg_sendDotTo( pg, outFile );
+		else if( 1 )
+			pg_sendPythonTo( pg, outFile );
+		else
+			pg_sendTableTo( pg, outFile );
 		}
 
 	Automaton au = au_new( gr, st, heap, ml_indefinite(), NULL, traceFile, traceFile );

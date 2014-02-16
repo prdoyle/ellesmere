@@ -71,6 +71,11 @@ typedef struct oba_struct *ObjectArray;
 	#define oba_new( capacity, ml ) oba_newAnnotated( capacity, ml, __FILE__, __LINE__ )
 #endif
 
+// Tabular printing
+
+FUNC int sy_sendHeaderTo   ( Symbol sy, File fl, ObjectHeap heap );
+FUNC int ob_sendRowTo      ( Object ob, File fl, ObjectHeap heap );
+
 // Primitive types
 
 FUNC Object      ob_fromInt( int value, ObjectHeap heap );
