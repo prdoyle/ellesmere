@@ -2555,6 +2555,7 @@ SheppardGrammarLine grammar[] =
 	{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:TAKE_FAILED", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
 	{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:EOF",         "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
 	{{ "STATEMENT",    "value:OBJECT",    "base:OBJECT", "field:SYMBOL", "put" }}, // "set" is a python keyword which is awkward
+	{{ "SYMBOL",       "obj:OBJECT", "tag" }},
 	{{ "NULL",         "Null" }},
 	{{ "ENVIRONMENT",  "outer:ENVIRONMENT", "Environment" }},
 	{{ "EOF",          "Eof" }},
@@ -2600,7 +2601,7 @@ SheppardGrammarLine grammar[] =
 
 static TestGrammarLine subtags[] =
 	{
-	{ "OBJECT",      "LIST", "PROCEDURE", "DIGRESSION", "ENVIRONMENT", "BINDINGS", "SYMBOL", "STATE" },
+	{ "OBJECT",      "LIST", "PROCEDURE", "DIGRESSION", "ENVIRONMENT", "BINDINGS", "SYMBOL", "STATE", "THREAD" },
 	{ "LIST",        "NULL" },
 	{ "ENVIRONMENT", "NULL" },
 	{ "DIGRESSION",  "NOTHING" },

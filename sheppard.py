@@ -454,10 +454,10 @@ bindings = parse_macros("""
 		Digression
 	th cursor put
 
-( th ) perform_ACCEPT
+( th state ) perform_ACCEPT
 	FALSE
 
-( th ) perform_SHIFT
+( th state ) perform_SHIFT
 			th cursor get tokens get
 			head
 			Eof
@@ -484,7 +484,7 @@ bindings = parse_macros("""
 	th state_stack put
 	TRUE
 
-( th ) perform_REDUCE0
+( th state ) perform_REDUCE0
 			th state_stack get head get action get
 			th reduce_environment get
 		bound
@@ -505,7 +505,7 @@ bindings = parse_macros("""
 		th state_stack get head get tag
 	command bind
 		th
-		command th perform
+		th command perform
 	execute2
 
 ( procedure environment ) execute
@@ -530,9 +530,12 @@ def define_builtins( bindings, global_scope ):
 	def digress( th, *values ):
 		th.cursor = DIGRESSION( List( values ), th.cursor.environment, th.cursor )
 
+	def bind_with_name( func, name, *args ):
+		bindings[ "ACTION_" + name ] = PRIMITIVE( func, Stack( list( args ) + [null] ), global_scope )
+		debug( "Binding primitive: %s %s", name, list(args) )
+
 	def bind( func, *args ):
-		bindings[ "ACTION_" + func.func_name ] = PRIMITIVE( func, Stack( list( args ) + [null] ), global_scope )
-		debug( "Binding primitive: %s %s", func.func_name, list(args) )
+		bind_with_name( func, func.func_name, *args )
 
 	def eat1( th ): pass
 	bind( eat1 )
@@ -544,13 +547,17 @@ def define_builtins( bindings, global_scope ):
 		digress( th, th.cursor.environment )
 	bind( frame )
 
+	def get_tag( th, obj ):
+		digress( th, tag(obj) )
+	bind_with_name( get_tag, "tag", 'obj' )
+
 	def get( th, base, field ):
 		digress( th, base[ field ] )
 	bind( get, 'base', 'field' )
 
-	def take( th, base, field, default ):
+	def do_take( th, base, field, default ):
 		digress( th, take( base, field, default ) )
-	bind( take, 'base', 'field', 'default' )
+	bind_with_name( do_take, "take", 'base', 'field', 'default' )
 
 	def put( th, value, base, field ):
 		base[ field ] = value
