@@ -677,9 +677,10 @@ static int sendDotEdgeTo( Object ob, Symbol sy, Object value, ObjectHeap heap, F
 	int charsSent = 0;
 	if( ob_hasFields( value ) )
 		{
-		charsSent += fl_write( fl,
-			"n%p -> n%p [label=\"%s\"]\n",
-			ob, value, sy_name( sy, heap->st ) );
+		charsSent += ob_sendTo( ob, fl, heap );
+		charsSent += fl_write( fl, " -> " );
+		charsSent += ob_sendTo( value, fl, heap );
+		charsSent += fl_write( fl, " [label=\"%s\"]\n", sy_name( sy, heap->st ) );
 		charsSent += sendDotEdgesTo( value, fl, heap, cl );
 		}
 #if 0
@@ -704,6 +705,8 @@ static int sendDotEdgesTo( Object ob, File fl, ObjectHeap heap, CheckList cl )
 		if( ob_hasFields( ob ) )
 			{
 			Record rd = sy_instanceShape( ob_tag(ob,heap), heap );
+			if( rd )
+				fl_write( fl, "// record fields for n%p begin here\n", ob );
 			for( fieldID = rd_firstField(rd); fieldID != rd_NONE; fieldID = rd_nextField( rd, fieldID ) )
 				{
 				Symbol sy = sy_byIndex( fieldID, heap->st );

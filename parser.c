@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 
-#define INCLUDE_ITEMS_IN_DOT_NODES (0)
+#define INCLUDE_ITEMS_IN_DOT_NODES (1)
 
 #define ITEM_STATE_PREFIX "state"
 
@@ -1072,7 +1072,8 @@ static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
 		{
 		ItemSet its = itst_element( pg->itemSets, i );
-		charsSent += fl_write( dotFile, "n%p [label=\"%d %s\\n", its->stateNode, i, LR0StateKindNames[ its_LR0StateKind( its, pg ) ] );
+		charsSent += ob_sendTo( its->stateNode, dotFile, pg->heap );
+		charsSent += fl_write( dotFile, "[label=\"%d %s\\n", i, LR0StateKindNames[ its_LR0StateKind( its, pg ) ] );
 #ifdef REDUCE_CONTEXT_LENGTH
 		charsSent += fl_write( dotFile, "(reduce context: %d)\\n", ob_getIntFieldX( its->stateNode, SYM_REDUCE_CONTEXT_LENGTH, pg->heap ) );
 #endif
@@ -2594,8 +2595,9 @@ SheppardGrammarLine grammar[] =
 	{{ "BOOLEAN",      "th:THREAD", "state:SHIFT",   "perform" },   "perform_SHIFT" },
 	{{ "BOOLEAN",      "th:THREAD", "state:REDUCE0", "perform" },   "perform_REDUCE0" },
 
-	{{ "STATEMENT",    "th:THREAD", "probe:FALSE", "execute2" },   "execute2_FALSE" },
-	{{ "STATEMENT",    "th:THREAD", "probe:TRUE",  "execute2" },   "execute2_TRUE" },
+	{{ "BOOLEAN",      "th:THREAD", "probe:FALSE", "execute2" },   "execute2_FALSE" },
+	{{ "BOOLEAN",      "th:THREAD", "probe:TRUE",  "execute2" },   "execute2_TRUE" },
+	{{ "STATEMENT",    "BOOLEAN", "eat1" }},
 	{{ "STATEMENT",    "procedure:PROCEDURE", "environment:ENVIRONMENT", "execute" }},
 	};
 
