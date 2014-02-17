@@ -521,7 +521,6 @@ bindings = parse_macros("""
 		th
 		TRUE
 	execute2
-	eat1
 
 """, global_scope )
 

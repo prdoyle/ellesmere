@@ -2595,9 +2595,12 @@ SheppardGrammarLine grammar[] =
 	{{ "BOOLEAN",      "th:THREAD", "state:SHIFT",   "perform" },   "perform_SHIFT" },
 	{{ "BOOLEAN",      "th:THREAD", "state:REDUCE0", "perform" },   "perform_REDUCE0" },
 
+	// It's ok to ignore the result of execute2 if you want, so declare these as both BOOLEAN and STATEMENT
 	{{ "BOOLEAN",      "th:THREAD", "probe:FALSE", "execute2" },   "execute2_FALSE" },
 	{{ "BOOLEAN",      "th:THREAD", "probe:TRUE",  "execute2" },   "execute2_TRUE" },
-	{{ "STATEMENT",    "BOOLEAN", "eat1" }},
+	{{ "STATEMENT",    "th:THREAD", "probe:FALSE", "execute2" },   "execute2_FALSE" },
+	{{ "STATEMENT",    "th:THREAD", "probe:TRUE",  "execute2" },   "execute2_TRUE" },
+
 	{{ "STATEMENT",    "procedure:PROCEDURE", "environment:ENVIRONMENT", "execute" }},
 	};
 
