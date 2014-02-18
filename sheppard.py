@@ -151,9 +151,15 @@ def perform_shift( th ):
 	th.state_stack = LIST( new_state, th.state_stack )
 	return true
 
-def perform_reduce0( th ):
-	debug( "-- reduce0 --" )
+def print_stuff( th ):
 	#debug( "stack: %s", zip( python_list( th.state_stack ), python_list( th.value_stack ) ) )
+	debug( "| state_stack: %s", stack_str( th.state_stack ) )
+	debug( "| value_stack: %s", stack_str( th.value_stack ) )
+	debug( "| cursor: %s", cursor_description( th.cursor ) )
+
+def perform_reduce0( th ):
+	print_stuff( th )
+	debug( "\\-- reduce0 --" )
 	action = bound( th.state_stack.head.action, th.reduce_environment )
 	debug( "  action: %s", repr( action ) )
 	if is_a( action, "MACRO" ):
@@ -181,11 +187,8 @@ def cursor_description( cursor ):
 def execute2( th, probe ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
 	while is_a( probe, "TRUE" ):
-		debug( "-------execute2 loop---------" )
-		#debug( "stack: %s", zip( python_list( th.state_stack ), python_list( th.value_stack ) ) )
-		debug( "state_stack: %s", stack_str( th.state_stack ) )
-		debug( "value_stack: %s", stack_str( th.value_stack ) )
-		debug( "cursor: %s", cursor_description( th.cursor ) )
+		print_stuff( th )
+		debug( "\\------ execute2 ---------" )
 		command = tag( th.state_stack.head )
 		#execute2( th, perform[ command ]( th ) )
 		probe = perform[ command ]( th )
@@ -358,7 +361,7 @@ def parse_macros( string, environment ):
 		if name != None:
 			args.append( null ) # Automatically add a don't-care arg for the macro name
 			result[ name ] = MACRO( List( script ), Stack( args ), environment )
-	for word in re.findall( r'\w+|\$|\([^)]*\)', string.strip() ):
+	for word in re.findall( r'\w+|[{}]|\$|\([^)]*\)', string.strip() ):
 		if word[0] == '(':
 			done( result, name, args, script )
 			name = None
@@ -379,17 +382,19 @@ bindings = parse_macros("""
 	symbol put
 
 ( base field ) pop
+	{
 		base field get head get
 	result bind
 		base field get tail get
 	base field put
-	result
+	}
+	result return
 
 ( th remaining_tokens ) finish_digression_NULL
 		th cursor get prev get
 	th cursor put
 
-( th remaining_tokens ) finish_digression_OBJECT
+( th remaining_tokens ) finish_digression_LIST
 
 ( formal_arg actual_arg arg_bindings ) bind_arg_SYMBOL
 		actual_arg
@@ -400,7 +405,7 @@ bindings = parse_macros("""
 ( th formal_args arg_bindings ) bind_args_NULL
 	arg_bindings
 
-( th formal_args arg_bindings ) bind_args_OBJECT
+( th formal_args arg_bindings ) bind_args_LIST
 		th state_stack get tail get
 	th state_stack put
 		formal_args head get
@@ -423,7 +428,7 @@ bindings = parse_macros("""
 ( obj environment ) bound_NULL
 	obj
 
-( obj environment ) bound_OBJECT
+( obj environment ) bound_ENVIRONMENT
 		obj
 		environment
 			environment bindings get
@@ -458,6 +463,7 @@ bindings = parse_macros("""
 	FALSE
 
 ( th state ) perform_SHIFT
+	{
 			th cursor get tokens get
 			head
 			Eof
@@ -482,9 +488,11 @@ bindings = parse_macros("""
 			th state_stack get
 		Cons
 	th state_stack put
-	TRUE
+	}
+	TRUE return
 
 ( th state ) perform_REDUCE0
+	{
 			th state_stack get head get action get
 			th reduce_environment get
 		bound
@@ -497,16 +505,19 @@ bindings = parse_macros("""
 		action
 		environment
 	do_action
-	TRUE
+	}
+	TRUE return
 
 ( th probe ) execute2_FALSE
 
 ( th probe ) execute2_TRUE
+	{
 		th state_stack get head get tag
 	command bind
+	}
 		th
 		th command perform
-	execute2
+	execute2 return
 
 ( procedure environment ) execute
 		procedure script get

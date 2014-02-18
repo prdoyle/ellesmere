@@ -1067,6 +1067,8 @@ static int its_LR0StateKind( ItemSet its, ParserGenerator pg )
 
 static int pg_sendDotTo( ParserGenerator pg, File dotFile )
 	{
+	if( !dotFile )
+		return 0;
 	int charsSent = fl_write( dotFile, "digraph \"Automaton\" { overlap=false \n" );
 	int i;
 	for( i=0; i < itst_count( pg->itemSets ); i++ )
@@ -1105,6 +1107,8 @@ static char *LR0StatePythonNames[] =
 
 static int pg_sendPythonTo( ParserGenerator pg, File outFile )
 	{
+	if( !outFile )
+		return 0;
 	int i;
 	int charsSent = fl_write( outFile, "\nfrom sheppard_object import *\n" );
 	charsSent += fl_write( outFile, "\ndef generated_automaton():\n" );
@@ -2548,8 +2552,12 @@ TestGrammarLine grammar_hello[] =
 SheppardGrammarLine grammar[] =
 	{
 	// Builtins
-	{{ "STATEMENTS",   "STATEMENTS",      "STATEMENT" },                                        "eat2" },
-	{{ "STATEMENTS",   "STATEMENT" },                                                           "eat1" },
+	{{ "STATEMENTS",   "STATEMENTS",      "STATEMENT" },            "eat2" },
+	{{ "STATEMENTS",   "STATEMENT" },                               "eat1" },
+	{{ "OBJECT",       "{",               "}", "result:OBJECT", "return" },   "compound" }, // This one doesn't need to be fully polymorphic.  That's wasteful.
+	{{ "OBJECT",       "{", "STATEMENTS", "}", "result:OBJECT", "return" },   "compound" },
+	{{ "BOOLEAN",      "{",               "}", "result:BOOLEAN", "return" },  "compound" },
+	{{ "BOOLEAN",      "{", "STATEMENTS", "}", "result:BOOLEAN", "return" },  "compound" },
 	{{ "ENVIRONMENT",  "frame" }},
 	{{ "OBJECT",       "base:OBJECT",     "field:SYMBOL", "get" }}, // Syntactic sugar for "base field ERROR take"
 	//{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:OBJECT", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
@@ -2564,7 +2572,7 @@ SheppardGrammarLine grammar[] =
 	{{ "LIST",         "head:OBJECT",     "tail:LIST", "Cons" }},
 	{{ "PROCEDURE",    "tokens:LIST",     "dialect:STATE", "environment:ENVIRONMENT", "Procedure" }},
 	{{ "DIGRESSION",   "tokens:LIST",     "bindings:ENVIRONMENT", "prev:DIGRESSION", "Digression" }},
-	{{ "THREAD",       "cursor:OBJECT",   "value_stack:LIST", "state_stack:LIST", "Thread" }},
+	{{ "THREAD",       "cursor:DIGRESSION",   "value_stack:LIST", "state_stack:LIST", "Thread" }},
 	// Syntactic sugar
 	{{ "STATEMENT",    "value:OBJECT", "symbol:SYMBOL", "bind" }},
 
@@ -2572,17 +2580,17 @@ SheppardGrammarLine grammar[] =
 
 	{{ "OBJECT",       "base:OBJECT", "field:SYMBOL", "pop" }},
 
-	{{ "STATEMENT",    "th:THREAD", "remaining_tokens:NULL",   "finish_digression" },            "finish_digression_NULL" },
-	{{ "STATEMENT",    "th:THREAD", "remaining_tokens:OBJECT", "finish_digression" },            "finish_digression_OBJECT" },
+	{{ "STATEMENT",    "th:THREAD", "remaining_tokens:NULL", "finish_digression" },            "finish_digression_NULL" },
+	{{ "STATEMENT",    "th:THREAD", "remaining_tokens:LIST", "finish_digression" },            "finish_digression_LIST" },
 
 	{{ "STATEMENT",    "formal_arg:SYMBOL", "actual_arg:OBJECT", "arg_bindings:BINDINGS", "bind_arg" },   "bind_arg_SYMBOL" },
 	{{ "STATEMENT",    "formal_arg:NULL",   "actual_arg:OBJECT", "arg_bindings:BINDINGS", "bind_arg" },   "bind_arg_NULL" },
-	{{ "STATEMENT",    "th:THREAD", "formal_args:NULL",   "arg_bindings:BINDINGS", "bind_args" },     "bind_args_NULL" },
-	{{ "STATEMENT",    "th:THREAD", "formal_args:OBJECT", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_OBJECT" },
+	{{ "STATEMENT",    "th:THREAD", "formal_args:NULL", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_NULL" },
+	{{ "STATEMENT",    "th:THREAD", "formal_args:LIST", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_LIST" },
 	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "probe:OBJECT",      "bound2" },     "bound2_OBJECT" },
 	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "probe:TAKE_FAILED", "bound2" },     "bound2_TAKE_FAILED" },
 	{{ "OBJECT",       "obj:OBJECT", "environment:NULL",        "bound" },     "bound_NULL" },
-	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "bound" },     "bound_OBJECT" },
+	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "bound" },     "bound_ENVIRONMENT" },
 
 	{{ "STATEMENT",    "state:STATE", "obj:OBJECT", "probe:STATE",      "next_state2"},  "next_state2_STATE" },
 	{{ "STATEMENT",    "state:STATE", "obj:OBJECT", "probe:TAKE_FAILED", "next_state2"},  "next_state2_TAKE_FAILED" },
@@ -2665,6 +2673,8 @@ int main( int argc, char *argv[] )
 	int i, j; SymbolTable st; Symbol goal; Grammar gr; ParserGenerator pg; ObjectHeap heap;
 	File traceFile = fdopen( 3, "wt" );
 	File outFile   = stdout;
+	File dotFile = fdopen( 4, "wt" );
+	File tabFile = fdopen( 5, "wt" );
 
 	heap = theObjectHeap();
 	st = theSymbolTable( heap );
@@ -2813,12 +2823,9 @@ int main( int argc, char *argv[] )
 		pg_computeReduceActions( pg, traceFile, traceFile );
 		ob_sendDeepTo( itst_element( pg->itemSets, 0 )->stateNode, traceFile, pg->heap );
 
-		if( 0 )
-			pg_sendDotTo( pg, outFile );
-		else if( 1 )
-			pg_sendPythonTo( pg, outFile );
-		else
-			pg_sendTableTo( pg, outFile );
+		pg_sendPythonTo ( pg, outFile );
+		pg_sendDotTo    ( pg, dotFile );
+		pg_sendTableTo  ( pg, tabFile );
 		}
 
 	Automaton au = au_new( gr, st, heap, ml_indefinite(), NULL, traceFile, traceFile );

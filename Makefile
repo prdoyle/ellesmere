@@ -121,8 +121,8 @@ parser.t: grammar.o parser.o array.o symbols.o memory.o file.o objects.o bitvect
 sheppard.dot: parser.t
 	parser.t > $@ 3> trace.txt
 
-sheppard-gen.py: parser.t
-	parser.t > $@ 3> trace.txt
+sheppard_gen.py: parser.t
+	parser.t > $@ 3> trace.txt 4> sheppard.dot 5> table.txt
 
 records.t: records.t.o records.o $(records_DEPS)
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence
