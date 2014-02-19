@@ -2552,12 +2552,15 @@ TestGrammarLine grammar_hello[] =
 SheppardGrammarLine grammar[] =
 	{
 	// Builtins
-	{{ "STATEMENTS",   "STATEMENTS",      "STATEMENT" },            "eat2" },
-	{{ "STATEMENTS",   "STATEMENT" },                               "eat1" },
+	{{ "PROGRAM",      "STATEMENTS",      "EOF" }},
+	{{ "STATEMENTS",   "STATEMENTS",      "STATEMENT" },            "eat1" },
+	{{ "STATEMENTS",   "STATEMENT" },                               "eat0" },
 	{{ "OBJECT",       "{",               "}", "result:OBJECT", "return" },   "compound" }, // This one doesn't need to be fully polymorphic.  That's wasteful.
 	{{ "OBJECT",       "{", "STATEMENTS", "}", "result:OBJECT", "return" },   "compound" },
 	{{ "BOOLEAN",      "{",               "}", "result:BOOLEAN", "return" },  "compound" },
 	{{ "BOOLEAN",      "{", "STATEMENTS", "}", "result:BOOLEAN", "return" },  "compound" },
+	{{ "STATEMENT",    "{",               "}", "STATEMENT", "return" },  "compound" },
+	{{ "STATEMENT",    "{", "STATEMENTS", "}", "STATEMENT", "return" },  "compound" },
 	{{ "ENVIRONMENT",  "frame" }},
 	{{ "OBJECT",       "base:OBJECT",     "field:SYMBOL", "get" }}, // Syntactic sugar for "base field ERROR take"
 	//{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:OBJECT", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default

@@ -548,11 +548,10 @@ def define_builtins( bindings, global_scope ):
 	def bind( func, *args ):
 		bind_with_name( func, func.func_name, *args )
 
-	def eat1( th ): pass
-	bind( eat1 )
-
-	def eat2( th ): pass
-	bind( eat2 )
+	def eat( th, *args ):
+		digress( th, args[-1] )
+	bind_with_name( eat, "eat0", "a" )
+	bind_with_name( eat, "eat1", "a", "b" )
 
 	def frame( th ):
 		digress( th, th.cursor.environment )
@@ -572,6 +571,7 @@ def define_builtins( bindings, global_scope ):
 
 	def put( th, value, base, field ):
 		base[ field ] = value
+		digress( th, "STATEMENT" )
 	bind( put, 'value', 'base', 'field' )
 
 	def Null( th ):
@@ -608,6 +608,7 @@ def define_builtins( bindings, global_scope ):
 
 	def do_action_PRIMITIVE( th, **args ):
 		print "Huh?? What do I do for do_action_PRIMITIVE?"
+		digress( th, "STATEMENT" )
 	bind( do_action_PRIMITIVE, 'th', 'action', 'environment' )
 
 global_scope.bindings = bindings
