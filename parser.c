@@ -2553,8 +2553,8 @@ SheppardGrammarLine grammar[] =
 	{
 	// Builtins
 	{{ "PROGRAM",      "STATEMENTS",      "EOF" }},
-	{{ "STATEMENTS",   "STATEMENTS",      "STATEMENT" },            "eat1" },
-	{{ "STATEMENTS",   "STATEMENT" },                               "eat0" },
+	{{ "STATEMENTS",   "STATEMENTS",      "STATEMENT" },            "eat2" },
+	{{ "STATEMENTS",   "STATEMENT" },                               "eat1" },
 	{{ "OBJECT",       "{",               "}", "result:OBJECT", "return" },   "compound" }, // This one doesn't need to be fully polymorphic.  That's wasteful.
 	{{ "OBJECT",       "{", "STATEMENTS", "}", "result:OBJECT", "return" },   "compound" },
 	{{ "BOOLEAN",      "{",               "}", "result:BOOLEAN", "return" },  "compound" },

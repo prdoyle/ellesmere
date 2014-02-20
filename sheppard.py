@@ -159,7 +159,7 @@ def print_stuff( th ):
 
 def perform_reduce0( th ):
 	print_stuff( th )
-	debug( "\\-- reduce0 --" )
+	debug( ">-- reduce0 %s --", th.state_stack.head.action )
 	action = bound( th.state_stack.head.action, th.reduce_environment )
 	debug( "  action: %s", repr( action ) )
 	if is_a( action, "MACRO" ):
@@ -188,8 +188,8 @@ def execute2( th, probe ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
 	while is_a( probe, "TRUE" ):
 		print_stuff( th )
-		debug( "\\------ execute2 ---------" )
 		command = tag( th.state_stack.head )
+		debug( "-__ execute2 __" )
 		#execute2( th, perform[ command ]( th ) )
 		probe = perform[ command ]( th )
 
@@ -307,48 +307,6 @@ if 0:
 	execute( procedure, ENVIRONMENT( procedure.environment ) )
 
 if 0:
-	scripts = {
-		"pop": Start_script()
-				("base")("field").get.head.get
-			.frame.result.put
-				("base")("field").get.tail.get
-			("base")("field").put
-			("result")
-			.End_script(),
-		"finish_digression": Start_script()
-				("th").cursor.get.prev.get
-			("th").cursor.put
-			.End_script(),
-		"bind_arg_NULL": Start_script()
-			.End_script(),
-		"bind_arg_SYMBOL": Start_script()
-				("actual_arg")
-			("arg_bindings")("formal_arg").put
-			.End_script(),
-		"bind_args_NULL": Start_script()
-			("arg_bindings")
-			.End_script(),
-		"bind_args_LIST": Start_script()
-				("th").state_stack.get.tail.get
-			("th").state_stack.put
-				("th")
-				("formal_args").tail.get
-					("th")
-					.value_stack
-				.pop
-				("arg_bindings")
-			.bind_arg
-				("formal_args").tail.get
-				("arg_bindings")
-			.bind_args
-			.End_script(),
-		"bound2": Start_script()
-
-			.End_script(),
-		}
-	print scripts
-
-if 0:
 	for ( symbol, binding ) in sorted( global_scope.bindings ):
 		print "%s: %s" % ( symbol, binding )
 		#global_scope[ symbol ] = MACRO
@@ -460,7 +418,7 @@ bindings = parse_macros("""
 	th cursor put
 
 ( th state ) perform_ACCEPT
-	FALSE
+	false
 
 ( th state ) perform_SHIFT
 	{
@@ -489,7 +447,7 @@ bindings = parse_macros("""
 		Cons
 	th state_stack put
 	}
-	TRUE return
+	true return
 
 ( th state ) perform_REDUCE0
 	{
@@ -506,7 +464,7 @@ bindings = parse_macros("""
 		environment
 	do_action
 	}
-	TRUE return
+	true return
 
 ( th probe ) execute2_FALSE
 
@@ -522,15 +480,15 @@ bindings = parse_macros("""
 ( procedure environment ) execute
 		procedure script get
 		environment
-		Nothing
+		nothing
 	Digression digression bind
 		digression
-		Null
-		procedure dialect get Null Cons
+		null
+		procedure dialect get null Cons
 	Thread th bind
 	th environment reduce_environment put
 		th
-		TRUE
+		true
 	execute2
 
 """, global_scope )
@@ -542,74 +500,76 @@ def define_builtins( bindings, global_scope ):
 		th.cursor = DIGRESSION( List( values ), th.cursor.environment, th.cursor )
 
 	def bind_with_name( func, name, *args ):
-		bindings[ "ACTION_" + name ] = PRIMITIVE( func, Stack( list( args ) + [null] ), global_scope )
+		bindings[ "ACTION_" + name ] = PRIMITIVE( func, Stack( list( args ) ), global_scope )
 		debug( "Binding primitive: %s %s", name, list(args) )
 
 	def bind( func, *args ):
 		bind_with_name( func, func.func_name, *args )
 
-	def eat( th, *args ):
-		digress( th, args[-1] )
-	bind_with_name( eat, "eat0", "a" )
-	bind_with_name( eat, "eat1", "a", "b" )
+	def eat( th ):
+		digress( th, "STATEMENTS" )
+	bind_with_name( eat, "eat0" )
+	bind_with_name( eat, "eat1", null )
+	bind_with_name( eat, "eat2", null, null )
 
 	def frame( th ):
 		digress( th, th.cursor.environment )
-	bind( frame )
+	bind( frame, null )
 
 	def get_tag( th, obj ):
 		digress( th, tag(obj) )
-	bind_with_name( get_tag, "tag", 'obj' )
+	bind_with_name( get_tag, "tag", 'obj', null )
 
 	def get( th, base, field ):
 		digress( th, base[ field ] )
-	bind( get, 'base', 'field' )
+	bind( get, 'base', 'field', null )
 
 	def do_take( th, base, field, default ):
 		digress( th, take( base, field, default ) )
-	bind_with_name( do_take, "take", 'base', 'field', 'default' )
+	bind_with_name( do_take, "take", 'base', 'field', 'default', null )
 
 	def put( th, value, base, field ):
 		base[ field ] = value
 		digress( th, "STATEMENT" )
-	bind( put, 'value', 'base', 'field' )
+	bind( put, 'value', 'base', 'field', null )
 
 	def Null( th ):
 		digress( th, null )
-	bind( Null )
+	bind( Null, null )
 
 	def Eof( th ):
 		digress( th, eof )
-	bind( Eof )
+	bind( Eof, null )
 
 	def Nothing( th ):
 		digress( th, nothing )
-	bind( Nothing )
+	bind( Nothing, null )
 
 	def Cons( th, **args ):
 		digress( th, LIST(**args) )
-	bind( Cons, 'head', 'tail' )
+	bind( Cons, 'head', 'tail', null )
 
 	def Procedure( th, **args ):
 		digress( th, PROCEDURE( **args ) )
-	bind( Procedure, 'script', 'dialect', 'environment' )
+	bind( Procedure, 'script', 'dialect', 'environment', null )
 
 	def Digression( th, **args ):
 		digress( th, DIGRESSION( **args ) )
-	bind( Digression, 'tokens', 'environment', 'prev' )
+	bind( Digression, 'tokens', 'environment', 'prev', null )
 
 	def Thread( th, **args ):
 		digress( th, THREAD( **args ) )
-	bind( Thread, 'cursor', 'value_stack', 'state_stack' )
+	bind( Thread, 'cursor', 'value_stack', 'state_stack', null )
 
 	def Environment( th, **args ):
 		digress( th, ENVIRONMENT( **args ) )
-	bind( Environment, 'outer' )
+	bind( Environment, 'outer', null )
 
 	def do_action_PRIMITIVE( th, **args ):
 		print "Huh?? What do I do for do_action_PRIMITIVE?"
 		digress( th, "STATEMENT" )
-	bind( do_action_PRIMITIVE, 'th', 'action', 'environment' )
+	bind( do_action_PRIMITIVE, 'th', 'action', 'environment', null )
+
 
 global_scope.bindings = bindings
 print "global_scope: " + str( global_scope )
@@ -621,5 +581,11 @@ print "\n===================\n"
 
 if 1:
 	inner_procedure = go_world()
+	bindings = global_scope.bindings
+	bindings[ 'null' ] = null
+	bindings[ 'eof' ] = eof
+	bindings[ 'false' ] = false
+	bindings[ 'true' ] = true
+	bindings[ 'nothing' ] = nothing
 	outer_procedure = PROCEDURE( List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), "execute" ]), dialect, global_scope )
 	execute( outer_procedure, ENVIRONMENT( global_scope ) )
