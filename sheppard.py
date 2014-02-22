@@ -82,7 +82,7 @@ def pop( base, field ):
 
 def finish_digression( th ):
 	if is_a( th.cursor.tokens, "NULL" ):
-		debug( "    finished %s", repr( th.cursor ) )
+		debug( "  (finished %s)", repr( th.cursor ) )
 		th.cursor = th.cursor.prev
 
 def bind_arg( formal_arg, actual_arg, arg_bindings ):
@@ -169,6 +169,7 @@ def perform_reduce0( th ):
 	environment = ENVIRONMENT( th.cursor.environment )  # Need this in order to make "put" a macro, or else I can't access the environment I'm trying to bind
 	bind_args( th, formal_args, environment.bindings )
 	debug( "  environment: %s", environment )
+	debug( "    based on: %s", th.cursor )
 	do_action( th, action, environment )
 	return true
 
@@ -187,9 +188,9 @@ def cursor_description( cursor ):
 def execute2( th, probe ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
 	while is_a( probe, "TRUE" ):
-		print_stuff( th )
+		#print_stuff( th )
 		command = tag( th.state_stack.head )
-		debug( "-__ execute2 __" )
+		#debug( "-__ execute2 __" )
 		#execute2( th, perform[ command ]( th ) )
 		probe = perform[ command ]( th )
 
@@ -224,6 +225,21 @@ def execute( procedure, environment ):
 # Then we need to finish the digression, but if we're only doing that at reduce
 # actions, then it never happens.  I really need to figure out how to bind
 # reduce actions, and I don't think I can do it using digressions at all.
+#
+# UPDATE: I created a new environment, the reduce_environment, used for all
+# reduces.  Now I can finish_digression after we shift the last token out of
+# it.
+#
+# PROBLEM: I can't figure out how to write a digression that can reliably
+# access the environment of its caller.  In other words, I'm having trouble
+# making macros that are unsanitary.  I guess that's meant to be a good thing,
+# but it's hampering my ability to do things like define "bind" in terms of
+# doing a "put" on the caller's environment.  The trouble is: if the call to
+# the unsanitary macro shifts the last token from the digression it's in, then
+# that digression's environment disappears before the callee can get its hands
+# on it.
+#
+# Maybe this is just how digressions roll.  Maybe I can live with that.
 
 def Shift( **edges ): return Object( "SHIFT", **edges )
 def Reduce0( action ): return Object( "REDUCE0", action=action )
@@ -581,11 +597,18 @@ print "\n===================\n"
 
 if 1:
 	inner_procedure = go_world()
+	nothing.environment = global_scope
 	bindings = global_scope.bindings
 	bindings[ 'null' ] = null
 	bindings[ 'eof' ] = eof
 	bindings[ 'false' ] = false
 	bindings[ 'true' ] = true
 	bindings[ 'nothing' ] = nothing
+	# Older stuff
+	bindings[ 'Null' ] = null
+	bindings[ 'Eof' ] = eof
+	bindings[ 'False' ] = false
+	bindings[ 'True' ] = true
+	bindings[ 'Nothing' ] = nothing
 	outer_procedure = PROCEDURE( List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), "execute" ]), dialect, global_scope )
 	execute( outer_procedure, ENVIRONMENT( global_scope ) )
