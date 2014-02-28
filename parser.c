@@ -2555,12 +2555,12 @@ SheppardGrammarLine grammar[] =
 	{{ "PROGRAM",      "STATEMENTS",      "EOF" }},
 	{{ "STATEMENTS",   "STATEMENTS",      "STATEMENT" },            "eat2" },
 	{{ "STATEMENTS",   "STATEMENT" },                               "eat1" },
-	{{ "OBJECT",       "{",               "}", "result:OBJECT", "return" },   "compound" }, // This one doesn't need to be fully polymorphic.  That's wasteful.
-	{{ "OBJECT",       "{", "STATEMENTS", "}", "result:OBJECT", "return" },   "compound" },
-	{{ "BOOLEAN",      "{",               "}", "result:BOOLEAN", "return" },  "compound" },
-	{{ "BOOLEAN",      "{", "STATEMENTS", "}", "result:BOOLEAN", "return" },  "compound" },
-	{{ "STATEMENT",    "{",               "}", "STATEMENT", "return" },  "compound" },
-	{{ "STATEMENT",    "{", "STATEMENTS", "}", "STATEMENT", "return" },  "compound" },
+	{{ "OBJECT",       "<<",               ">>", "result:OBJECT", "return" },   "compound" }, // This one doesn't need to be fully polymorphic.  That's wasteful.
+	{{ "OBJECT",       "<<", "STATEMENTS", ">>", "result:OBJECT", "return" },   "compound" },
+	{{ "BOOLEAN",      "<<",               ">>", "result:BOOLEAN", "return" },  "compound" },
+	{{ "BOOLEAN",      "<<", "STATEMENTS", ">>", "result:BOOLEAN", "return" },  "compound" },
+	{{ "STATEMENT",    "<<",               ">>", "STATEMENT", "return" },  "compound" },
+	{{ "STATEMENT",    "<<", "STATEMENTS", ">>", "STATEMENT", "return" },  "compound" },
 	{{ "ENVIRONMENT",  "frame" }},
 	{{ "OBJECT",       "base:OBJECT",     "field:SYMBOL", "get" }}, // Syntactic sugar for "base field ERROR take"
 	//{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:OBJECT", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
@@ -2575,7 +2575,7 @@ SheppardGrammarLine grammar[] =
 	{{ "LIST",         "head:OBJECT",     "tail:LIST", "Cons" }},
 	{{ "PROCEDURE",    "tokens:LIST",     "dialect:STATE", "environment:ENVIRONMENT", "Procedure" }},
 	{{ "DIGRESSION",   "tokens:LIST",     "bindings:ENVIRONMENT", "prev:DIGRESSION", "Digression" }},
-	{{ "THREAD",       "cursor:DIGRESSION",   "value_stack:LIST", "state_stack:LIST", "Thread" }},
+	{{ "CONTINUATION", "cursor:DIGRESSION",  "operands:LIST", "history:LIST", "scope:ENVIRONMENT", "caller:CONTINUATION", "Continuation" }},
 	// Syntactic sugar
 	{{ "STATEMENT",    "value:OBJECT", "symbol:SYMBOL", "bind" }},
 
@@ -2583,13 +2583,13 @@ SheppardGrammarLine grammar[] =
 
 	{{ "OBJECT",       "base:OBJECT", "field:SYMBOL", "pop" }},
 
-	{{ "STATEMENT",    "th:THREAD", "remaining_tokens:NULL", "finish_digression" },            "finish_digression_NULL" },
-	{{ "STATEMENT",    "th:THREAD", "remaining_tokens:LIST", "finish_digression" },            "finish_digression_LIST" },
+	{{ "STATEMENT",    "th:CONTINUATION", "remaining_tokens:NULL", "finish_digression" },            "finish_digression_NULL" },
+	{{ "STATEMENT",    "th:CONTINUATION", "remaining_tokens:LIST", "finish_digression" },            "finish_digression_LIST" },
 
 	{{ "STATEMENT",    "formal_arg:SYMBOL", "actual_arg:OBJECT", "arg_bindings:BINDINGS", "bind_arg" },   "bind_arg_SYMBOL" },
 	{{ "STATEMENT",    "formal_arg:NULL",   "actual_arg:OBJECT", "arg_bindings:BINDINGS", "bind_arg" },   "bind_arg_NULL" },
-	{{ "STATEMENT",    "th:THREAD", "formal_args:NULL", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_NULL" },
-	{{ "STATEMENT",    "th:THREAD", "formal_args:LIST", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_LIST" },
+	{{ "STATEMENT",    "th:CONTINUATION", "formal_args:NULL", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_NULL" },
+	{{ "STATEMENT",    "th:CONTINUATION", "formal_args:LIST", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_LIST" },
 	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "probe:OBJECT",      "bound2" },     "bound2_OBJECT" },
 	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "probe:TAKE_FAILED", "bound2" },     "bound2_TAKE_FAILED" },
 	{{ "OBJECT",       "obj:OBJECT", "environment:NULL",        "bound" },     "bound_NULL" },
@@ -2599,25 +2599,25 @@ SheppardGrammarLine grammar[] =
 	{{ "STATEMENT",    "state:STATE", "obj:OBJECT", "probe:TAKE_FAILED", "next_state2"},  "next_state2_TAKE_FAILED" },
 	{{ "STATEMENT",    "state:STATE", "obj:OBJECT", "next_state"}},
 
-	{{ "STATEMENT",    "th:THREAD", "action:PRIMITIVE", "environment:ENVIRONMENT", "do_action" }, "do_action_PRIMITIVE" },
-	{{ "STATEMENT",    "th:THREAD", "action:MACRO",     "environment:ENVIRONMENT", "do_action" }, "do_action_MACRO" },
+	{{ "STATEMENT",    "th:CONTINUATION", "action:PRIMITIVE", "environment:ENVIRONMENT", "do_action" }, "do_action_PRIMITIVE" },
+	{{ "STATEMENT",    "th:CONTINUATION", "action:MACRO",     "environment:ENVIRONMENT", "do_action" }, "do_action_MACRO" },
 
-	{{ "BOOLEAN",      "th:THREAD", "state:ACCEPT",  "perform" },   "perform_ACCEPT" },
-	{{ "BOOLEAN",      "th:THREAD", "state:SHIFT",   "perform" },   "perform_SHIFT" },
-	{{ "BOOLEAN",      "th:THREAD", "state:REDUCE0", "perform" },   "perform_REDUCE0" },
+	{{ "BOOLEAN",      "th:CONTINUATION", "state:ACCEPT",  "perform" },   "perform_ACCEPT" },
+	{{ "BOOLEAN",      "th:CONTINUATION", "state:SHIFT",   "perform" },   "perform_SHIFT" },
+	{{ "BOOLEAN",      "th:CONTINUATION", "state:REDUCE0", "perform" },   "perform_REDUCE0" },
 
 	// It's ok to ignore the result of execute2 if you want, so declare these as both BOOLEAN and STATEMENT
-	{{ "BOOLEAN",      "th:THREAD", "probe:FALSE", "execute2" },   "execute2_FALSE" },
-	{{ "BOOLEAN",      "th:THREAD", "probe:TRUE",  "execute2" },   "execute2_TRUE" },
-	{{ "STATEMENT",    "th:THREAD", "probe:FALSE", "execute2" },   "execute2_FALSE" },
-	{{ "STATEMENT",    "th:THREAD", "probe:TRUE",  "execute2" },   "execute2_TRUE" },
+	{{ "BOOLEAN",      "th:CONTINUATION", "probe:FALSE", "execute2" },   "execute2_FALSE" },
+	{{ "BOOLEAN",      "th:CONTINUATION", "probe:TRUE",  "execute2" },   "execute2_TRUE" },
+	{{ "STATEMENT",    "th:CONTINUATION", "probe:FALSE", "execute2" },   "execute2_FALSE" },
+	{{ "STATEMENT",    "th:CONTINUATION", "probe:TRUE",  "execute2" },   "execute2_TRUE" },
 
-	{{ "STATEMENT",    "procedure:PROCEDURE", "environment:ENVIRONMENT", "execute" }},
+	{{ "STATEMENT",    "procedure:PROCEDURE", "environment:ENVIRONMENT", "scope:ENVIRONMENT", "execute" }},
 	};
 
 static TestGrammarLine subtags[] =
 	{
-	{ "OBJECT",      "LIST", "PROCEDURE", "DIGRESSION", "ENVIRONMENT", "BINDINGS", "SYMBOL", "STATE", "THREAD" },
+	{ "OBJECT",      "LIST", "PROCEDURE", "DIGRESSION", "ENVIRONMENT", "BINDINGS", "SYMBOL", "STATE", "CONTINUATION" },
 	{ "LIST",        "NULL" },
 	{ "ENVIRONMENT", "NULL" },
 	{ "DIGRESSION",  "NOTHING" },
@@ -2642,7 +2642,7 @@ TestGrammarLine grammar_old2[] =
 	//{ "LIST",         "list", "name:SYMBOL" },
 	//{ "PROCEDURE",    "procedure", "name:SYMBOL" },
 	//{ "DIGRESSION",   "digression", "name:SYMBOL" },
-	//{ "THREAD",       "Thread", "cursor:OBJECT", "value_stack:LIST", "state_stack:LIST" },
+	//{ "CONTINUATION", "CONTINUATION", "cursor:OBJECT", "value_stack:LIST", "state_stack:LIST" },
 	};
 
 #endif

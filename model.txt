@@ -1,0 +1,38 @@
+
+ACTION:
+	formal_args: LIST
+	scope: ENVIRONMENT
+
+MACRO < ACTION:
+	script: LIST
+
+PRIMITIVE < ACTION:
+	function: FUNCTION
+
+PROCEDURE < ACTION:
+	script: LIST
+	dialect: STATE
+
+DIGRESSION:
+	tokens: LIST
+	environment: ENVIRONMENT
+	prev: DIGRESSION  # Need a better name
+
+ENVIRONMENT:
+	bindings: BINDINGS
+	outer: ENVIRONMENT
+
+CONTINUATION: # Call stack frame
+	cursor: DIGRESSION
+	operands: LIST<OBJECT>
+	history: LIST<STATE>
+	scope: ENVIRONMENT
+	caller: CONTINUATION
+
+SHIFT < STATE
+
+REDUCE0 < STATE:
+	action: ACTION
+
+
+# Could EOF.head = EOF and EOF.tail = EOF perhaps?  Make it look like an endless LIST of itself?
