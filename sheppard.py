@@ -56,8 +56,11 @@ def python_list( sheppard_list, head="head", tail="tail" ):
 	else:
 		return []
 
-def stack_str( stack ):
-	return string.join([ repr(s) for s in python_list( stack )], ", " )
+def stack_str( stack, sep=", " ):
+	return string.join([ repr(s) for s in python_list( stack )], sep )
+
+def list_str( lst, sep=", " ):
+	return string.join([ repr(s) for s in reversed( python_list( lst ) )], sep )
 
 #
 # The interpreter.
@@ -153,9 +156,9 @@ def perform_shift( th ):
 
 def print_stuff( th ):
 	#debug( "stack: %s", zip( python_list( th.history ), python_list( th.operands ) ) )
-	debug( "| history: %s", stack_str( th.history ) )
-	debug( "| operands: %s", stack_str( th.operands ) )
-	debug( "| cursor: %s", cursor_description( th.cursor ) )
+	debug( "+ PROGRAM: %s ^ %s", list_str( th.operands, "  " ), cursor_description( th.cursor ) )
+	debug( "| history: %s", list_str( th.history, ":" ) )
+	debug( "|   scope: %s", repr( th.scope ) )
 
 def perform_reduce0( th ):
 	print_stuff( th )
@@ -183,7 +186,7 @@ def cursor_description( cursor ):
 	if cursor == nothing:
 		return ""
 	else:
-		return string.join( [ repr(x) for x in python_list( cursor.tokens ) ], " " ) + " | " + cursor_description( cursor.prev )
+		return string.join( [ repr(x) for x in python_list( cursor.tokens ) ], "  " ) + " . " + cursor_description( cursor.prev )
 
 def execute2( th, probe ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
@@ -350,17 +353,18 @@ global_scope = ENVIRONMENT( null )
 bindings = parse_macros("""
 ( value symbol ) bind 
 		value
-		frame outer get bindings get
+		scope bindings get
 	symbol put
 
 ( base field ) pop
-	<<
-		base field get head get
-	result bind
-		base field get tail get
-	base field put
-	>>
-	result return
+	after
+			base field get head get
+		result bind
+			base field get tail get
+		base field put
+	return
+		result
+	end
 
 ( th remaining_tokens ) finish_digression_NULL
 		th cursor get prev get
@@ -435,76 +439,79 @@ bindings = parse_macros("""
 	false
 
 ( th state ) perform_SHIFT
-	<<
-			th cursor get tokens get
-			head
-			Eof
-		take
-	raw_token bind
-		th cursor get tokens get tail get
-	th cursor get tokens put
-			raw_token
-			th cursor get environment get
-		bound
-	current_token bind
-	th finish_digression
-			current_token
-			th.operands
-		Cons
-	th operands put
-			th history get head get
-			current_token
-		next_state
-	new_state bind
-			new_state
-			th history get
-		Cons
-	th history put
-	>>
-	true return
+	after
+				th cursor get tokens get
+				head
+				Eof
+			take
+		raw_token bind
+			th cursor get tokens get tail get
+		th cursor get tokens put
+				raw_token
+				th cursor get environment get
+			bound
+		current_token bind
+		th finish_digression
+				current_token
+				th.operands
+			Cons
+		th operands put
+				th history get head get
+				current_token
+			next_state
+		new_state bind
+				new_state
+				th history get
+			Cons
+		th history put
+	return
+		true
+	end
 
 ( th state ) perform_REDUCE0
-	<<
-			th history get head get action get
-			th reduce_environment get
-		bound
-	action bind
-		action formal_args get
-	formal_args bind
-		th cursor get environment get Environment
-	environment bind
-		th
-		action
-		environment
-	do_action
-	>>
-	true return
+	after
+				th history get head get action get
+				th reduce_environment get
+			bound
+		action bind
+			action formal_args get
+		formal_args bind
+			th cursor get environment get Environment
+		actual_args bind
+			th
+			action
+			actual_args
+		do_action
+	return
+		true
+	end
 
 ( th probe ) execute2_FALSE
 
 ( th probe ) execute2_TRUE
-	<<
-		th history get head get tag
-	command bind
-	>>
-		th
-		th command perform
-	execute2 return
+	after
+			th history get head get tag
+		command bind
+	return
+			th
+			th command perform
+		execute2
+	end
 
-( procedure environment scope ) execute
+( procedure environment lexical_scope ) execute
 			procedure script get
 			environment
 			nothing
 		Digression
 		null
 		procedure dialect get null Cons
-		scope
+		lexical_scope
 		CONTINUATION
 	Continuation th bind
-		th
-		true
-	execute2
-
+			th
+			true
+		execute2
+	pop
 """, global_scope )
 
 # Sheppard builtins
@@ -526,9 +533,9 @@ def define_builtins( bindings, global_scope ):
 	bind_with_name( eat, "eat1", null )
 	bind_with_name( eat, "eat2", null, null )
 
-	def frame( th ):
-		digress( th, th.cursor.environment )
-	bind( frame, null )
+	def scope( th ):
+		digress( th, th.scope )
+	bind( scope, null )
 
 	def get_tag( th, obj ):
 		digress( th, tag(obj) )
@@ -546,6 +553,10 @@ def define_builtins( bindings, global_scope ):
 		base[ field ] = value
 		digress( th, "STATEMENT" )
 	bind( put, 'value', 'base', 'field', null )
+
+	def pop( th ):
+		pass
+	bind( pop, null, null )
 
 	def Null( th ):
 		digress( th, null )

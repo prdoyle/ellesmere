@@ -2555,13 +2555,13 @@ SheppardGrammarLine grammar[] =
 	{{ "PROGRAM",      "STATEMENTS",      "EOF" }},
 	{{ "STATEMENTS",   "STATEMENTS",      "STATEMENT" },            "eat2" },
 	{{ "STATEMENTS",   "STATEMENT" },                               "eat1" },
-	{{ "OBJECT",       "<<",               ">>", "result:OBJECT", "return" },   "compound" }, // This one doesn't need to be fully polymorphic.  That's wasteful.
-	{{ "OBJECT",       "<<", "STATEMENTS", ">>", "result:OBJECT", "return" },   "compound" },
-	{{ "BOOLEAN",      "<<",               ">>", "result:BOOLEAN", "return" },  "compound" },
-	{{ "BOOLEAN",      "<<", "STATEMENTS", ">>", "result:BOOLEAN", "return" },  "compound" },
-	{{ "STATEMENT",    "<<",               ">>", "STATEMENT", "return" },  "compound" },
-	{{ "STATEMENT",    "<<", "STATEMENTS", ">>", "STATEMENT", "return" },  "compound" },
-	{{ "ENVIRONMENT",  "frame" }},
+	{{ "OBJECT",       "after",               "return", "result:OBJECT", "end" },   "compound" }, // This one doesn't need to be fully polymorphic.  That's wasteful.
+	{{ "OBJECT",       "after", "STATEMENTS", "return", "result:OBJECT", "end" },   "compound" },
+	{{ "BOOLEAN",      "after",               "return", "result:BOOLEAN", "end" },  "compound" },
+	{{ "BOOLEAN",      "after", "STATEMENTS", "return", "result:BOOLEAN", "end" },  "compound" },
+	//{{ "STATEMENT",    "after",               "do", "STATEMENT", "return" },  "compound" },
+	//{{ "STATEMENT",    "after", "STATEMENTS", "do", "STATEMENT", "return" },  "compound" },
+	{{ "ENVIRONMENT",  "scope" }},
 	{{ "OBJECT",       "base:OBJECT",     "field:SYMBOL", "get" }}, // Syntactic sugar for "base field ERROR take"
 	//{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:OBJECT", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
 	{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:TAKE_FAILED", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
@@ -2606,13 +2606,21 @@ SheppardGrammarLine grammar[] =
 	{{ "BOOLEAN",      "th:CONTINUATION", "state:SHIFT",   "perform" },   "perform_SHIFT" },
 	{{ "BOOLEAN",      "th:CONTINUATION", "state:REDUCE0", "perform" },   "perform_REDUCE0" },
 
-	// It's ok to ignore the result of execute2 if you want, so declare these as both BOOLEAN and STATEMENT
 	{{ "BOOLEAN",      "th:CONTINUATION", "probe:FALSE", "execute2" },   "execute2_FALSE" },
 	{{ "BOOLEAN",      "th:CONTINUATION", "probe:TRUE",  "execute2" },   "execute2_TRUE" },
-	{{ "STATEMENT",    "th:CONTINUATION", "probe:FALSE", "execute2" },   "execute2_FALSE" },
-	{{ "STATEMENT",    "th:CONTINUATION", "probe:TRUE",  "execute2" },   "execute2_TRUE" },
+	// It's ok to ignore the result of execute2 if you want, so declare these as both BOOLEAN and STATEMENT
+	//{{ "STATEMENT",    "th:CONTINUATION", "probe:FALSE", "execute2" },   "execute2_FALSE" },
+	//{{ "STATEMENT",    "th:CONTINUATION", "probe:TRUE",  "execute2" },   "execute2_TRUE" },
 
 	{{ "STATEMENT",    "procedure:PROCEDURE", "environment:ENVIRONMENT", "scope:ENVIRONMENT", "execute" }},
+
+	{{ "STATEMENT",    "OBJECT",  "pop" }},
+	{{ "STATEMENT",    "BOOLEAN", "pop" }},
+
+	// TODO: What do I run when all my bindings disappear?  A PROCEURE complete with its own automaton?
+	// What is the scope in which the new scope is nested?
+	//{{ "STATEMENT",    "{" }, "push_scope" },
+	//{{ "STATEMENT",    "}" }, "pop_scope" },
 	};
 
 static TestGrammarLine subtags[] =
