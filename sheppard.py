@@ -151,6 +151,8 @@ def perform_accept( th ):
 def perform_shift( th ):
 	#debug( "shift" )
 	act = th.activation
+	if act.operands != null and act.operands.head in action_words:
+		raise Missed_Action_Word( act.operands.head )
 	#debug( "  cursor: %s", repr( act.cursor ) )
 	raw_token = take( act.cursor.tokens, "head", eof )
 	act.cursor.tokens = act.cursor.tokens.tail
@@ -265,6 +267,14 @@ def PRIMITIVE( function, formal_args, environment ): return Object( "PRIMITIVE",
 #
 # Testing
 #
+
+class Missed_Action_Word( BaseException ):
+
+	def __init__( self, word ):
+		self._word = word
+
+	def __str__( self ):
+		return "Missed action word: " + repr( self._word )
 
 class Start_script:
 
@@ -646,6 +656,8 @@ global_scope.bindings = bindings
 print "global_scope: " + str( global_scope )
 define_builtins( global_scope.bindings, global_scope )
 print "  bindings: " + str( global_scope.bindings )
+action_words = [ s[7:] for s in bindings._fields ]
+print "  action words: " + str( action_words )
 dialect = generated_automaton()
 #print "  dialect:\n" + dialect.description()
 print "\n===================\n"
