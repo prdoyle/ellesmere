@@ -22,7 +22,7 @@ def Stack( items ):
 
 def ENVIRONMENT( outer, **bindings ): return Object( "ENVIRONMENT", outer=outer, bindings=Object("BINDINGS", **bindings) )
 
-def DIGRESSION( tokens, environment, prev ): return Object( "DIGRESSION", tokens=tokens, environment=environment, prev=prev )
+def DIGRESSION( tokens, environment, resumption ): return Object( "DIGRESSION", tokens=tokens, environment=environment, resumption=resumption )
 
 def Eof(): return Object( "EOF" )
 
@@ -32,7 +32,7 @@ def Nothing():
 	endless_eof = LIST( Eof(), null )
 	endless_eof.tail = endless_eof
 	result.tokens = endless_eof
-	result.prev   = result
+	result.resumption   = result
 	return result
 
 eof = Eof()
@@ -41,7 +41,9 @@ false = Object( "FALSE" )
 true  = Object( "TRUE" )
 take_failed = Object( "TAKE_FAILED" )
 
-def CONTINUATION( cursor, operands, history, scope, caller ): return Object( "CONTINUATION", cursor=cursor, operands=operands, history=history, scope=scope, caller=caller )
+def ACTIVATION( cursor, operands, history, scope, caller ): return Object( "ACTIVATION", cursor=cursor, operands=operands, history=history, scope=scope, caller=caller )
+
+def THREAD( activation ): return Object( "THREAD", activation=activation )
 
 # Main execute procedure
 
@@ -59,8 +61,13 @@ def python_list( sheppard_list, head="head", tail="tail" ):
 def stack_str( stack, sep=", " ):
 	return string.join([ repr(s) for s in python_list( stack )], sep )
 
-def list_str( lst, sep=", " ):
-	return string.join([ repr(s) for s in reversed( python_list( lst ) )], sep )
+def list_str( lst, sep=", ", ellision_limit=999 ):
+	pl = python_list( lst )
+	prefix = ""
+	if len( pl ) > ellision_limit:
+		pl = pl[ : ellision_limit-2 ]
+		prefix = "... "
+	return prefix + string.join([ repr(s) for s in reversed( pl )], sep )
 
 #
 # The interpreter.
@@ -78,15 +85,16 @@ def take( obj, key, default ):
 	else:
 		return default
 
-def pop( base, field ):
+def pop_list( base, field ):
 	result = base[field].head
 	base[field] = base[field].tail
 	return result
 
 def finish_digression( th ):
-	if is_a( th.cursor.tokens, "NULL" ):
-		debug( "  (finished %s)", repr( th.cursor ) )
-		th.cursor = th.cursor.prev
+	if is_a( th.activation.cursor.tokens, "NULL" ):
+		act = th.activation
+		debug( "  (finished %s)", repr( act.cursor ) )
+		act.cursor = act.cursor.resumption
 
 def bind_arg( formal_arg, actual_arg, arg_bindings ):
 	if is_a( formal_arg, "SYMBOL" ):
@@ -99,8 +107,9 @@ def bind_args( th, formal_args, arg_bindings ):
 	if is_a( formal_args, "NULL" ):
 		return arg_bindings
 	else:
-		th.history = th.history.tail
-		bind_arg( formal_args.head, pop( th, "operands" ), arg_bindings )
+		act = th.activation
+		act.history = act.history.tail
+		bind_arg( formal_args.head, pop_list( th.activation, "operands" ), arg_bindings )
 		return bind_args( th, formal_args.tail, arg_bindings )
 
 def bound2( obj, environment, probe ):
@@ -131,48 +140,51 @@ def do_action( th, action, environment ):
 		debug( "  Primitive bindings: %s", dict( environment.bindings ) )
 		action.function( th, **dict( environment.bindings ) )
 	else:
-		th.cursor = DIGRESSION( action.script, environment, th.cursor )
-		debug( "    new_digression: %s", repr( th.cursor ) )
+		act = th.activation
+		act.cursor = DIGRESSION( action.script, environment, act.cursor )
+		debug( "    new_digression: %s", repr( act.cursor ) )
 
 def perform_accept( th ):
 	debug( "accept" )
 	return false
 
 def perform_shift( th ):
-	debug( "shift" )
-	debug( "  cursor: %s", repr( th.cursor ) )
-	raw_token = take( th.cursor.tokens, "head", eof )
-	th.cursor.tokens = th.cursor.tokens.tail
-	debug( "  token: %s", repr( raw_token ) )
-	debug( "    environment: %s", th.cursor.environment )
-	current_token = bound( raw_token, th.cursor.environment )
+	#debug( "shift" )
+	act = th.activation
+	#debug( "  cursor: %s", repr( act.cursor ) )
+	raw_token = take( act.cursor.tokens, "head", eof )
+	act.cursor.tokens = act.cursor.tokens.tail
+	#debug( "  token: %s", repr( raw_token ) )
+	#debug( "    environment: %s", act.cursor.environment )
+	current_token = bound( raw_token, act.cursor.environment )
 	finish_digression( th )
-	debug( "    value: %s", current_token )
-	th.operands = LIST( current_token, th.operands )
-	new_state = next_state( th.history.head, current_token )
-	debug( "  new_state: %s", repr( new_state ) )
-	th.history = LIST( new_state, th.history )
+	#debug( "    value: %s", current_token )
+	act.operands = LIST( current_token, act.operands )
+	new_state = next_state( act.history.head, current_token )
+	#debug( "  new_state: %s", repr( new_state ) )
+	act.history = LIST( new_state, act.history )
 	return true
 
 def print_stuff( th ):
-	#debug( "stack: %s", zip( python_list( th.history ), python_list( th.operands ) ) )
-	debug( "+ PROGRAM: %s ^ %s", list_str( th.operands, "  " ), cursor_description( th.cursor ) )
-	debug( "| history: %s", list_str( th.history, ":" ) )
-	debug( "|   scope: %s", repr( th.scope ) )
+	act = th.activation
+	#debug( "stack: %s", zip( python_list( act.history ), python_list( act.operands ) ) )
+	debug( "+ PROGRAM: %s ^ %s", list_str( act.operands, "  ", 8 ), cursor_description( act.cursor ) )
+	debug( "| history: %s", list_str( act.history, ":", 8 ) )
+	debug( "|   scope: %s", repr( act.scope ) )
 
 def perform_reduce0( th ):
 	print_stuff( th )
-	debug( ">-- reduce0 %s --", th.history.head.action )
-	action = bound( th.history.head.action, th.scope )
+	act = th.activation
+	debug( ">-- reduce0 %s --", act.history.head.action )
+	action = bound( act.history.head.action, act.scope )
 	debug( "  action: %s", repr( action ) )
 	if is_a( action, "MACRO" ):
 		debug( "    %s", python_list( action.script ) )
-	formal_args = action.formal_args
-	#environment = ENVIRONMENT( action.environment )  # More appropriate for a procedure call than a macro
-	environment = ENVIRONMENT( th.cursor.environment )  # Need this in order to make "put" a macro, or else I can't access the environment I'm trying to bind
-	bind_args( th, formal_args, environment.bindings )
+	environment = ENVIRONMENT( action.environment )
+	environment.digressor = act.cursor.environment  # Need this in order to make "bind" a macro, or else I can't access the environment I'm trying to bind
+	bind_args( th, action.formal_args, environment.bindings )
 	debug( "  environment: %s", environment )
-	debug( "    based on: %s", th.cursor )
+	debug( "    based on: %s", act.cursor )
 	do_action( th, action, environment )
 	return true
 
@@ -186,20 +198,21 @@ def cursor_description( cursor ):
 	if cursor == nothing:
 		return ""
 	else:
-		return string.join( [ repr(x) for x in python_list( cursor.tokens ) ], "  " ) + " . " + cursor_description( cursor.prev )
+		return string.join( [ repr(x) for x in python_list( cursor.tokens ) ], "  " ) + " . " + cursor_description( cursor.resumption )
 
 def execute2( th, probe ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
 	while is_a( probe, "TRUE" ):
 		print_stuff( th )
-		command = tag( th.history.head )
+		command = tag( th.activation.history.head )
 		debug( "-__ execute2 __" )
-		#execute2( th, perform[ command ]( th ) )
+		# if Python had tail call elimination, we could do this:
+		# execute2( th, perform[ command ]( th ) )
 		probe = perform[ command ]( th )
 
 def execute( procedure, environment, scope ):
-	th = CONTINUATION( DIGRESSION( procedure.script, environment, nothing ), null, LIST( procedure.dialect, null ), scope, "CONTINUATION" )
-	debug( "starting thread: %s with digression:\n\t%s", repr(th), th.cursor )
+	th = THREAD( ACTIVATION( DIGRESSION( procedure.script, environment, nothing ), null, LIST( procedure.dialect, null ), scope, "ACTIVATION" ) )
+	debug( "starting thread: %s with digression:\n\t%s", repr(th), th.activation.cursor )
 	execute2( th, true )
 
 # PROBLEM: as I write this, perform_reduce contains a call to finish_digression.
@@ -349,176 +362,11 @@ def parse_macros( string, environment ):
 	done( result, name, args, script )
 	return result
 
-global_scope = ENVIRONMENT( null )
-bindings = parse_macros("""
-( value symbol ) bind 
-		value
-		scope bindings get
-	symbol put
-
-( base field ) pop
-	after
-			base field get head get
-		result bind
-			base field get tail get
-		base field put
-	return
-		result
-	end
-
-( th remaining_tokens ) finish_digression_NULL
-		th cursor get prev get
-	th cursor put
-
-( th remaining_tokens ) finish_digression_LIST
-
-( formal_arg actual_arg arg_bindings ) bind_arg_SYMBOL
-		actual_arg
-	arg_bindings formal_arg put
-
-( formal_arg actual_arg arg_bindings ) bind_arg_NULL
-
-( th formal_args arg_bindings ) bind_args_NULL
-	arg_bindings
-
-( th formal_args arg_bindings ) bind_args_LIST
-		th history get tail get
-	th history put
-		formal_args head get
-		th operands pop
-		arg_bindings
-	bind_arg
-		th
-		formal_args tail get
-		arg_bindings
-	bind_args
-
-( obj environment probe ) bound2_OBJECT
-	probe
-
-( obj environment probe ) bound2_TAKE_FAILED
-		obj
-		environment outer get
-	bound
-
-( obj environment ) bound_NULL
-	obj
-
-( obj environment ) bound_ENVIRONMENT
-		obj
-		environment
-			environment bindings get
-			obj
-			take_failed
-		take
-	bound2
-
-( state obj probe ) next_state2_TAKE_FAILED
-	state obj tag get
-
-( state obj probe ) next_state2_STATE
-	probe
-
-( state obj ) next_state
-		state
-		obj
-			state
-			obj
-			take_failed
-		take
-	next_state2
-
-( th action environment ) do_action_MACRO
-			action script get
-			environment
-			th cursor get
-		Digression
-	th cursor put
-
-( th state ) perform_ACCEPT
-	false
-
-( th state ) perform_SHIFT
-	after
-				th cursor get tokens get
-				head
-				Eof
-			take
-		raw_token bind
-			th cursor get tokens get tail get
-		th cursor get tokens put
-				raw_token
-				th cursor get environment get
-			bound
-		current_token bind
-		th finish_digression
-				current_token
-				th.operands
-			Cons
-		th operands put
-				th history get head get
-				current_token
-			next_state
-		new_state bind
-				new_state
-				th history get
-			Cons
-		th history put
-	return
-		true
-	end
-
-( th state ) perform_REDUCE0
-	after
-				th history get head get action get
-				th reduce_environment get
-			bound
-		action bind
-			action formal_args get
-		formal_args bind
-			th cursor get environment get Environment
-		actual_args bind
-			th
-			action
-			actual_args
-		do_action
-	return
-		true
-	end
-
-( th probe ) execute2_FALSE
-
-( th probe ) execute2_TRUE
-	after
-			th history get head get tag
-		command bind
-	return
-			th
-			th command perform
-		execute2
-	end
-
-( procedure environment lexical_scope ) execute
-			procedure script get
-			environment
-			nothing
-		Digression
-		null
-		procedure dialect get null Cons
-		lexical_scope
-		CONTINUATION
-	Continuation th bind
-			th
-			true
-		execute2
-	pop
-""", global_scope )
-
 # Sheppard builtins
 
 def define_builtins( bindings, global_scope ):
 	def digress( th, *values ):
-		th.cursor = DIGRESSION( List( values ), th.cursor.environment, th.cursor )
+		th.activation.cursor = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
 
 	def bind_with_name( func, name, *args ):
 		bindings[ "ACTION_" + name ] = PRIMITIVE( func, Stack( list( args ) ), global_scope )
@@ -533,8 +381,24 @@ def define_builtins( bindings, global_scope ):
 	bind_with_name( eat, "eat1", null )
 	bind_with_name( eat, "eat2", null, null )
 
+	def begin( th ):
+		# One day, this might start some kind of local scope.  But not today.
+		# TODO: This could probably be a macro
+		digress( th, "BEGIN_MARKER" )
+	bind( begin, null )
+
+	def compound_expr( th, result ):
+		# TODO: This could probably be a macro
+		digress( th, result )
+	bind( compound_expr, null, null, null, 'result', null )
+
+	def compound_stmt( th ):
+		# TODO: This could probably be a macro
+		pass
+	bind( compound_stmt, null, null, null )
+
 	def scope( th ):
-		digress( th, th.scope )
+		digress( th, th.activation.scope )
 	bind( scope, null )
 
 	def get_tag( th, obj ):
@@ -580,11 +444,15 @@ def define_builtins( bindings, global_scope ):
 
 	def Digression( th, **args ):
 		digress( th, DIGRESSION( **args ) )
-	bind( Digression, 'tokens', 'environment', 'prev', null )
+	bind( Digression, 'tokens', 'environment', 'resumption', null )
 
-	def Continuation( th, **args ):
-		digress( th, CONTINUATION( **args ) )
-	bind( Continuation, 'cursor', 'operands', 'history', 'scope', 'caller', null )
+	def Activation( th, **args ):
+		digress( th, ACTIVATION( **args ) )
+	bind( Activation, 'cursor', 'operands', 'history', 'scope', 'caller', null )
+
+	def Thread( th, **args ):
+		digress( th, THREAD( **args ) )
+	bind( Thread, 'activation', null )
 
 	def Environment( th, **args ):
 		digress( th, ENVIRONMENT( **args ) )
@@ -594,6 +462,184 @@ def define_builtins( bindings, global_scope ):
 		print "Huh?? What do I do for do_action_PRIMITIVE?"
 		digress( th, "STATEMENT" )
 	bind( do_action_PRIMITIVE, 'th', 'action', 'environment', null )
+
+# Meta-interpreter
+
+global_scope = ENVIRONMENT( null )
+bindings = parse_macros("""
+( value symbol ) bind 
+		value
+		scope bindings get
+	symbol put
+
+( base field ) pop_list
+	begin
+			base field get head get
+		result bind
+			base field get tail get
+		base field put
+	return
+		result
+	end
+
+( th remaining_tokens ) finish_digression_NULL
+		th cursor get resumption get
+	th cursor put
+
+( th remaining_tokens ) finish_digression_LIST
+
+( formal_arg actual_arg arg_bindings ) bind_arg_SYMBOL
+		actual_arg
+	arg_bindings formal_arg put
+
+( formal_arg actual_arg arg_bindings ) bind_arg_NULL
+
+( th formal_args arg_bindings ) bind_args_NULL
+	arg_bindings
+
+( th formal_args arg_bindings ) bind_args_LIST
+		th history get tail get
+	th history put
+		formal_args head get
+		th operands pop_list
+		arg_bindings
+	bind_arg
+		th
+		formal_args tail get
+		arg_bindings
+	bind_args
+
+( obj environment probe ) bound2_OBJECT
+	probe
+
+( obj environment probe ) bound2_TAKE_FAILED
+		obj
+		environment outer get
+	bound
+
+( obj environment ) bound_NULL
+	obj
+
+( obj environment ) bound_ENVIRONMENT
+		obj
+		environment
+			environment bindings get
+			obj
+			take_failed
+		take
+	bound2
+
+( state obj probe ) next_state2_TAKE_FAILED
+	state obj tag get
+
+( state obj probe ) next_state2_STATE
+	probe
+
+( state obj ) next_state
+		state
+		obj
+			state
+			obj
+			take_failed
+		take
+	next_state2
+
+( th action environment ) do_action_MACRO
+		th activation get
+	act bind
+			action script get
+			environment
+			act cursor get
+		Digression
+	act cursor put
+
+( th state ) perform_ACCEPT
+	false
+
+( th state ) perform_SHIFT
+	begin
+			th activation get
+		act bind
+				act cursor get tokens get
+				head
+				Eof
+			take
+		raw_token bind
+			act cursor get tokens get tail get
+		act cursor get tokens put
+				raw_token
+				act cursor get environment get
+			bound
+		current_token bind
+		th finish_digression
+				current_token
+				act operands get
+			Cons
+		act operands put
+				act history get head get
+				current_token
+			next_state
+		new_state bind
+				new_state
+				act history get
+			Cons
+		act history put
+	return
+		true
+	end
+
+( th state ) perform_REDUCE0
+	begin
+			th activation get
+		act bind
+				act history get head get action get
+				act scope get
+			bound
+		action bind
+			action environment get Environment
+		environment bind
+			act cursor get environment get
+		environment digressor put
+			th
+			action formal_args get
+			environment bindings get
+		bind_args
+			th
+			action
+			environment
+		do_action
+	return
+		true
+	end
+
+( th probe ) execute2_FALSE
+	false
+
+( th probe ) execute2_TRUE
+	begin
+			th activation get history get head get tag
+		command bind
+	return
+			th
+			th command perform
+		execute2
+	end
+
+( procedure environment scope ) execute
+			procedure script get
+			environment
+			nothing
+		Digression
+		null
+		procedure dialect get null Cons
+		scope
+		ACTIVATION
+	Activation Thread th bind
+			th
+			true
+		execute2
+	pop
+""", global_scope )
 
 
 global_scope.bindings = bindings
@@ -613,12 +659,6 @@ if 1:
 	bindings[ 'false' ] = false
 	bindings[ 'true' ] = true
 	bindings[ 'nothing' ] = nothing
-	# Older stuff
-	bindings[ 'Null' ] = null
-	bindings[ 'Eof' ] = eof
-	bindings[ 'False' ] = false
-	bindings[ 'True' ] = true
-	bindings[ 'Nothing' ] = nothing
 	outer_procedure = PROCEDURE( List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment, "execute" ]), dialect, global_scope )
 	execute( outer_procedure, ENVIRONMENT( global_scope ), global_scope )
 
