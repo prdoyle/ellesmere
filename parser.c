@@ -260,7 +260,19 @@ static void pg_populateItemTable( ParserGenerator pg, File traceFile )
 	pg->items = ita_new( 150, ml );
 	pg->rightmostItems = bv_new( gr_numProductions(gr), ml );
 	TRACE( traceFile, "Populating item table\n" );
-	for( i=0; i < gr_numProductions(gr); i++ )
+
+	// We process the productions starting from the end so that the
+	// canonicalization mechanism will work with nested grammars, and will
+	// favour inner productions over inherited ones, because the inner
+	// productions tend to have the correct conflict resolution settings.
+	//
+	// A safer approach would be not to canonicalize one production to another
+	// with a different conflict resolution setting, but that would needlessly
+	// double the number of items, and therefore the size of bitvectors.
+	// Perhaps proper canonicalization requires a second pass, to select the
+	// production with the most dominant conflict resolution setting.
+	//
+	for( i = gr_numProductions(gr)-1; i >= 0; i-- )
 		{
 		Production pn = gr_production( gr, i );
 		for( j=0; j <= pn_length( pn, gr ); j++ )
@@ -1059,8 +1071,7 @@ static int its_LR0StateKind( ItemSet its, ParserGenerator pg )
 			else
 				return ShiftReduceConflict;
 		default:
-			// TODO: Is this right?  Isn't it possible to have two different
-			// reduces as long as they can be disambiguated by the lookahead?
+			// LR0 has no lookahead, so this is a conflict.
 			return ReduceReduceConflict;
 		}
 	}
@@ -1102,7 +1113,7 @@ static char *LR0StatePythonNames[] =
 	"REDUCE0",
 	"ACCEPT",
 	"SRCONFLICT",
-	"RRCONFLICT",
+	"REDUCE0", // HACK: should be RRCONFLICT, except the whole way we determine state types is wrong.  REDUCE0/RRCONFLICT should be determined by whether all out-edges are the same, not by how many items there are in the item set.
 	};
 
 static int pg_sendPythonTo( ParserGenerator pg, File outFile )
@@ -2559,7 +2570,7 @@ SheppardGrammarLine grammar[] =
 	{{ "OBJECT",       "BEGIN_MARKER", "STATEMENTS", "return", "result:OBJECT",  "end" },  "compound_expr" }, // This one doesn't need to be fully polymorphic.  That's wasteful.
 	{{ "BOOLEAN",      "BEGIN_MARKER", "STATEMENTS", "return", "result:BOOLEAN", "end" },  "compound_expr" },
 	{{ "STATEMENT",    "BEGIN_MARKER", "STATEMENTS",                             "end" },  "compound_stmt" },
-	{{ "ENVIRONMENT",  "scope" }},
+	{{ "ENVIRONMENT",  "current_environment" }},
 	{{ "OBJECT",       "base:OBJECT",     "field:SYMBOL", "get" }}, // Syntactic sugar for "base field ERROR take"
 	//{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:OBJECT", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
 	{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:TAKE_FAILED", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
@@ -2582,13 +2593,13 @@ SheppardGrammarLine grammar[] =
 
 	{{ "OBJECT",       "base:OBJECT", "field:SYMBOL", "pop_list" }},
 
-	{{ "STATEMENT",    "th:ACTIVATION", "remaining_tokens:NULL", "finish_digression" },            "finish_digression_NULL" },
-	{{ "STATEMENT",    "th:ACTIVATION", "remaining_tokens:LIST", "finish_digression" },            "finish_digression_LIST" },
+	{{ "STATEMENT",    "th:THREAD", "remaining_tokens:NULL", "finish_digression" },            "finish_digression_NULL" },
+	{{ "STATEMENT",    "th:THREAD", "remaining_tokens:LIST", "finish_digression" },            "finish_digression_LIST" },
 
 	{{ "STATEMENT",    "formal_arg:SYMBOL", "actual_arg:OBJECT", "arg_bindings:BINDINGS", "bind_arg" },   "bind_arg_SYMBOL" },
 	{{ "STATEMENT",    "formal_arg:NULL",   "actual_arg:OBJECT", "arg_bindings:BINDINGS", "bind_arg" },   "bind_arg_NULL" },
-	{{ "STATEMENT",    "th:ACTIVATION", "formal_args:NULL", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_NULL" },
-	{{ "STATEMENT",    "th:ACTIVATION", "formal_args:LIST", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_LIST" },
+	{{ "STATEMENT",    "th:THREAD", "formal_args:NULL", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_NULL" },
+	{{ "STATEMENT",    "th:THREAD", "formal_args:LIST", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_LIST" },
 	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "probe:OBJECT",      "bound2" },     "bound2_OBJECT" },
 	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "probe:TAKE_FAILED", "bound2" },     "bound2_TAKE_FAILED" },
 	{{ "OBJECT",       "obj:OBJECT", "environment:NULL",        "bound" },     "bound_NULL" },
@@ -2625,10 +2636,11 @@ SheppardGrammarLine grammar[] =
 static TestGrammarLine subtags[] =
 	{
 	{ "OBJECT",      "LIST", "PROCEDURE", "DIGRESSION", "ENVIRONMENT", "BINDINGS", "SYMBOL", "STATE", "ACTIVATION", "THREAD" },
+	{ "OBJECT",      "MACRO", "PRIMITIVE" },
 	{ "LIST",        "NULL" },
 	{ "ENVIRONMENT", "NULL" },
 	{ "DIGRESSION",  "NOTHING" },
-	{ "STATE",       "SHIFT", "REDUCE", "ACCEPT" },
+	{ "STATE",       "SHIFT", "REDUCE0", "ACCEPT" },
 	{ "BOOLEAN",     "FALSE", "TRUE" },
 	};
 

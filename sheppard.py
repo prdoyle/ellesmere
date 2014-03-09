@@ -69,15 +69,6 @@ def list_str( lst, sep=", ", ellision_limit=999 ):
 		prefix = "... "
 	return prefix + string.join([ repr(s) for s in reversed( pl )], sep )
 
-#
-# The interpreter.
-# Some rules to make it look more like Sheppard code:
-#  - Procedures are only allowed one if statement sequence.  It must be at the
-#  top level, and must use is_a.  This represents sheppard automaton-based dispatch.
-#  - Loops will be replaced with tail digression.  There's only one loop anyway
-#  so that's no big deal.
-#
-
 def take( obj, key, default ):
 	#debug( "--    %s.take( %s, %s )", repr(obj), repr(key), repr(default) )
 	if is_symbol( key ) and key in obj:
@@ -85,13 +76,23 @@ def take( obj, key, default ):
 	else:
 		return default
 
+#
+# The interpreter.
+# Some rules to make it look more like Sheppard code:
+#  - Procedures are only allowed one if statement sequence.  It must be at the
+#  top level, and must use is_a based on an argument.  This represents sheppard
+#  automaton-based dispatch.
+#  - Loops will be replaced with tail digression.  There's only one loop anyway
+#  so that's no big deal.
+#
+
 def pop_list( base, field ):
 	result = base[field].head
 	base[field] = base[field].tail
 	return result
 
-def finish_digression( th ):
-	if is_a( th.activation.cursor.tokens, "NULL" ):
+def finish_digression( th, remaining_tokens ):
+	if is_a( remaining_tokens, "NULL" ):
 		act = th.activation
 		debug( "  (finished %s)", repr( act.cursor ) )
 		act.cursor = act.cursor.resumption
@@ -105,12 +106,12 @@ def bind_arg( formal_arg, actual_arg, arg_bindings ):
 
 def bind_args( th, formal_args, arg_bindings ):
 	if is_a( formal_args, "NULL" ):
-		return arg_bindings
+		pass
 	else:
 		act = th.activation
 		act.history = act.history.tail
 		bind_arg( formal_args.head, pop_list( th.activation, "operands" ), arg_bindings )
-		return bind_args( th, formal_args.tail, arg_bindings )
+		bind_args( th, formal_args.tail, arg_bindings )
 
 def bound2( obj, environment, probe ):
 	if is_a( probe, "TAKE_FAILED" ):
@@ -127,7 +128,13 @@ def bound( obj, environment ):
 
 def next_state2( state, obj, probe ):
 	if is_a( probe, "TAKE_FAILED" ): # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj] exists and state[ tag(obj) ] does not, we can't evaluate the latter
-		return state[ tag(obj) ]
+		try:
+			return state[ tag(obj) ]
+		except AttributeError:
+			e = Unexpected_token( state, obj )
+			debug( "ERROR: %s", e )
+			print_stuff( th )
+			raise e
 	else:
 		return probe
 
@@ -143,6 +150,7 @@ def do_action( th, action, environment ):
 		act = th.activation
 		act.cursor = DIGRESSION( action.script, environment, act.cursor )
 		debug( "    new_digression: %s", repr( act.cursor ) )
+		finish_digression( th, act.cursor.tokens ) # Just in case the macro is totally empty
 
 def perform_accept( th ):
 	debug( "accept" )
@@ -152,14 +160,17 @@ def perform_shift( th ):
 	#debug( "shift" )
 	act = th.activation
 	if act.operands != null and act.operands.head in action_words:
-		raise Missed_Action_Word( act.operands.head )
+		e = Missed_Action_Word( act.operands.head )
+		debug( "ERROR: %s", e )
+		print_stuff( th )
+		raise e
 	#debug( "  cursor: %s", repr( act.cursor ) )
 	raw_token = take( act.cursor.tokens, "head", eof )
 	act.cursor.tokens = act.cursor.tokens.tail
 	#debug( "  token: %s", repr( raw_token ) )
 	#debug( "    environment: %s", act.cursor.environment )
 	current_token = bound( raw_token, act.cursor.environment )
-	finish_digression( th )
+	finish_digression( th, act.cursor.tokens )
 	#debug( "    value: %s", current_token )
 	act.operands = LIST( current_token, act.operands )
 	new_state = next_state( act.history.head, current_token )
@@ -167,12 +178,19 @@ def perform_shift( th ):
 	act.history = LIST( new_state, act.history )
 	return true
 
+debug_ellision_limit=999
+
+def print_program( th ):
+	act = th.activation
+	debug( "+ PROGRAM: %s ^ %s", list_str( act.operands, "  ", debug_ellision_limit ), cursor_description( act.cursor ) )
+
 def print_stuff( th ):
 	act = th.activation
 	#debug( "stack: %s", zip( python_list( act.history ), python_list( act.operands ) ) )
-	debug( "+ PROGRAM: %s ^ %s", list_str( act.operands, "  ", 8 ), cursor_description( act.cursor ) )
-	debug( "| history: %s", list_str( act.history, ":", 8 ) )
-	debug( "|   scope: %s", repr( act.scope ) )
+	print_program( th )
+	debug( "| history: %s", list_str( act.history, ":", debug_ellision_limit ) )
+	debug( "|  cursor: %s", repr( act.cursor ) )
+	debug( "|     env: %s", repr( act.cursor.environment ) )
 
 def perform_reduce0( th ):
 	print_stuff( th )
@@ -182,12 +200,13 @@ def perform_reduce0( th ):
 	debug( "  action: %s", repr( action ) )
 	if is_a( action, "MACRO" ):
 		debug( "    %s", python_list( action.script ) )
-	environment = ENVIRONMENT( action.environment )
-	environment.digressor = act.cursor.environment  # Need this in order to make "bind" a macro, or else I can't access the environment I'm trying to bind
-	bind_args( th, action.formal_args, environment.bindings )
-	debug( "  environment: %s", environment )
+	reduce_env = ENVIRONMENT( action.environment )
+	reduce_env.digressor = act.cursor.environment  # Need this in order to make "bind" a macro, or else I can't access the environment I'm trying to bind
+	bind_args( th, action.formal_args, reduce_env.bindings )
+	debug( "  environment: %s", reduce_env )
 	debug( "    based on: %s", act.cursor )
-	do_action( th, action, environment )
+	do_action( th, action, reduce_env )
+	print_program( th )
 	return true
 
 perform = {
@@ -205,14 +224,15 @@ def cursor_description( cursor ):
 def execute2( th, probe ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
 	while is_a( probe, "TRUE" ):
-		print_stuff( th )
+		#print_stuff( th )
 		command = tag( th.activation.history.head )
-		debug( "-__ execute2 __" )
+		#debug( "-__ execute2 __" )
 		# if Python had tail call elimination, we could do this:
 		# execute2( th, perform[ command ]( th ) )
 		probe = perform[ command ]( th )
 
 def execute( procedure, environment, scope ):
+	global th # Allow us to print debug info without passing this all over the place
 	th = THREAD( ACTIVATION( DIGRESSION( procedure.script, environment, nothing ), null, LIST( procedure.dialect, null ), scope, "ACTIVATION" ) )
 	debug( "starting thread: %s with digression:\n\t%s", repr(th), th.activation.cursor )
 	execute2( th, true )
@@ -275,6 +295,15 @@ class Missed_Action_Word( BaseException ):
 
 	def __str__( self ):
 		return "Missed action word: " + repr( self._word )
+
+class Unexpected_token( BaseException ):
+
+	def __init__( self, state, token ):
+		self._state = state
+		self._token = token
+
+	def __str__( self ):
+		return "Unexpected token %s in state %s" % ( self._token, self._state )
 
 class Start_script:
 
@@ -407,9 +436,9 @@ def define_builtins( bindings, global_scope ):
 		pass
 	bind( compound_stmt, null, null, null )
 
-	def scope( th ):
-		digress( th, th.activation.scope )
-	bind( scope, null )
+	def current_environment( th ):
+		digress( th, th.activation.cursor.environment )
+	bind( current_environment, null )
 
 	def get_tag( th, obj ):
 		digress( th, tag(obj) )
@@ -470,8 +499,9 @@ def define_builtins( bindings, global_scope ):
 
 	def do_action_PRIMITIVE( th, **args ):
 		print "Huh?? What do I do for do_action_PRIMITIVE?"
+		raise BaseException
 		digress( th, "STATEMENT" )
-	bind( do_action_PRIMITIVE, 'th', 'action', 'environment', null )
+	bind( do_action_PRIMITIVE, 'th_arg', 'action', 'environment', null ) # Hmm, collision between th in the interpreter and th in the program
 
 # Meta-interpreter
 
@@ -479,7 +509,7 @@ global_scope = ENVIRONMENT( null )
 bindings = parse_macros("""
 ( value symbol ) bind 
 		value
-		scope bindings get
+		current_environment digressor get bindings get
 	symbol put
 
 ( base field ) pop_list
@@ -493,8 +523,10 @@ bindings = parse_macros("""
 	end
 
 ( th remaining_tokens ) finish_digression_NULL
-		th cursor get resumption get
-	th cursor put
+		th activation get
+	act bind
+		act cursor get resumption get
+	act cursor put
 
 ( th remaining_tokens ) finish_digression_LIST
 
@@ -505,13 +537,14 @@ bindings = parse_macros("""
 ( formal_arg actual_arg arg_bindings ) bind_arg_NULL
 
 ( th formal_args arg_bindings ) bind_args_NULL
-	arg_bindings
 
 ( th formal_args arg_bindings ) bind_args_LIST
-		th history get tail get
-	th history put
+		th activation get
+	act bind
+		act history get tail get
+	act history put
 		formal_args head get
-		th operands pop_list
+		act operands pop_list
 		arg_bindings
 	bind_arg
 		th
@@ -535,7 +568,7 @@ bindings = parse_macros("""
 		environment
 			environment bindings get
 			obj
-			take_failed
+			TAKE_FAILED
 		take
 	bound2
 
@@ -550,7 +583,7 @@ bindings = parse_macros("""
 		obj
 			state
 			obj
-			take_failed
+			TAKE_FAILED
 		take
 	next_state2
 
@@ -562,6 +595,9 @@ bindings = parse_macros("""
 			act cursor get
 		Digression
 	act cursor put
+		th
+		act cursor get tokens get
+	finish_digression
 
 ( th state ) perform_ACCEPT
 	false
@@ -581,7 +617,9 @@ bindings = parse_macros("""
 				act cursor get environment get
 			bound
 		current_token bind
-		th finish_digression
+			th
+			act cursor get tokens get
+		finish_digression
 				current_token
 				act operands get
 			Cons
@@ -607,16 +645,16 @@ bindings = parse_macros("""
 			bound
 		action bind
 			action environment get Environment
-		environment bind
+		reduce_env bind
 			act cursor get environment get
-		environment digressor put
+		reduce_env digressor put
 			th
 			action formal_args get
-			environment bindings get
+			reduce_env bindings get
 		bind_args
 			th
 			action
-			environment
+			reduce_env
 		do_action
 	return
 		true
@@ -662,8 +700,7 @@ dialect = generated_automaton()
 #print "  dialect:\n" + dialect.description()
 print "\n===================\n"
 
-if 1:
-	inner_procedure = go_world()
+def wrap_procedure( inner_procedure ):
 	nothing.environment = global_scope
 	bindings = global_scope.bindings
 	bindings[ 'null' ] = null
@@ -672,5 +709,11 @@ if 1:
 	bindings[ 'true' ] = true
 	bindings[ 'nothing' ] = nothing
 	outer_procedure = PROCEDURE( List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment, "execute" ]), dialect, global_scope )
-	execute( outer_procedure, ENVIRONMENT( global_scope ), global_scope )
+	return outer_procedure
+
+if 1:
+	procedure = go_world()
+	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
+	procedure = wrap_procedure( go_world() )
+	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
 

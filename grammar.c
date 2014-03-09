@@ -349,6 +349,8 @@ FUNC int pn_sendItemTo( Production pn, int dotPosition, File fl, Grammar gr, Sym
 		}
 	if( i == dotPosition )
 		charsSent += fl_write( fl, "^" );
+	if( pn_symbol( pn, gr ) )
+		charsSent += fl_write( fl, " { %s }", sy_name( pn_symbol( pn, gr ), st ) );
 	return charsSent;
 	}
 
