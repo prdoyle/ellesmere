@@ -497,10 +497,8 @@ def define_builtins( bindings, global_scope ):
 		digress( th, ENVIRONMENT( **args ) )
 	bind( Environment, 'outer', null )
 
-	def do_action_PRIMITIVE( th, **args ):
-		print "Huh?? What do I do for do_action_PRIMITIVE?"
-		raise BaseException
-		digress( th, "STATEMENT" )
+	def do_action_PRIMITIVE( th, th_arg, action, environment ):
+		action.function( th_arg, **dict( environment.bindings ) )
 	bind( do_action_PRIMITIVE, 'th_arg', 'action', 'environment', null ) # Hmm, collision between th in the interpreter and th in the program
 
 # Meta-interpreter

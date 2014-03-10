@@ -122,7 +122,7 @@ sheppard.dot: parser.t
 	parser.t > $@ 3> trace.txt
 
 sheppard_gen.py: parser.t
-	parser.t > $@ 3> trace.txt 4> sheppard.dot 5> table.txt
+	time parser.t > $@ 3> trace.txt 4> sheppard.dot 5> table.txt
 
 records.t: records.t.o records.o $(records_DEPS)
 	$(LD) $(LDFLAGS) $^ -o $@ #-lefence

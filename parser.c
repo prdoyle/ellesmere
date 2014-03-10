@@ -2636,7 +2636,7 @@ SheppardGrammarLine grammar[] =
 static TestGrammarLine subtags[] =
 	{
 	{ "OBJECT",      "LIST", "PROCEDURE", "DIGRESSION", "ENVIRONMENT", "BINDINGS", "SYMBOL", "STATE", "ACTIVATION", "THREAD" },
-	{ "OBJECT",      "MACRO", "PRIMITIVE" },
+	{ "OBJECT",      "MACRO", "PRIMITIVE", "EOF" },
 	{ "LIST",        "NULL" },
 	{ "ENVIRONMENT", "NULL" },
 	{ "DIGRESSION",  "NOTHING" },
