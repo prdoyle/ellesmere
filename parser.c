@@ -2563,85 +2563,76 @@ TestGrammarLine grammar_hello[] =
 SheppardGrammarLine grammar[] =
 	{
 	// Builtins
-	{{ "PROGRAM",      "STATEMENTS",      "EOF" }},
-	{{ "STATEMENTS",   "STATEMENTS",      "STATEMENT" },            "eat2" },
-	{{ "STATEMENTS",   "STATEMENT" },                               "eat1" },
-	{{ "BEGIN_MARKER", "begin" }},
-	{{ "OBJECT",       "BEGIN_MARKER", "STATEMENTS", "return", "result:OBJECT",  "end" },  "compound_expr" }, // This one doesn't need to be fully polymorphic.  That's wasteful.
-	{{ "BOOLEAN",      "BEGIN_MARKER", "STATEMENTS", "return", "result:BOOLEAN", "end" },  "compound_expr" },
-	{{ "STATEMENT",    "BEGIN_MARKER", "STATEMENTS",                             "end" },  "compound_stmt" },
-	{{ "ENVIRONMENT",  "current_environment" }},
-	{{ "OBJECT",       "base:OBJECT",     "field:SYMBOL", "get" }}, // Syntactic sugar for "base field ERROR take"
-	//{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:OBJECT", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
-	{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:TAKE_FAILED", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
-	{{ "OBJECT",       "base:OBJECT",     "field:OBJECT", "default:EOF",         "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
-	{{ "STATEMENT",    "value:OBJECT",    "base:OBJECT", "field:SYMBOL", "put" }}, // "set" is a python keyword which is awkward
-	{{ "SYMBOL",       "obj:OBJECT", "tag" }},
-	{{ "NULL",         "Null" }},
-	{{ "ENVIRONMENT",  "outer:ENVIRONMENT", "Environment" }},
-	{{ "EOF",          "Eof" }},
-	{{ "NOTHING",      "Nothing" }}, // Digression that keeps returning EOF forever
-	{{ "LIST",         "head:OBJECT",     "tail:LIST", "Cons" }},
-	{{ "PROCEDURE",    "tokens:LIST",     "dialect:STATE", "environment:ENVIRONMENT", "Procedure" }},
-	{{ "DIGRESSION",   "tokens:LIST",     "bindings:ENVIRONMENT", "prev:DIGRESSION", "Digression" }},
-	{{ "ACTIVATION",   "cursor:DIGRESSION",  "operands:LIST", "history:LIST", "scope:ENVIRONMENT", "caller:ACTIVATION", "Activation" }},
-	{{ "THREAD",       "activation:ACTIVATION", "Thread" }},
+	{{ ":PROGRAM",      "STATEMENTS",     ":EOF" }},
+	{{  "STATEMENTS",   "STATEMENTS",      "STATEMENT" },            "eat2" },
+	{{  "STATEMENTS",   "STATEMENT" },                               "eat1" },
+	{{ "BEGIN_MARKER",  "begin" }},
+	{{ ":OBJECT",       "BEGIN_MARKER", "STATEMENTS", "return", "result:OBJECT",  "end" },  "compound_expr" }, // This one doesn't need to be fully polymorphic.  That's wasteful.
+	{{ ":BOOLEAN",      "BEGIN_MARKER", "STATEMENTS", "return", "result:BOOLEAN", "end" },  "compound_expr" },
+	{{  "STATEMENT",    "BEGIN_MARKER", "STATEMENTS",                             "end" },  "compound_stmt" },
+	{{ ":ENVIRONMENT",  "current_environment" }},
+	{{ ":OBJECT",       "base:OBJECT",     "field:SYMBOL", "get" }}, // Syntactic sugar for "base field ERROR take"
+	{{ ":OBJECT",       "base:OBJECT",     "field:OBJECT", "TAKE_FAILED@default", "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
+	{{ ":OBJECT",       "base:OBJECT",     "field:OBJECT", "default:EOF",         "take" }}, // If field is a SYMBOL and base has that field, get it; otherwise return default
+	{{  "STATEMENT",    "value:OBJECT",    "base:OBJECT",  "field:SYMBOL", "put" }}, // "set" is a python keyword which is awkward
+	{{ ":SYMBOL",       "obj:OBJECT", "tag" }},
+	{{ ":SYMBOL",       "obj:OBJECT", "tag_edge_symbol" }},
+	{{ ":ENVIRONMENT",  "outer:ENVIRONMENT", "Environment" }},
+	{{ ":LIST",         "head:OBJECT",     "tail:LIST", "Cons" }},
+	{{ ":PROCEDURE",    "tokens:LIST",     "dialect:STATE", "environment:ENVIRONMENT", "Procedure" }},
+	{{ ":DIGRESSION",   "tokens:LIST",     "bindings:ENVIRONMENT", "prev:DIGRESSION", "Digression" }},
+	{{ ":ACTIVATION",   "cursor:DIGRESSION",  "operands:LIST", "history:LIST", "scope:ENVIRONMENT", "caller:ACTIVATION", "Activation" }},
+	{{ ":THREAD",       "activation:ACTIVATION", "Thread" }},
 	// Syntactic sugar
-	{{ "STATEMENT",    "value:OBJECT", "symbol:SYMBOL", "bind" }},
+	{{  "STATEMENT",    "value:OBJECT", "symbol:SYMBOL", "bind" }},
 
 	// Procedures from the self-interpreter
 
-	{{ "OBJECT",       "base:OBJECT", "field:SYMBOL", "pop_list" }},
+	{{ ":OBJECT",       "base:OBJECT", "field:SYMBOL", "pop_list" }},
 
-	{{ "STATEMENT",    "th:THREAD", "remaining_tokens:NULL", "finish_digression" },            "finish_digression_NULL" },
-	{{ "STATEMENT",    "th:THREAD", "remaining_tokens:LIST", "finish_digression" },            "finish_digression_LIST" },
+	{{  "STATEMENT",    "th:THREAD", "remaining_tokens:NULL", "finish_digression" },            "finish_digression_NULL" },
+	{{  "STATEMENT",    "th:THREAD", "remaining_tokens:LIST", "finish_digression" },            "finish_digression_LIST" },
 
-	{{ "STATEMENT",    "formal_arg:SYMBOL", "actual_arg:OBJECT", "arg_bindings:BINDINGS", "bind_arg" },   "bind_arg_SYMBOL" },
-	{{ "STATEMENT",    "formal_arg:NULL",   "actual_arg:OBJECT", "arg_bindings:BINDINGS", "bind_arg" },   "bind_arg_NULL" },
-	{{ "STATEMENT",    "th:THREAD", "formal_args:NULL", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_NULL" },
-	{{ "STATEMENT",    "th:THREAD", "formal_args:LIST", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_LIST" },
-	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "probe:OBJECT",      "bound2" },     "bound2_OBJECT" },
-	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "probe:TAKE_FAILED", "bound2" },     "bound2_TAKE_FAILED" },
-	{{ "OBJECT",       "obj:OBJECT", "environment:NULL",        "bound" },     "bound_NULL" },
-	{{ "OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "bound" },     "bound_ENVIRONMENT" },
+	{{  "STATEMENT",    "formal_arg:SYMBOL", "actual_arg:OBJECT", "arg_bindings:BINDINGS", "bind_arg" },   "bind_arg_SYMBOL" },
+	{{  "STATEMENT",    "formal_arg:NULL",   "actual_arg:OBJECT", "arg_bindings:BINDINGS", "bind_arg" },   "bind_arg_NULL" },
+	{{  "STATEMENT",    "th:THREAD", "formal_args:NULL", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_NULL" },
+	{{  "STATEMENT",    "th:THREAD", "formal_args:LIST", "arg_bindings:BINDINGS", "bind_args" },     "bind_args_LIST" },
+	{{ ":OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "probe:OBJECT",      "bound2" },     "bound2_OBJECT" },
+	{{ ":OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "TAKE_FAILED",       "bound2" },     "bound2_TAKE_FAILED" },
+	{{ ":OBJECT",       "obj:OBJECT", "environment:NULL",        "bound" },     "bound_NULL" },
+	{{ ":OBJECT",       "obj:OBJECT", "environment:ENVIRONMENT", "bound" },     "bound_ENVIRONMENT" },
 
-	{{ "STATEMENT",    "state:STATE", "obj:OBJECT", "probe:STATE",      "next_state2"},  "next_state2_STATE" },
-	{{ "STATEMENT",    "state:STATE", "obj:OBJECT", "probe:TAKE_FAILED", "next_state2"},  "next_state2_TAKE_FAILED" },
-	{{ "STATEMENT",    "state:STATE", "obj:OBJECT", "next_state"}},
+	{{  "STATEMENT",    "state:STATE", "obj:OBJECT", "probe:STATE",   "next_state2"},  "next_state2_STATE" },
+	{{  "STATEMENT",    "state:STATE", "obj:OBJECT", "TAKE_FAILED",   "next_state2"},  "next_state2_TAKE_FAILED" },
+	{{  "STATEMENT",    "state:STATE", "obj:OBJECT", "next_state"}},
 
-	{{ "STATEMENT",    "th:THREAD", "action:PRIMITIVE", "environment:ENVIRONMENT", "do_action" }, "do_action_PRIMITIVE" },
-	{{ "STATEMENT",    "th:THREAD", "action:MACRO",     "environment:ENVIRONMENT", "do_action" }, "do_action_MACRO" },
+	{{  "STATEMENT",    "th:THREAD", "action:PRIMITIVE", "environment:ENVIRONMENT", "do_action" }, "do_action_PRIMITIVE" },
+	{{  "STATEMENT",    "th:THREAD", "action:MACRO",     "environment:ENVIRONMENT", "do_action" }, "do_action_MACRO" },
 
-	{{ "BOOLEAN",      "th:THREAD", "state:ACCEPT",  "perform" },   "perform_ACCEPT" },
-	{{ "BOOLEAN",      "th:THREAD", "state:SHIFT",   "perform" },   "perform_SHIFT" },
-	{{ "BOOLEAN",      "th:THREAD", "state:REDUCE0", "perform" },   "perform_REDUCE0" },
+	{{ ":BOOLEAN",      "th:THREAD", "ACCEPT",  "perform" },   "perform_ACCEPT" },
+	{{ ":BOOLEAN",      "th:THREAD", "SHIFT",   "perform" },   "perform_SHIFT" },
+	{{ ":BOOLEAN",      "th:THREAD", "REDUCE0", "perform" },   "perform_REDUCE0" },
 
-	{{ "BOOLEAN",      "th:THREAD", "probe:FALSE", "execute2" },   "execute2_FALSE" },
-	{{ "BOOLEAN",      "th:THREAD", "probe:TRUE",  "execute2" },   "execute2_TRUE" },
-	// It's ok to ignore the result of execute2 if you want, so declare these as both BOOLEAN and STATEMENT
-	//{{ "STATEMENT",    "th:THREAD", "probe:FALSE", "execute2" },   "execute2_FALSE" },
-	//{{ "STATEMENT",    "th:THREAD", "probe:TRUE",  "execute2" },   "execute2_TRUE" },
+	{{ ":BOOLEAN",      "th:THREAD", "probe:FALSE", "execute2" },   "execute2_FALSE" },
+	{{ ":BOOLEAN",      "th:THREAD", "probe:TRUE",  "execute2" },   "execute2_TRUE" },
 
 	{{ "STATEMENT",    "procedure:PROCEDURE", "environment:ENVIRONMENT", "scope:ENVIRONMENT", "execute" }},
 
-	{{ "STATEMENT",    "OBJECT",  "pop" }},
-	{{ "STATEMENT",    "BOOLEAN", "pop" }},
+	{{ "STATEMENT",    ":OBJECT",  "pop" }},
+	{{ "STATEMENT",    ":BOOLEAN", "pop" }},
 
-	// TODO: What do I run when all my bindings disappear?  A PROCEURE complete with its own automaton?
-	// What is the scope in which the new scope is nested?
-	//{{ "STATEMENT",    "{" }, "push_scope" },
-	//{{ "STATEMENT",    "}" }, "pop_scope" },
 	};
 
 static TestGrammarLine subtags[] =
 	{
-	{ "OBJECT",      "LIST", "PROCEDURE", "DIGRESSION", "ENVIRONMENT", "BINDINGS", "SYMBOL", "STATE", "ACTIVATION", "THREAD" },
-	{ "OBJECT",      "MACRO", "PRIMITIVE", "EOF" },
-	{ "LIST",        "NULL" },
-	{ "ENVIRONMENT", "NULL" },
-	{ "DIGRESSION",  "NOTHING" },
-	{ "STATE",       "SHIFT", "REDUCE0", "ACCEPT" },
-	{ "BOOLEAN",     "FALSE", "TRUE" },
+	{ ":OBJECT",      ":LIST", ":PROCEDURE", ":DIGRESSION", ":ENVIRONMENT", ":BINDINGS", ":SYMBOL", ":STATE", ":ACTIVATION", ":THREAD" },
+	{ ":OBJECT",      ":MACRO", ":PRIMITIVE", ":EOF" },
+	{ ":LIST",        ":NULL" },
+	{ ":ENVIRONMENT", ":NULL" },
+	{ ":ACTIVATION",  ":NULL" },
+	{ ":DIGRESSION",  ":NOTHING" },
+	{ ":STATE",       ":SHIFT", ":REDUCE0", ":ACCEPT" },
+	{ ":BOOLEAN",     ":FALSE", ":TRUE" },
 	};
 
 TestGrammarLine grammar_old2[] =
@@ -2709,10 +2700,17 @@ int main( int argc, char *argv[] )
 			{
 			char *token = grammar[i].tokens[j];
 			char *colon = strchr( token, ':' );
+			char *at_sign = strchr( token, '@' );
 			if( colon )
 				{
 				char *name = dup( token, colon-token );
-				char *tag = colon+1;
+				char *tag  = colon; // tag includes colon!
+				pn_appendWithName( pn, sy_byName( name, st ), sy_byName( tag, st ), gr );
+				}
+			else if( at_sign )
+				{
+				char *name = at_sign+1;
+				char *tag  = dup( token, at_sign-token );
 				pn_appendWithName( pn, sy_byName( name, st ), sy_byName( tag, st ), gr );
 				}
 			else

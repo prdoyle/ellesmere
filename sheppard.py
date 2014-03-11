@@ -76,6 +76,9 @@ def take( obj, key, default ):
 	else:
 		return default
 
+def tag_edge_symbol( obj ):
+	return ":" + tag( obj )
+
 #
 # The interpreter.
 # Some rules to make it look more like Sheppard code:
@@ -127,9 +130,9 @@ def bound( obj, environment ):
 		return bound2( obj, environment, take( environment.bindings, obj, take_failed ) )
 
 def next_state2( state, obj, probe ):
-	if is_a( probe, "TAKE_FAILED" ): # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj] exists and state[ tag(obj) ] does not, we can't evaluate the latter
+	if is_a( probe, "TAKE_FAILED" ): # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj] exists and state[ tag_edge_symbol(obj) ] does not, we can't evaluate the latter
 		try:
-			return state[ tag(obj) ]
+			return state[ tag_edge_symbol(obj) ]
 		except AttributeError:
 			e = Unexpected_token( state, obj )
 			debug( "ERROR: %s", e )
@@ -233,7 +236,7 @@ def execute2( th, probe ):
 
 def execute( procedure, environment, scope ):
 	global th # Allow us to print debug info without passing this all over the place
-	th = THREAD( ACTIVATION( DIGRESSION( procedure.script, environment, nothing ), null, LIST( procedure.dialect, null ), scope, "ACTIVATION" ) )
+	th = THREAD( ACTIVATION( DIGRESSION( procedure.script, environment, nothing ), null, LIST( procedure.dialect, null ), scope, null ) )
 	debug( "starting thread: %s with digression:\n\t%s", repr(th), th.activation.cursor )
 	execute2( th, true )
 
@@ -277,12 +280,20 @@ def execute( procedure, environment, scope ):
 #
 # Maybe this is just how digressions roll.  Maybe I can live with that.
 
-def Shift( **edges ): return Object( "SHIFT", **edges )
-def Reduce0( action ): return Object( "REDUCE0", action=action )
-def Accept(): return Object( "ACCEPT" )
 def MACRO( script, formal_args, environment ): return Object( "MACRO", script=script, formal_args=formal_args, environment=environment )
 def PROCEDURE( script, dialect, environment ): return Object( "PROCEDURE", script=script, dialect=dialect, environment=environment )
 def PRIMITIVE( function, formal_args, environment ): return Object( "PRIMITIVE", function=function, formal_args=formal_args, environment=environment )
+def Reduce0( action ): return Object( "REDUCE0", action=action )
+def Accept(): return Object( "ACCEPT" )
+def Shift( **edges ):
+	# For convenience, we stick a colon on the front of each uppercase field name because that's probably what you want
+	result = Object( "SHIFT" )
+	for ( name, value ) in edges.iteritems():
+		if name.isupper():
+			result[ ":"+name ] = value
+		else:
+			result[     name ] = value
+	return result
 
 #
 # Testing
@@ -444,6 +455,10 @@ def define_builtins( bindings, global_scope ):
 		digress( th, tag(obj) )
 	bind_with_name( get_tag, "tag", 'obj', null )
 
+	def get_tag_edge_symbol( th, obj ):
+		digress( th, tag_edge_symbol(obj) )
+	bind_with_name( get_tag_edge_symbol, "tag_edge_symbol", 'obj', null )
+
 	def get( th, base, field ):
 		digress( th, base[ field ] )
 	bind( get, 'base', 'field', null )
@@ -464,10 +479,6 @@ def define_builtins( bindings, global_scope ):
 	def Null( th ):
 		digress( th, null )
 	bind( Null, null )
-
-	def Eof( th ):
-		digress( th, eof )
-	bind( Eof, null )
 
 	def Nothing( th ):
 		digress( th, nothing )
@@ -571,7 +582,7 @@ bindings = parse_macros("""
 	bound2
 
 ( state obj probe ) next_state2_TAKE_FAILED
-	state obj tag get
+	state obj tag_edge_symbol get
 
 ( state obj probe ) next_state2_STATE
 	probe
@@ -606,7 +617,7 @@ bindings = parse_macros("""
 		act bind
 				act cursor get tokens get
 				head
-				Eof
+				eof
 			take
 		raw_token bind
 			act cursor get tokens get tail get
@@ -679,7 +690,7 @@ bindings = parse_macros("""
 		null
 		procedure dialect get null Cons
 		scope
-		ACTIVATION
+		null
 	Activation Thread th bind
 			th
 			true
@@ -711,7 +722,6 @@ def wrap_procedure( inner_procedure ):
 
 if 1:
 	procedure = go_world()
-	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
 	procedure = wrap_procedure( go_world() )
 	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
 
