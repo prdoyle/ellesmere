@@ -49,6 +49,7 @@ def THREAD( activation ): return Object( "THREAD", activation=activation )
 # Main execute procedure
 
 def debug( message, *args ):
+	return
 	if args:
 		message = message % args
 	print message
@@ -148,7 +149,7 @@ def next_state( state, obj ):
 	# Note: this gives priority to SYMBOL over specific symbols, which might make keywords impossible.  We might want to rethink this.
 	return next_state2( state, obj, take( state, obj, take_failed ) )
 
-def do_action( th, action, environment ):
+def do_action( th, environment, action ):
 	if is_a( action, "PRIMITIVE" ):
 		debug( "  Primitive bindings: %s", dict( environment.bindings ) )
 		action.function( th, **dict( environment.bindings ) )
@@ -221,7 +222,7 @@ def perform_reduce0( th ):
 	bind_args( th, reduce_env.bindings, action.formal_args )
 	debug( "  environment: %s", reduce_env )
 	debug( "    based on: %s", act.cursor )
-	do_action( th, action, reduce_env )
+	do_action( th, reduce_env, action )
 	print_program( th )
 	return true
 
@@ -523,9 +524,9 @@ def define_builtins( bindings, global_scope ):
 		digress( th, ENVIRONMENT( **args ) )
 	bind( Environment, 'outer', null )
 
-	def do_action_PRIMITIVE( th, th_arg, action, environment ):
+	def do_primitive( th, th_arg, environment, action ):
 		action.function( th_arg, **dict( environment.bindings ) )
-	bind( do_action_PRIMITIVE, 'th_arg', 'action', 'environment', null ) # Hmm, collision between th in the interpreter and th in the program
+	bind( do_primitive, 'th_arg', 'environment', 'action', null ) # Hmm, collision between th in the interpreter and th in the program
 
 # Meta-interpreter
 
@@ -558,11 +559,11 @@ bindings = parse_macros("""
 
 ( th remaining_tokens ) finish_digression/:LIST
 
-( actual_arg arg_bindings, formal_arg ) bind_arg/:SYMBOL
+( actual_arg arg_bindings formal_arg ) bind_arg/:SYMBOL
 		actual_arg
 	arg_bindings formal_arg put
 
-( actual_arg arg_bindings, formal_arg ) bind_arg/:NULL
+( actual_arg arg_bindings formal_arg ) bind_arg/:NULL
 
 ( th arg_bindings formal_args ) bind_args/:NULL
 
@@ -619,7 +620,10 @@ bindings = parse_macros("""
 		take
 	next_state2
 
-( th action environment ) do_action/:MACRO
+( th environment action ) do_action/:PRIMITIVE
+	th environment action do_primitive
+
+( th environment action ) do_action/:MACRO
 		th activation get
 	act bind
 			action script get
@@ -630,6 +634,7 @@ bindings = parse_macros("""
 		th
 		act cursor get tokens get
 	finish_digression
+	pop
 
 ( th state ) perform/:ACCEPT
 	false
@@ -667,25 +672,24 @@ bindings = parse_macros("""
 	true
 
 ( th state ) perform/:REDUCE0
-			th activation get
-		act bind
-				act history get head get action get
-				act scope get
-			bound
-		action bind
-			action environment get Environment
-		reduce_env bind
-			act cursor get environment get
-		reduce_env digressor put
-			th
-			reduce_env bindings get
-			action formal_args get
-		bind_args
-			th
-			action
-			reduce_env
-		do_action
-	pop
+		th activation get
+	act bind
+			act history get head get action get
+			act scope get
+		bound
+	action bind
+		action environment get Environment
+	reduce_env bind
+		act cursor get environment get
+	reduce_env digressor put
+		th
+		reduce_env bindings get
+		action formal_args get
+	bind_args
+		th
+		reduce_env
+		action
+	do_action
 	true
 
 ( th probe ) execute2/:FALSE
@@ -724,7 +728,7 @@ def meta_automaton( action_bindings ):
 		'default', 'do_action', 'end', 'execute', 'finish_digression', 'get', 'next_state', 'perform', 'pop', 'pop_list', 'put',
 		'return', 'set', 'tag', 'tag_edge_symbol', 'take',
 		}
-	dispatch_symbols = { ':FALSE', ':TRUE', ':NULL', ':SHIFT', ':ACCEPT', ':REDUCE0', 'TAKE_FAILED', ':ENVIRONMENT', ':LIST', ':SYMBOL', ":MACRO", "STATEMENT", "STATEMENTS" }
+	dispatch_symbols = { ':FALSE', ':TRUE', ':NULL', ':SHIFT', ':ACCEPT', ':REDUCE0', 'TAKE_FAILED', ':ENVIRONMENT', ':LIST', ':SYMBOL', ":MACRO", ":PRIMITIVE", "STATEMENT", "STATEMENTS" }
 	default_state = Shift()
 	def shifty():
 		while 1:
@@ -734,15 +738,22 @@ def meta_automaton( action_bindings ):
 		dispatch_states[ symbol ] = state # dispatch_states[ x ] is the state we're in if the last item shifted was x
 	debug( "dispatch_states: %s", dispatch_states )
 	for state in dispatch_states.values() + [ default_state ]:
+		# The default shift action
 		for symbol in symbols-dispatch_symbols:
 			state[ symbol ] = default_state
+		# Symbol-specific shift actions
 		for symbol in dispatch_symbols:
 			state[ symbol ] = dispatch_states[ symbol ]
 		# Monomorphic reduce actions
 		for ( symbol, action ) in action_bindings:
+			#try:
+			#	[ name, dispatch_symbol ] = action.name.split( '/' )
+			#except ValueError: # No slash in the name
+			#	[ name, dispatch_symbol ] = [ action.name, None ]
 			if not '/' in action.name:
-				state[ action.name ] = Reduce0( symbol )
-				debug( 'Monomorphic: %s[ %s ] = Reduce0( %s )', repr(state), action.name, symbol )
+				name = action.name
+				state[ name ] = Reduce0( symbol )
+				debug( 'Monomorphic: %s[ %s ] = Reduce0( %s )', repr(state), name, symbol )
 	# Polymorphic reduce actions
 	for ( symbol, action ) in action_bindings:
 		try:
@@ -751,17 +762,18 @@ def meta_automaton( action_bindings ):
 			debug( 'Polymorphic: state[ %s ][ %s ] = Reduce0( %s ) # %s', dispatch_symbol, name, symbol, repr(dispatch_states[ dispatch_symbol ]) )
 		except ValueError: # No slash in the name
 			pass
+	default_state[ ':EOF' ] = Accept()
 	return default_state
 
 global_scope.bindings = bindings
-print "global_scope: " + str( global_scope )
+#print "global_scope: " + str( global_scope )
 define_builtins( global_scope.bindings, global_scope )
-print "  bindings: " + str( global_scope.bindings )
+#print "  bindings: " + str( global_scope.bindings )
 action_words = [ s[7:] for s in bindings._fields ]
 #print "  action words: " + str( action_words )
 #dialect = generated_automaton()
 dialect = meta_automaton( bindings )
-print "  dialect:\n" + dialect.description()
+#print "  dialect:\n" + dialect.description()
 print "\n===================\n"
 
 def wrap_procedure( inner_procedure ):
