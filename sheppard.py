@@ -4,6 +4,7 @@ import string, re
 from sheppard_gen import generated_automaton
 from sheppard_object import *
 from itertools import islice
+from sys import argv
 
 def popped( stack ):  return ( stack.head, stack.tail )
 
@@ -49,7 +50,7 @@ def THREAD( activation ): return Object( "THREAD", activation=activation )
 # Main execute procedure
 
 def debug( message, *args ):
-	return
+	#return
 	if args:
 		message = message % args
 	print message
@@ -703,7 +704,7 @@ bindings = parse_macros("""
 		th command perform
 	execute2
 
-( procedure environment scope ) execute
+( procedure environment scope ) execute/:ENVIRONMENT
 				procedure script get
 				environment
 				nothing
@@ -789,6 +790,11 @@ def wrap_procedure( inner_procedure ):
 
 if 1:
 	procedure = go_world()
-	procedure = wrap_procedure( go_world() )
+	try:
+		depth = int( argv[1] )
+	except IndexError:
+		depth = 0
+	for _ in range(depth):
+		procedure = wrap_procedure( procedure )
 	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
 
