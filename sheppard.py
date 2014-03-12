@@ -3,6 +3,7 @@
 import string, re
 from sheppard_gen import generated_automaton
 from sheppard_object import *
+from itertools import islice
 
 def popped( stack ):  return ( stack.head, stack.tail )
 
@@ -52,6 +53,11 @@ def debug( message, *args ):
 		message = message % args
 	print message
 
+def error( exception ):
+	debug( "!! ERROR: %s", exception )
+	print_backtrace( th )
+	raise exception
+
 def python_list( sheppard_list, head="head", tail="tail" ):
 	if sheppard_list:
 		return [ sheppard_list[ head ] ] + python_list( sheppard_list[ tail ], head, tail )
@@ -83,8 +89,8 @@ def tag_edge_symbol( obj ):
 # The interpreter.
 # Some rules to make it look more like Sheppard code:
 #  - Procedures are only allowed one if statement sequence.  It must be at the
-#  top level, and must use is_a based on an argument.  This represents sheppard
-#  automaton-based dispatch.
+#  top level, and must use is_a based on an argument, preferably the last argument.
+# This represents sheppard automaton-based dispatch.
 #  - Loops will be replaced with tail digression.  There's only one loop anyway
 #  so that's no big deal.
 #
@@ -100,21 +106,21 @@ def finish_digression( th, remaining_tokens ):
 		debug( "  (finished %s)", repr( act.cursor ) )
 		act.cursor = act.cursor.resumption
 
-def bind_arg( formal_arg, actual_arg, arg_bindings ):
+def bind_arg( actual_arg, arg_bindings, formal_arg ):
 	if is_a( formal_arg, "SYMBOL" ):
 		arg_bindings[ formal_arg ] = actual_arg
 		debug( "    %s=%s", formal_arg, repr( actual_arg ) )
 	else:
 		debug( "    pop %s", repr( actual_arg ) )
 
-def bind_args( th, formal_args, arg_bindings ):
+def bind_args( th, arg_bindings, formal_args ):
 	if is_a( formal_args, "NULL" ):
 		pass
 	else:
 		act = th.activation
 		act.history = act.history.tail
-		bind_arg( formal_args.head, pop_list( th.activation, "operands" ), arg_bindings )
-		bind_args( th, formal_args.tail, arg_bindings )
+		bind_arg( pop_list( th.activation, "operands" ), arg_bindings, formal_args.head )
+		bind_args( th, arg_bindings, formal_args.tail )
 
 def bound2( obj, environment, probe ):
 	if is_a( probe, "TAKE_FAILED" ):
@@ -134,10 +140,7 @@ def next_state2( state, obj, probe ):
 		try:
 			return state[ tag_edge_symbol(obj) ]
 		except AttributeError:
-			e = Unexpected_token( state, obj )
-			debug( "ERROR: %s", e )
-			print_stuff( th )
-			raise e
+			error( Unexpected_token( state, obj ) )
 	else:
 		return probe
 
@@ -163,10 +166,7 @@ def perform_shift( th ):
 	#debug( "shift" )
 	act = th.activation
 	if act.operands != null and act.operands.head in action_words:
-		e = Missed_Action_Word( act.operands.head )
-		debug( "ERROR: %s", e )
-		print_stuff( th )
-		raise e
+		error( Missed_Action_Word( act.operands.head ) )
 	#debug( "  cursor: %s", repr( act.cursor ) )
 	raw_token = take( act.cursor.tokens, "head", eof )
 	act.cursor.tokens = act.cursor.tokens.tail
@@ -179,6 +179,8 @@ def perform_shift( th ):
 	new_state = next_state( act.history.head, current_token )
 	#debug( "  new_state: %s", repr( new_state ) )
 	act.history = LIST( new_state, act.history )
+	if len( python_list( act.operands ) ) > 50:
+		error( RuntimeError( "Operand stack overflow" ) )
 	return true
 
 debug_ellision_limit=999
@@ -195,6 +197,17 @@ def print_stuff( th ):
 	debug( "|  cursor: %s", repr( act.cursor ) )
 	debug( "|     env: %s", repr( act.cursor.environment ) )
 
+def print_backtrace( th ):
+	print_stuff( th )
+	act = th.activation
+	debug( "| backtrace:" )
+	history  = python_list( act.history )
+	operands = python_list( act.operands )
+	for ( state, obj ) in zip( history, operands ):
+		debug( "|   |      %s", state )
+		debug( "|   | %s",      obj )
+	debug( "|   |      %s", history[-1] )
+
 def perform_reduce0( th ):
 	print_stuff( th )
 	act = th.activation
@@ -205,7 +218,7 @@ def perform_reduce0( th ):
 		debug( "    %s", python_list( action.script ) )
 	reduce_env = ENVIRONMENT( action.environment )
 	reduce_env.digressor = act.cursor.environment  # Need this in order to make "bind" a macro, or else I can't access the environment I'm trying to bind
-	bind_args( th, action.formal_args, reduce_env.bindings )
+	bind_args( th, reduce_env.bindings, action.formal_args )
 	debug( "  environment: %s", reduce_env )
 	debug( "    based on: %s", act.cursor )
 	do_action( th, action, reduce_env )
@@ -280,9 +293,9 @@ def execute( procedure, environment, scope ):
 #
 # Maybe this is just how digressions roll.  Maybe I can live with that.
 
-def MACRO( script, formal_args, environment ): return Object( "MACRO", script=script, formal_args=formal_args, environment=environment )
-def PROCEDURE( script, dialect, environment ): return Object( "PROCEDURE", script=script, dialect=dialect, environment=environment )
-def PRIMITIVE( function, formal_args, environment ): return Object( "PRIMITIVE", function=function, formal_args=formal_args, environment=environment )
+def MACRO( name, script, formal_args, environment ): return Object( "MACRO", name=name, script=script, formal_args=formal_args, environment=environment )
+def PROCEDURE( name, script, dialect, environment ): return Object( "PROCEDURE", name=name, script=script, dialect=dialect, environment=environment )
+def PRIMITIVE( name, function, formal_args, environment ): return Object( "PRIMITIVE", name=name, function=function, formal_args=formal_args, environment=environment )
 def Reduce0( action ): return Object( "REDUCE0", action=action )
 def Accept(): return Object( "ACCEPT" )
 def Shift( **edges ):
@@ -357,12 +370,12 @@ def go_world():
 
 	global_scope = ENVIRONMENT( null )
 	bindings = global_scope.bindings
-	bindings[ "A1" ] = MACRO(
+	bindings[ "A1" ] = MACRO( "A1",
 		formal_args = Stack([ null, "arg" ]),
 		script = List([ "hello", "arg" ]),
 		environment = global_scope
 		)
-	bindings[ "A2" ] = PRIMITIVE(
+	bindings[ "A2" ] = PRIMITIVE( "A1",
 		formal_args= Stack([ null, "where" ]), # ignore the "go" keyword
 		function = primitive_hello,
 		environment = global_scope
@@ -376,7 +389,7 @@ def go_world():
 	debug( "  bindings: %s", global_scope.bindings )
 	debug( "  dialect: %s", dialect.description() )
 
-	return PROCEDURE(
+	return PROCEDURE( "go_world",
 		Start_script().
 			go.world.
 		End_script(),
@@ -398,15 +411,17 @@ def parse_macros( string, environment ):
 	def done( result, name, args, script ):
 		if name != None:
 			args.append( null ) # Automatically add a don't-care arg for the macro name
-			result[ name ] = MACRO( List( script ), Stack( args ), environment )
-	for word in re.findall( r'\w+|[{}]|\$|\([^)]*\)', string.strip() ):
+			result[ 'ACTION_' + name ] = MACRO( name, List( script ), Stack( args ), environment )
+			debug( "PARSED MACRO[ ACTION_%s ]: %s", name, name )
+	for word in re.findall( r'\w+(?:/:?\w+)?|\([^)]*\)', string.strip() ):
+		debug( "WORD: '%s'", word )
 		if word[0] == '(':
 			done( result, name, args, script )
 			name = None
 			args = word[1:-1].split()
 			script = []
 		elif name == None:
-			name = "ACTION_" + word
+			name = word
 		else:
 			script.append( word )
 	done( result, name, args, script )
@@ -419,7 +434,7 @@ def define_builtins( bindings, global_scope ):
 		th.activation.cursor = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
 
 	def bind_with_name( func, name, *args ):
-		bindings[ "ACTION_" + name ] = PRIMITIVE( func, Stack( list( args ) ), global_scope )
+		bindings[ "ACTION_" + name ] = PRIMITIVE( name, func, Stack( list( args ) ), global_scope )
 		debug( "Binding primitive: %s %s", name, list(args) )
 
 	def bind( func, *args ):
@@ -490,7 +505,7 @@ def define_builtins( bindings, global_scope ):
 
 	def Procedure( th, **args ):
 		digress( th, PROCEDURE( **args ) )
-	bind( Procedure, 'script', 'dialect', 'environment', null )
+	bind( Procedure, 'name', 'script', 'dialect', 'environment', null )
 
 	def Digression( th, **args ):
 		digress( th, DIGRESSION( **args ) )
@@ -516,63 +531,67 @@ def define_builtins( bindings, global_scope ):
 
 global_scope = ENVIRONMENT( null )
 bindings = parse_macros("""
+( statement ) STATEMENT/STATEMENT
+	STATEMENTS
+
+( statements ) STATEMENT/STATEMENTS
+	STATEMENTS
+
 ( value symbol ) bind 
 		value
 		current_environment digressor get bindings get
 	symbol put
 
 ( base field ) pop_list
-	begin
-			base field get head get
-		result bind
-			base field get tail get
-		base field put
-	return
-		result
-	end
+		base field get head get
+	result bind
+		base field get tail get
+	base field put
+	pop
+	result
 
-( th remaining_tokens ) finish_digression_NULL
+( th remaining_tokens ) finish_digression/:NULL
 		th activation get
 	act bind
 		act cursor get resumption get
 	act cursor put
 
-( th remaining_tokens ) finish_digression_LIST
+( th remaining_tokens ) finish_digression/:LIST
 
-( formal_arg actual_arg arg_bindings ) bind_arg_SYMBOL
+( actual_arg arg_bindings, formal_arg ) bind_arg/:SYMBOL
 		actual_arg
 	arg_bindings formal_arg put
 
-( formal_arg actual_arg arg_bindings ) bind_arg_NULL
+( actual_arg arg_bindings, formal_arg ) bind_arg/:NULL
 
-( th formal_args arg_bindings ) bind_args_NULL
+( th arg_bindings formal_args ) bind_args/:NULL
 
-( th formal_args arg_bindings ) bind_args_LIST
+( th arg_bindings formal_args ) bind_args/:LIST
 		th activation get
 	act bind
 		act history get tail get
 	act history put
-		formal_args head get
 		act operands pop_list
 		arg_bindings
+		formal_args head get
 	bind_arg
 		th
-		formal_args tail get
 		arg_bindings
+		formal_args tail get
 	bind_args
 
-( obj environment probe ) bound2_OBJECT
+( obj environment probe ) bound2
 	probe
 
-( obj environment probe ) bound2_TAKE_FAILED
+( obj environment probe ) bound2/TAKE_FAILED
 		obj
 		environment outer get
 	bound
 
-( obj environment ) bound_NULL
+( obj environment ) bound/:NULL
 	obj
 
-( obj environment ) bound_ENVIRONMENT
+( obj environment ) bound/:ENVIRONMENT
 		obj
 		environment
 			environment bindings get
@@ -581,10 +600,14 @@ bindings = parse_macros("""
 		take
 	bound2
 
-( state obj probe ) next_state2_TAKE_FAILED
+( state obj probe ) next_state2/TAKE_FAILED
 	state obj tag_edge_symbol get
 
-( state obj probe ) next_state2_STATE
+( state obj probe ) next_state2/:ACCEPT
+	probe
+( state obj probe ) next_state2/:SHIFT
+	probe
+( state obj probe ) next_state2/:REDUCE0
 	probe
 
 ( state obj ) next_state
@@ -596,7 +619,7 @@ bindings = parse_macros("""
 		take
 	next_state2
 
-( th action environment ) do_action_MACRO
+( th action environment ) do_action/:MACRO
 		th activation get
 	act bind
 			action script get
@@ -608,11 +631,10 @@ bindings = parse_macros("""
 		act cursor get tokens get
 	finish_digression
 
-( th state ) perform_ACCEPT
+( th state ) perform/:ACCEPT
 	false
 
-( th state ) perform_SHIFT
-	begin
+( th state ) perform/:SHIFT
 			th activation get
 		act bind
 				act cursor get tokens get
@@ -641,12 +663,10 @@ bindings = parse_macros("""
 				act history get
 			Cons
 		act history put
-	return
-		true
-	end
+	pop
+	true
 
-( th state ) perform_REDUCE0
-	begin
+( th state ) perform/:REDUCE0
 			th activation get
 		act bind
 				act history get head get action get
@@ -658,55 +678,90 @@ bindings = parse_macros("""
 			act cursor get environment get
 		reduce_env digressor put
 			th
-			action formal_args get
 			reduce_env bindings get
+			action formal_args get
 		bind_args
 			th
 			action
 			reduce_env
 		do_action
-	return
-		true
-	end
+	pop
+	true
 
-( th probe ) execute2_FALSE
+( th probe ) execute2/:FALSE
 	false
 
-( th probe ) execute2_TRUE
-	begin
-			th activation get history get head get tag
+( th probe ) execute2/:TRUE
+			th activation get history get head get
 		command bind
-	return
-			th
-			th command perform
-		execute2
-	end
+	pop
+		th
+		th command perform
+	execute2
 
 ( procedure environment scope ) execute
-			procedure script get
-			environment
-			nothing
-		Digression
-		null
-		procedure dialect get null Cons
-		scope
-		null
-	Activation Thread th bind
+				procedure script get
+				environment
+				nothing
+			Digression
+			null
+			procedure dialect get null Cons
+			scope
+			null
+		Activation Thread th bind
+	pop
 			th
 			true
 		execute2
 	pop
 """, global_scope )
 
+def meta_automaton( action_bindings ):
+	symbols = { 
+		':ACCEPT', ':ACTIVATION', ':BINDINGS', ':BOOLEAN', ':DIGRESSION', ':ENVIRONMENT', ':EOF', ':FALSE', ':LIST', ':MACRO', ':NOTHING', ':NULL', ':OBJECT', ':PRIMITIVE', ':PROCEDURE', ':PROGRAM', ':SHIFT', ':STATE', ':SYMBOL', ':THREAD', ':TRUE',
+		'ACCEPT', 'Activation', 'BEGIN_MARKER', 'Cons', 'Digression', 'Environment', 'Procedure', 'SHIFT', 'STATEMENT', 'STATEMENTS', 'TAKE_FAILED',
+		'Thread', 'begin', 'bind', 'bind_arg', 'bind_args', 'bound', 'bound2', 'compound_expr', 'compound_stmt', 'current_environment',
+		'default', 'do_action', 'end', 'execute', 'finish_digression', 'get', 'next_state', 'perform', 'pop', 'pop_list', 'put',
+		'return', 'set', 'tag', 'tag_edge_symbol', 'take',
+		}
+	dispatch_symbols = { ':FALSE', ':TRUE', ':NULL', ':SHIFT', ':ACCEPT', ':REDUCE0', 'TAKE_FAILED', ':ENVIRONMENT', ':LIST', ':SYMBOL', ":MACRO", "STATEMENT", "STATEMENTS" }
+	default_state = Shift()
+	def shifty():
+		while 1:
+			yield Shift()
+	dispatch_states = {}
+	for symbol, state in zip( dispatch_symbols, shifty() ):
+		dispatch_states[ symbol ] = state # dispatch_states[ x ] is the state we're in if the last item shifted was x
+	debug( "dispatch_states: %s", dispatch_states )
+	for state in dispatch_states.values() + [ default_state ]:
+		for symbol in symbols-dispatch_symbols:
+			state[ symbol ] = default_state
+		for symbol in dispatch_symbols:
+			state[ symbol ] = dispatch_states[ symbol ]
+		# Monomorphic reduce actions
+		for ( symbol, action ) in action_bindings:
+			if not '/' in action.name:
+				state[ action.name ] = Reduce0( symbol )
+				debug( 'Monomorphic: %s[ %s ] = Reduce0( %s )', repr(state), action.name, symbol )
+	# Polymorphic reduce actions
+	for ( symbol, action ) in action_bindings:
+		try:
+			[ name, dispatch_symbol ] = action.name.split( '/' )
+			dispatch_states[ dispatch_symbol ][ name ] = Reduce0( symbol )
+			debug( 'Polymorphic: state[ %s ][ %s ] = Reduce0( %s ) # %s', dispatch_symbol, name, symbol, repr(dispatch_states[ dispatch_symbol ]) )
+		except ValueError: # No slash in the name
+			pass
+	return default_state
 
 global_scope.bindings = bindings
 print "global_scope: " + str( global_scope )
 define_builtins( global_scope.bindings, global_scope )
 print "  bindings: " + str( global_scope.bindings )
 action_words = [ s[7:] for s in bindings._fields ]
-print "  action words: " + str( action_words )
-dialect = generated_automaton()
-#print "  dialect:\n" + dialect.description()
+#print "  action words: " + str( action_words )
+#dialect = generated_automaton()
+dialect = meta_automaton( bindings )
+print "  dialect:\n" + dialect.description()
 print "\n===================\n"
 
 def wrap_procedure( inner_procedure ):
@@ -717,7 +772,7 @@ def wrap_procedure( inner_procedure ):
 	bindings[ 'false' ] = false
 	bindings[ 'true' ] = true
 	bindings[ 'nothing' ] = nothing
-	outer_procedure = PROCEDURE( List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment, "execute" ]), dialect, global_scope )
+	outer_procedure = PROCEDURE( "meta_" + inner_procedure.name, List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment, "execute" ]), dialect, global_scope )
 	return outer_procedure
 
 if 1:
