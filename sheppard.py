@@ -468,21 +468,21 @@ def define_builtins( bindings, global_scope ):
 		digress( th, th.activation.cursor.environment )
 	bind( current_environment, null )
 
-	def get_tag( th, obj ):
+	def _tag( th, obj ):
 		digress( th, tag(obj) )
-	bind_with_name( get_tag, "tag", 'obj', null )
+	bind_with_name( _tag, "tag", 'obj', null )
 
-	def get_tag_edge_symbol( th, obj ):
+	def _tag_edge_symbol( th, obj ):
 		digress( th, tag_edge_symbol(obj) )
-	bind_with_name( get_tag_edge_symbol, "tag_edge_symbol", 'obj', null )
+	bind_with_name( _tag_edge_symbol, "tag_edge_symbol", 'obj', null )
 
 	def get( th, base, field ):
 		digress( th, base[ field ] )
 	bind( get, 'base', 'field', null )
 
-	def do_take( th, base, field, default ):
+	def _take( th, base, field, default ):
 		digress( th, take( base, field, default ) )
-	bind_with_name( do_take, "take", 'base', 'field', 'default', null )
+	bind_with_name( _take, "take", 'base', 'field', 'default', null )
 
 	def put( th, value, base, field ):
 		base[ field ] = value
@@ -524,6 +524,10 @@ def define_builtins( bindings, global_scope ):
 	def Environment( th, **args ):
 		digress( th, ENVIRONMENT( **args ) )
 	bind( Environment, 'outer', null )
+
+	def _Operand( th, **args ):
+		digress( th, Operand( **args ) )
+	bind_with_name( _Operand, "Operand", 'value', null )
 
 	def do_primitive( th, th_arg, environment, action ):
 		action.function( th_arg, **dict( environment.bindings ) )
@@ -573,7 +577,7 @@ bindings = parse_macros("""
 	act bind
 		act history get tail get
 	act history put
-		act operands pop_list
+		act operands pop_list value get
 		arg_bindings
 		formal_args head get
 	bind_arg
@@ -657,7 +661,7 @@ bindings = parse_macros("""
 			th
 			act cursor get tokens get
 		finish_digression
-				current_token
+				current_token Operand
 				act operands get
 			Cons
 		act operands put
@@ -729,7 +733,7 @@ def meta_automaton( action_bindings ):
 		'default', 'do_action', 'end', 'execute', 'finish_digression', 'get', 'next_state', 'perform', 'pop', 'pop_list', 'put',
 		'return', 'set', 'tag', 'tag_edge_symbol', 'take',
 		}
-	dispatch_symbols = { ':FALSE', ':TRUE', ':NULL', ':SHIFT', ':ACCEPT', ':REDUCE0', 'TAKE_FAILED', ':ENVIRONMENT', ':LIST', ':SYMBOL', ":MACRO", ":PRIMITIVE", "STATEMENT", "STATEMENTS" }
+	dispatch_symbols = { ':FALSE', ':TRUE', ':NULL', ':SHIFT', ':ACCEPT', ':REDUCE0', 'TAKE_FAILED', ':ENVIRONMENT', ':LIST', ':SYMBOL', ":MACRO", ":PRIMITIVE", "STATEMENT", "STATEMENTS", ":OPERAND" }
 	default_state = Shift()
 	def shifty():
 		while 1:
