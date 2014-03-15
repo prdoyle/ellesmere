@@ -468,21 +468,21 @@ def define_builtins( bindings, global_scope ):
 		digress( th, th.activation.cursor.environment )
 	bind( current_environment, null )
 
-	def get_tag( th, obj ):
+	def _tag( th, obj ):
 		digress( th, tag(obj) )
-	bind_with_name( get_tag, "tag", 'obj', null )
+	bind_with_name( _tag, "tag", 'obj', null )
 
-	def get_tag_edge_symbol( th, obj ):
+	def _tag_edge_symbol( th, obj ):
 		digress( th, tag_edge_symbol(obj) )
-	bind_with_name( get_tag_edge_symbol, "tag_edge_symbol", 'obj', null )
+	bind_with_name( _tag_edge_symbol, "tag_edge_symbol", 'obj', null )
 
 	def get( th, base, field ):
 		digress( th, base[ field ] )
 	bind( get, 'base', 'field', null )
 
-	def do_take( th, base, field, default ):
+	def _take( th, base, field, default ):
 		digress( th, take( base, field, default ) )
-	bind_with_name( do_take, "take", 'base', 'field', 'default', null )
+	bind_with_name( _take, "take", 'base', 'field', 'default', null )
 
 	def put( th, value, base, field ):
 		base[ field ] = value
