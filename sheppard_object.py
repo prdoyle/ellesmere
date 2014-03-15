@@ -99,6 +99,14 @@ class Null( Object ): # Just to make debugging messages more informative
 
 null = Null()
 
+class Operand( Object ): # Used to wrap operand stack elements so we don't confuse the interpreter data with meta-interpreter data
+
+	def __init__( self, value ):
+		Object.__init__( self, "OPERAND", value=value )
+
+	def __repr__( self ): return "*%s" % repr( self.value )
+	def __str__ ( self ): return "*%s" % str ( self.value )
+
 # Generally, these can't be methods, because some Python objects like symbols are
 # represented by plain old Python objects like strings that have no such methods.
 # Also, methods of Object can confuse __getattr__ and end up trying to call Sheppard objects.

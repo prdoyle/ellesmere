@@ -121,7 +121,7 @@ def bind_args( th, arg_bindings, formal_args ):
 	else:
 		act = th.activation
 		act.history = act.history.tail
-		bind_arg( pop_list( th.activation, "operands" ), arg_bindings, formal_args.head )
+		bind_arg( pop_list( th.activation, "operands" ).value, arg_bindings, formal_args.head )
 		bind_args( th, arg_bindings, formal_args.tail )
 
 def bound2( obj, environment, probe ):
@@ -167,8 +167,8 @@ def perform_accept( th ):
 def perform_shift( th ):
 	#debug( "shift" )
 	act = th.activation
-	if act.operands != null and act.operands.head in action_words:
-		error( Missed_Action_Word( act.operands.head ) )
+	if act.operands != null and act.operands.head.value in action_words:
+		error( Missed_Action_Word( act.operands.head.value ) )
 	#debug( "  cursor: %s", repr( act.cursor ) )
 	raw_token = take( act.cursor.tokens, "head", eof )
 	act.cursor.tokens = act.cursor.tokens.tail
@@ -177,7 +177,7 @@ def perform_shift( th ):
 	current_token = bound( raw_token, act.cursor.environment )
 	finish_digression( th, act.cursor.tokens )
 	#debug( "    value: %s", current_token )
-	act.operands = LIST( current_token, act.operands )
+	act.operands = LIST( Operand( current_token ), act.operands )
 	new_state = next_state( act.history.head, current_token )
 	#debug( "  new_state: %s", repr( new_state ) )
 	act.history = LIST( new_state, act.history )
