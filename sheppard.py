@@ -45,7 +45,7 @@ take_failed = Object( "TAKE_FAILED" )
 
 def ACTIVATION( cursor, operands, history, scope, caller ): return Object( "ACTIVATION", cursor=cursor, operands=operands, history=history, scope=scope, caller=caller )
 
-def THREAD( activation ): return Object( "THREAD", activation=activation )
+def THREAD( activation, meta_thread ): return Object( "THREAD", activation=activation, meta_thread=meta_thread )
 
 # Main execute procedure
 
@@ -251,7 +251,7 @@ def execute2( th, probe ):
 
 def execute( procedure, environment, scope ):
 	global th # Allow us to print debug info without passing this all over the place
-	th = THREAD( ACTIVATION( DIGRESSION( procedure.script, environment, nothing ), null, LIST( procedure.dialect, null ), scope, null ) )
+	th = THREAD( ACTIVATION( DIGRESSION( procedure.script, environment, nothing ), null, LIST( procedure.dialect, null ), scope, null ), null )
 	debug( "starting thread: %s with digression:\n\t%s", repr(th), th.activation.cursor )
 	execute2( th, true )
 
@@ -468,6 +468,10 @@ def define_builtins( bindings, global_scope ):
 		digress( th, th.activation.cursor.environment )
 	bind( current_environment, null )
 
+	def current_thread( th ):
+		digress( th, th )
+	bind( current_thread, null )
+
 	def _tag( th, obj ):
 		digress( th, tag(obj) )
 	bind_with_name( _tag, "tag", 'obj', null )
@@ -519,7 +523,7 @@ def define_builtins( bindings, global_scope ):
 
 	def Thread( th, **args ):
 		digress( th, THREAD( **args ) )
-	bind( Thread, 'activation', null )
+	bind( Thread, 'activation', 'meta_thread', null )
 
 	def Environment( th, **args ):
 		digress( th, ENVIRONMENT( **args ) )
@@ -713,8 +717,9 @@ bindings = parse_macros("""
 			procedure dialect get null Cons
 			scope
 			null
-		Activation Thread th bind
-	pop
+		Activation
+		current_thread
+	Thread th bind
 			th
 			true
 		execute2
