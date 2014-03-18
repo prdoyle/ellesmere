@@ -31,7 +31,7 @@ def Eof(): return Object( "EOF" )
 def Nothing():
 	# An endless stack of digressions each returning an endless stream of EOFs
 	result = Object( "NOTHING", environment=ENVIRONMENT(null) )
-	endless_eof = LIST( Eof(), null )
+	endless_eof = LIST( Quote( Eof() ), null )
 	endless_eof.tail = endless_eof
 	result.tokens = endless_eof
 	result.resumption   = result
@@ -50,10 +50,12 @@ def THREAD( activation, meta_thread ): return Object( "THREAD", activation=activ
 # Main execute procedure
 
 def debug( message, *args ):
-	#return
 	if args:
 		message = message % args
 	print message
+
+def silence( message, *args ):
+	pass
 
 def error( exception ):
 	debug( "!! ERROR: %s", exception )
@@ -87,6 +89,12 @@ def take( obj, key, default ):
 def tag_edge_symbol( obj ):
 	return ":" + tag( obj )
 
+def quoted_list( lst ):
+	if lst is null:
+		return null
+	else:
+		return LIST( Quote( lst.head ), quoted_list( lst.tail ) )
+
 def meta_level( th ):
 	if th.meta_thread is null:
 		return 0
@@ -102,6 +110,10 @@ def meta_level( th ):
 #  - Loops will be replaced with tail digression.  There's only one loop anyway
 #  so that's no big deal.
 #
+# NOTE: "bound" does not deal with quoted values.  The reason is that when we
+# pass an environment to a primitive, we want it to have actual, unquoted
+# values in it.  This means the interpreter must quote/unquote things itself
+# when dealing with environments.
 #
 # PROBLEM: I think we must generally deal with quoted values, because the moment
 # an unquoted value appears on the lowest-level operand stack, it's possible an
@@ -121,7 +133,7 @@ def finish_digression( th, remaining_tokens ):
 def bind_arg( actual_arg, arg_bindings, formal_arg ):
 	debug_bind = silence
 	if is_a( formal_arg, "SYMBOL" ):
-		arg_bindings[ formal_arg ] = actual_arg
+		arg_bindings[ formal_arg ] = actual_arg.value
 		debug_bind( "    %s=%s", formal_arg, repr( actual_arg ) )
 	else:
 		debug_bind( "    pop %s", repr( actual_arg ) )
@@ -168,7 +180,7 @@ def do_action( th, environment, action ):
 		action.function( th, **dict( environment.bindings ) )
 	else:
 		act = th.activation
-		act.cursor = DIGRESSION( action.script, environment, act.cursor )
+		act.cursor = DIGRESSION( quoted_list( action.script ), environment, act.cursor )
 		debug_do( "    new_digression: %s", repr( act.cursor ) )
 		finish_digression( th, act.cursor.tokens ) # Just in case the macro is totally empty
 
@@ -177,21 +189,22 @@ def perform_accept( th ):
 	return false
 
 def perform_shift( th ):
-	#debug( "shift" )
+	debug_shift = silence
+	debug_shift( "shift" )
 	act = th.activation
 	if act.operands != null and act.operands.head in action_words:
 		error( Missed_Action_Word( act.operands.head ) )
-	#debug( "  cursor: %s", repr( act.cursor ) )
+	debug_shift( "  cursor: %s", repr( act.cursor ) )
 	raw_token = take( act.cursor.tokens, "head", eof )
 	act.cursor.tokens = act.cursor.tokens.tail
-	#debug( "  token: %s", repr( raw_token ) )
-	#debug( "    environment: %s", act.cursor.environment )
-	current_token = bound( raw_token, act.cursor.environment )
+	debug_shift( "  token: %s", repr( raw_token ) )
+	debug_shift( "    environment: %s", act.cursor.environment )
+	current_token = bound( raw_token.value, act.cursor.environment )
 	finish_digression( th, act.cursor.tokens )
-	#debug( "    value: %s", current_token )
-	act.operands = LIST( current_token, act.operands )
+	debug_shift( "    value: %s", current_token )
+	act.operands = LIST( Quote( current_token ), act.operands )
 	new_state = next_state( act.history.head, current_token )
-	#debug( "  new_state: %s", repr( new_state ) )
+	debug_shift( "  new_state: %s", repr( new_state ) )
 	act.history = LIST( new_state, act.history )
 	if len( python_list( act.operands ) ) > 50:
 		error( RuntimeError( "Operand stack overflow" ) )
@@ -271,8 +284,8 @@ def execute2( th, probe ):
 
 def execute( procedure, environment, scope ):
 	global th # Allow us to print debug info without passing this all over the place
-	th = THREAD( ACTIVATION( DIGRESSION( procedure.script, environment, nothing ), null, LIST( procedure.dialect, null ), scope, null ), null )
-	debug( "starting thread: %s with digression:\n\t%s", repr(th), th.activation.cursor )
+	th = THREAD( ACTIVATION( DIGRESSION( quoted_list( procedure.script ), environment, nothing ), null, LIST( procedure.dialect, null ), scope, null ), null )
+	debug( "starting thread: %s with digression: %s\n\t%s", repr(th), th.activation.cursor, python_list( quoted_list( procedure.script ) ) )
 	execute2( th, true )
 
 # PROBLEM: as I write this, perform_reduce contains a call to finish_digression.
@@ -455,7 +468,7 @@ def parse_macros( string, environment ):
 def define_builtins( bindings, global_scope ):
 	debug_builtins = silence
 	def digress( th, *values ):
-		th.activation.cursor = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
+		th.activation.cursor = DIGRESSION( quoted_list( List( values ) ), th.activation.cursor.environment, th.activation.cursor )
 
 	def bind_with_name( func, name, *args ):
 		bindings[ "ACTION_" + name ] = PRIMITIVE( name, func, Stack( list( args ) ), global_scope )
@@ -555,6 +568,14 @@ def define_builtins( bindings, global_scope ):
 		action.function( th_arg, **dict( environment.bindings ) )
 	bind( do_primitive, 'th_arg', 'environment', 'action', null ) # Hmm, collision between th in the interpreter and th in the program
 
+	def _Quote( th, **args ):
+		digress( th, Quote( **args ) )
+	bind_with_name( _Quote, "Quote", 'value', null )
+
+	def _quoted_list( th, **args ):
+		digress( th, quoted_list( **args ) )
+	bind_with_name( _quoted_list, "quoted_list", 'lst', null )
+
 	def _print_stuff( th, th_arg ):
 		print_stuff( th_arg )
 		digress( th, 'STATEMENT' )
@@ -597,7 +618,7 @@ bindings = parse_macros("""
 ( th remaining_tokens ) finish_digression/:LIST
 
 ( actual_arg arg_bindings formal_arg ) bind_arg/:SYMBOL
-		actual_arg
+		actual_arg value get
 	arg_bindings formal_arg put
 
 ( actual_arg arg_bindings formal_arg ) bind_arg/:NULL
@@ -663,7 +684,7 @@ bindings = parse_macros("""
 ( th environment action ) do_action/:MACRO
 		th activation get
 	act bind
-			action script get
+			action script get quoted_list
 			environment
 			act cursor get
 		Digression
@@ -686,14 +707,14 @@ bindings = parse_macros("""
 		raw_token bind
 			act cursor get tokens get tail get
 		act cursor get tokens put
-				raw_token
+				raw_token value get
 				act cursor get environment get
 			bound
 		current_token bind
 			th
 			act cursor get tokens get
 		finish_digression
-				current_token
+				current_token Quote
 				act operands get
 			Cons
 		act operands put
@@ -745,7 +766,7 @@ bindings = parse_macros("""
 	execute2
 
 ( procedure environment scope ) execute/:ENVIRONMENT
-				procedure script get
+				procedure script get quoted_list
 				environment
 				nothing
 			Digression
@@ -765,7 +786,7 @@ bindings = parse_macros("""
 def meta_automaton( action_bindings ):
 	debug_ma = silence
 	symbols = { 
-		':ACCEPT', ':ACTIVATION', ':BINDINGS', ':BOOLEAN', ':DIGRESSION', ':ENVIRONMENT', ':EOF', ':FALSE', ':LIST', ':MACRO', ':NOTHING', ':NULL', ':OBJECT', ':PRIMITIVE', ':PROCEDURE', ':PROGRAM', ':SHIFT', ':STATE', ':SYMBOL', ':THREAD', ':TRUE',
+		':ACCEPT', ':ACTIVATION', ':BINDINGS', ':BOOLEAN', ':DIGRESSION', ':ENVIRONMENT', ':EOF', ':FALSE', ':LIST', ':MACRO', ':NOTHING', ':NULL', ':OBJECT', ':PRIMITIVE', ':PROCEDURE', ':PROGRAM', ':QUOTE', ':SHIFT', ':STATE', ':SYMBOL', ':THREAD', ':TRUE',
 		'ACCEPT', 'Activation', 'BEGIN_MARKER', 'Cons', 'Digression', 'Environment', 'Procedure', 'SHIFT', 'STATEMENT', 'STATEMENTS', 'TAKE_FAILED',
 		'Thread', 'begin', 'bind', 'bind_arg', 'bind_args', 'bound', 'bound2', 'compound_expr', 'compound_stmt', 'current_environment',
 		'default', 'do_action', 'end', 'execute', 'finish_digression', 'get', 'next_state', 'perform', 'pop', 'pop_list', 'put',

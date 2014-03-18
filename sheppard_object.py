@@ -97,6 +97,14 @@ class Null( Object ): # Just to make debugging messages more informative
 	def __init__( self ):
 		Object.__init__( self, "NULL" )
 
+class Quote( Object ):
+
+	def __init__( self, value ):
+		Object.__init__( self, "QUOTE", value=value )
+
+	def __repr__( self ): return "*%s" % repr( self.value )
+	def __str__ ( self ): return "*%s" % str ( self.value )
+
 null = Null()
 
 # Generally, these can't be methods, because some Python objects like symbols are
