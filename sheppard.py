@@ -31,7 +31,7 @@ def Eof(): return Object( "EOF" )
 def Nothing():
 	# An endless stack of digressions each returning an endless stream of EOFs
 	result = Object( "NOTHING", environment=ENVIRONMENT(null) )
-	endless_eof = LIST( Quote( Eof() ), null )
+	endless_eof = LIST( quote( Eof() ), null )
 	endless_eof.tail = endless_eof
 	result.tokens = endless_eof
 	result.resumption   = result
@@ -93,7 +93,7 @@ def quoted_list( lst ):
 	if lst is null:
 		return null
 	else:
-		return LIST( Quote( lst.head ), quoted_list( lst.tail ) )
+		return LIST( quote( lst.head ), quoted_list( lst.tail ) )
 
 def meta_level( th ):
 	if th.meta_thread is null:
@@ -202,7 +202,7 @@ def perform_shift( th ):
 	current_token = bound( raw_token.value, act.cursor.environment )
 	finish_digression( th, act.cursor.tokens )
 	debug_shift( "    value: %s", current_token )
-	act.operands = LIST( Quote( current_token ), act.operands )
+	act.operands = LIST( quote( current_token ), act.operands )
 	new_state = next_state( act.history.head, current_token )
 	debug_shift( "  new_state: %s", repr( new_state ) )
 	act.history = LIST( new_state, act.history )
@@ -568,9 +568,9 @@ def define_builtins( bindings, global_scope ):
 		action.function( th_arg, **dict( environment.bindings ) )
 	bind( do_primitive, 'th_arg', 'environment', 'action', null ) # Hmm, collision between th in the interpreter and th in the program
 
-	def _Quote( th, **args ):
-		digress( th, Quote( **args ) )
-	bind_with_name( _Quote, "Quote", 'value', null )
+	def _quote( th, **args ):
+		digress( th, quote( **args ) )
+	bind_with_name( _quote, "quote", 'value', null )
 
 	def _quoted_list( th, **args ):
 		digress( th, quoted_list( **args ) )
@@ -714,7 +714,7 @@ bindings = parse_macros("""
 			th
 			act cursor get tokens get
 		finish_digression
-				current_token Quote
+				current_token quote
 				act operands get
 			Cons
 		act operands put

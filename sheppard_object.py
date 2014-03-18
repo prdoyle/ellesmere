@@ -97,6 +97,8 @@ class Null( Object ): # Just to make debugging messages more informative
 	def __init__( self ):
 		Object.__init__( self, "NULL" )
 
+null = Null()
+
 class Quote( Object ):
 
 	def __init__( self, value ):
@@ -105,7 +107,18 @@ class Quote( Object ):
 	def __repr__( self ): return "*%s" % repr( self.value )
 	def __str__ ( self ): return "*%s" % str ( self.value )
 
-null = Null()
+def quote( value ):
+	if is_a( value, 'SYMBOL' ):
+		return '*' + value
+	else:
+		return Quote( value )
+
+def unquote( quoted ):
+	if is_a( quoted, 'SYMBOL' ):
+		assert( quoted[0] == '*' )
+		return quoted[1:]
+	else:
+		return quoted.value
 
 # Generally, these can't be methods, because some Python objects like symbols are
 # represented by plain old Python objects like strings that have no such methods.
