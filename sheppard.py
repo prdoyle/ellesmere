@@ -87,6 +87,12 @@ def take( obj, key, default ):
 def tag_edge_symbol( obj ):
 	return ":" + tag( obj )
 
+def meta_level( th ):
+	if th.meta_thread is null:
+		return 0
+	else:
+		return 1 + meta_level( th.meta_thread )
+
 #
 # The interpreter.
 # Some rules to make it look more like Sheppard code:
@@ -105,15 +111,16 @@ def pop_list( base, field ):
 def finish_digression( th, remaining_tokens ):
 	if is_a( remaining_tokens, "NULL" ):
 		act = th.activation
-		debug( "  (finished %s)", repr( act.cursor ) )
+		#debug( "  (finished %s)", repr( act.cursor ) )
 		act.cursor = act.cursor.resumption
 
 def bind_arg( actual_arg, arg_bindings, formal_arg ):
+	debug_bind = silence
 	if is_a( formal_arg, "SYMBOL" ):
 		arg_bindings[ formal_arg ] = actual_arg
-		debug( "    %s=%s", formal_arg, repr( actual_arg ) )
+		debug_bind( "    %s=%s", formal_arg, repr( actual_arg ) )
 	else:
-		debug( "    pop %s", repr( actual_arg ) )
+		debug_bind( "    pop %s", repr( actual_arg ) )
 
 def bind_args( th, arg_bindings, formal_args ):
 	if is_a( formal_args, "NULL" ):
@@ -151,13 +158,14 @@ def next_state( state, obj ):
 	return next_state2( state, obj, take( state, obj, take_failed ) )
 
 def do_action( th, environment, action ):
+	debug_do = silence
 	if is_a( action, "PRIMITIVE" ):
-		debug( "  Primitive bindings: %s", dict( environment.bindings ) )
+		debug_do( "  Primitive bindings: %s", dict( environment.bindings ) )
 		action.function( th, **dict( environment.bindings ) )
 	else:
 		act = th.activation
 		act.cursor = DIGRESSION( action.script, environment, act.cursor )
-		debug( "    new_digression: %s", repr( act.cursor ) )
+		debug_do( "    new_digression: %s", repr( act.cursor ) )
 		finish_digression( th, act.cursor.tokens ) # Just in case the macro is totally empty
 
 def perform_accept( th ):
@@ -186,20 +194,24 @@ def perform_shift( th ):
 	return true
 
 debug_ellision_limit=999
+printing_level_threshold=1
 
 def print_program( th ):
-	act = th.activation
-	debug( "+ PROGRAM: %s ^ %s", list_str( act.operands, "  ", debug_ellision_limit ), cursor_description( act.cursor ) )
+	if meta_level( th ) >= printing_level_threshold:
+		act = th.activation
+		debug( "+ PROGRAM%d: %s ^ %s", meta_level(th), list_str( act.operands, "  ", debug_ellision_limit ), cursor_description( act.cursor ) )
 
 def print_stuff( th ):
-	act = th.activation
-	#debug( "stack: %s", zip( python_list( act.history ), python_list( act.operands ) ) )
-	print_program( th )
-	debug( "| history: %s", list_str( act.history, ":", debug_ellision_limit ) )
-	debug( "|  cursor: %s", repr( act.cursor ) )
-	debug( "|     env: %s", repr( act.cursor.environment ) )
+	if meta_level( th ) >= printing_level_threshold:
+		act = th.activation
+		#debug( "stack: %s", zip( python_list( act.history ), python_list( act.operands ) ) )
+		print_program( th )
+		debug( "|  history: %s", list_str( act.history, ":", debug_ellision_limit ) )
+		debug( "|   cursor: %s", repr( act.cursor ) )
+		debug( "|      env: %s", repr( act.cursor.environment ) )
 
 def print_backtrace( th ):
+	printing_level_threshold = meta_level( th )
 	print_stuff( th )
 	act = th.activation
 	debug( "| backtrace:" )
@@ -211,18 +223,19 @@ def print_backtrace( th ):
 	debug( "|   |      %s", history[-1] )
 
 def perform_reduce0( th ):
+	debug_reduce = silence
 	print_stuff( th )
 	act = th.activation
-	debug( ">-- reduce0 %s --", act.history.head.action )
+	debug_reduce( ">-- reduce0 %s --", act.history.head.action )
 	action = bound( act.history.head.action, act.scope )
-	debug( "  action: %s", repr( action ) )
+	debug_reduce( "  action: %s", repr( action ) )
 	if is_a( action, "MACRO" ):
-		debug( "    %s", python_list( action.script ) )
+		debug_reduce( "    %s", python_list( action.script ) )
 	reduce_env = ENVIRONMENT( action.environment )
 	reduce_env.digressor = act.cursor.environment  # Need this in order to make "bind" a macro, or else I can't access the environment I'm trying to bind
 	bind_args( th, reduce_env.bindings, action.formal_args )
-	debug( "  environment: %s", reduce_env )
-	debug( "    based on: %s", act.cursor )
+	debug_reduce( "  environment: %s", reduce_env )
+	debug_reduce( "    based on: %s", act.cursor )
 	do_action( th, reduce_env, action )
 	print_program( th )
 	return true
@@ -407,6 +420,7 @@ if 0:
 		#global_scope[ symbol ] = MACRO
 
 def parse_macros( string, environment ):
+	debug_parse = silence
 	# Start_script is still too cumbersome
 	result = Object("BINDINGS")
 	( name, args, script ) = ( None, None, [] )
@@ -414,9 +428,9 @@ def parse_macros( string, environment ):
 		if name != None:
 			args.append( null ) # Automatically add a don't-care arg for the macro name
 			result[ 'ACTION_' + name ] = MACRO( name, List( script ), Stack( args ), environment )
-			debug( "PARSED MACRO[ ACTION_%s ]: %s", name, name )
+			debug_parse( "PARSED MACRO[ ACTION_%s ]: %s", name, name )
 	for word in re.findall( r'\w+(?:/:?\w+)?|\([^)]*\)', string.strip() ):
-		debug( "WORD: '%s'", word )
+		debug_parse( "WORD: '%s'", word )
 		if word[0] == '(':
 			done( result, name, args, script )
 			name = None
@@ -432,12 +446,13 @@ def parse_macros( string, environment ):
 # Sheppard builtins
 
 def define_builtins( bindings, global_scope ):
+	debug_builtins = silence
 	def digress( th, *values ):
 		th.activation.cursor = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
 
 	def bind_with_name( func, name, *args ):
 		bindings[ "ACTION_" + name ] = PRIMITIVE( name, func, Stack( list( args ) ), global_scope )
-		debug( "Binding primitive: %s %s", name, list(args) )
+		debug_builtins( "Binding primitive: %s %s", name, list(args) )
 
 	def bind( func, *args ):
 		bind_with_name( func, func.func_name, *args )
@@ -532,6 +547,11 @@ def define_builtins( bindings, global_scope ):
 	def do_primitive( th, th_arg, environment, action ):
 		action.function( th_arg, **dict( environment.bindings ) )
 	bind( do_primitive, 'th_arg', 'environment', 'action', null ) # Hmm, collision between th in the interpreter and th in the program
+
+	def _print_stuff( th, th_arg ):
+		print_stuff( th_arg )
+		digress( th, 'STATEMENT' )
+	bind_with_name( _print_stuff, 'print_stuff', 'th_arg', null )
 
 # Meta-interpreter
 
@@ -701,6 +721,7 @@ bindings = parse_macros("""
 	false
 
 ( th probe ) execute2/:TRUE
+	th print_stuff
 			th activation get history get head get
 		command bind
 	pop
@@ -727,6 +748,7 @@ bindings = parse_macros("""
 """, global_scope )
 
 def meta_automaton( action_bindings ):
+	debug_ma = silence
 	symbols = { 
 		':ACCEPT', ':ACTIVATION', ':BINDINGS', ':BOOLEAN', ':DIGRESSION', ':ENVIRONMENT', ':EOF', ':FALSE', ':LIST', ':MACRO', ':NOTHING', ':NULL', ':OBJECT', ':PRIMITIVE', ':PROCEDURE', ':PROGRAM', ':SHIFT', ':STATE', ':SYMBOL', ':THREAD', ':TRUE',
 		'ACCEPT', 'Activation', 'BEGIN_MARKER', 'Cons', 'Digression', 'Environment', 'Procedure', 'SHIFT', 'STATEMENT', 'STATEMENTS', 'TAKE_FAILED',
@@ -742,7 +764,7 @@ def meta_automaton( action_bindings ):
 	dispatch_states = {}
 	for symbol, state in zip( dispatch_symbols, shifty() ):
 		dispatch_states[ symbol ] = state # dispatch_states[ x ] is the state we're in if the last item shifted was x
-	debug( "dispatch_states: %s", dispatch_states )
+	debug_ma( "dispatch_states: %s", dispatch_states )
 	for state in dispatch_states.values() + [ default_state ]:
 		# The default shift action
 		for symbol in symbols-dispatch_symbols:
@@ -759,13 +781,13 @@ def meta_automaton( action_bindings ):
 			if not '/' in action.name:
 				name = action.name
 				state[ name ] = Reduce0( symbol )
-				debug( 'Monomorphic: %s[ %s ] = Reduce0( %s )', repr(state), name, symbol )
+				debug_ma( 'Monomorphic: %s[ %s ] = Reduce0( %s )', repr(state), name, symbol )
 	# Polymorphic reduce actions
 	for ( symbol, action ) in action_bindings:
 		try:
 			[ name, dispatch_symbol ] = action.name.split( '/' )
 			dispatch_states[ dispatch_symbol ][ name ] = Reduce0( symbol )
-			debug( 'Polymorphic: state[ %s ][ %s ] = Reduce0( %s ) # %s', dispatch_symbol, name, symbol, repr(dispatch_states[ dispatch_symbol ]) )
+			debug_ma( 'Polymorphic: state[ %s ][ %s ] = Reduce0( %s ) # %s', dispatch_symbol, name, symbol, repr(dispatch_states[ dispatch_symbol ]) )
 		except ValueError: # No slash in the name
 			pass
 	default_state[ ':EOF' ] = Accept()
