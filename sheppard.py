@@ -102,6 +102,10 @@ def meta_level( th ):
 #  - Loops will be replaced with tail digression.  There's only one loop anyway
 #  so that's no big deal.
 #
+#
+# PROBLEM: I think we must generally deal with quoted values, because the moment
+# an unquoted value appears on the lowest-level operand stack, it's possible an
+# action can be taken.  Hence, values must always be manipulated in quoted form.
 
 def pop_list( base, field ):
 	result = base[field].head
@@ -199,7 +203,7 @@ printing_level_threshold=1
 def print_program( th ):
 	if meta_level( th ) >= printing_level_threshold:
 		act = th.activation
-		debug( "+ PROGRAM%d: %s ^ %s", meta_level(th), list_str( act.operands, "  ", debug_ellision_limit ), cursor_description( act.cursor ) )
+		debug( "# PROGRAM%d: %s ^ %s", meta_level(th), list_str( act.operands, "  ", debug_ellision_limit ), cursor_description( act.cursor ) )
 
 def print_stuff( th ):
 	if meta_level( th ) >= printing_level_threshold:
@@ -223,7 +227,10 @@ def print_backtrace( th ):
 	debug( "|   |      %s", history[-1] )
 
 def perform_reduce0( th ):
-	debug_reduce = silence
+	if meta_level( th ) >= printing_level_threshold:
+		debug_reduce = debug
+	else:
+		debug_reduce = silence
 	print_stuff( th )
 	act = th.activation
 	debug_reduce( ">-- reduce0 %s --", act.history.head.action )
@@ -553,6 +560,11 @@ def define_builtins( bindings, global_scope ):
 		digress( th, 'STATEMENT' )
 	bind_with_name( _print_stuff, 'print_stuff', 'th_arg', null )
 
+	def _print_program( th, th_arg ):
+		print_program( th_arg )
+		digress( th, 'STATEMENT' )
+	bind_with_name( _print_program, 'print_program', 'th_arg', null )
+
 # Meta-interpreter
 
 global_scope = ENVIRONMENT( null )
@@ -697,6 +709,7 @@ bindings = parse_macros("""
 	true
 
 ( th state ) perform/:REDUCE0
+	th print_stuff
 		th activation get
 	act bind
 			act history get head get action get
@@ -715,6 +728,8 @@ bindings = parse_macros("""
 		reduce_env
 		action
 	do_action
+	th print_program
+	pop
 	true
 
 ( th probe ) execute2/:FALSE
@@ -802,7 +817,7 @@ action_words = [ s[7:] for s in bindings._fields ]
 #dialect = generated_automaton()
 dialect = meta_automaton( bindings )
 #print "  dialect:\n" + dialect.description()
-print "\n===================\n"
+print "\n#===================\n"
 
 def wrap_procedure( inner_procedure ):
 	nothing.environment = global_scope
@@ -821,6 +836,10 @@ if 1:
 		depth = int( argv[1] )
 	except IndexError:
 		depth = 0
+	try:
+		printing_level_threshold = int( argv[2] )
+	except IndexError:
+		printing_level_threshold = depth - 1
 	for _ in range(depth):
 		procedure = wrap_procedure( procedure )
 	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
