@@ -1,4 +1,11 @@
-NOTE -- this file is awfully old and out of date.
+=== SHEPPARD ===
+
+I'm struggling a lot with quoting symbols so they don't get interpreted at the
+wrong meta-level.  Today I just changed TAKE_FAILED to be a symbol instead of
+an object, and now I've caused the exact same problem with that.  I really must
+figure this out.
+
+=== OLD ELLESMERE NOTES ===
 
 NEXT:
 - Debug digressions etc. and understand why I'm getting END_OF_INPUT at a weird time

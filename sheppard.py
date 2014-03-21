@@ -220,7 +220,7 @@ def print_stuff( th ):
 		print_program( th )
 		debug( "|  history: %s", list_str( act.history, ":", debug_ellision_limit ) )
 		debug( "|   cursor: %s", repr( act.cursor ) )
-		debug( "|      env: %s", repr( act.cursor.environment ) )
+		debug( "|      env: %s %s", repr( act.cursor.environment ), act.cursor.environment.bindings )
 
 def print_backtrace( th ):
 	printing_level_threshold = meta_level( th )
