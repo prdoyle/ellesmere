@@ -50,10 +50,12 @@ def THREAD( activation, meta_thread ): return Object( "THREAD", activation=activ
 # Main execute procedure
 
 def debug( message, *args ):
-	#return
 	if args:
 		message = message % args
 	print message
+
+def silence( message, *args ):
+	pass
 
 def error( exception ):
 	debug( "!! ERROR: %s", exception )
