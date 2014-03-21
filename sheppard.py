@@ -50,10 +50,12 @@ def THREAD( activation, meta_thread ): return Object( "THREAD", activation=activ
 # Main execute procedure
 
 def debug( message, *args ):
-	#return
 	if args:
 		message = message % args
 	print message
+
+def silence( message, *args ):
+	pass
 
 def error( exception ):
 	debug( "!! ERROR: %s", exception )
@@ -77,7 +79,7 @@ def list_str( lst, sep=", ", ellision_limit=999 ):
 		prefix = "... "
 	return prefix + string.join([ repr(s) for s in reversed( pl )], sep )
 
-def take( obj, key, default ):
+def take( obj, key, default ): # TODO: This is an awkward abstraction.  Just make get_edge return some special value for a nonexistent edge, like VOID
 	#debug( "--    %s.take( %s, %s )", repr(obj), repr(key), repr(default) )
 	if is_symbol( key ) and key in obj:
 		return obj[ key ]
@@ -92,6 +94,19 @@ def meta_level( th ):
 		return 0
 	else:
 		return 1 + meta_level( th.meta_thread )
+
+def uber( arg ):
+	if is_a( arg, 'SYMBOL' ):
+		return '*'+arg
+	else:
+		return arg
+
+def unter( arg ):
+	if is_a( arg, 'SYMBOL' ):
+		assert( arg[0] == '*' )
+		return arg[1:]
+	else:
+		return arg
 
 #
 # The interpreter.
@@ -146,7 +161,7 @@ def bound( obj, environment ):
 		return obj
 	else:
 		#debug( "-- looking up %s in: %s", repr(obj), environment.bindings )
-		return bound2( obj, environment, take( environment.bindings, obj, take_failed ) )
+		return bound2( obj, environment, uber( take( environment.bindings, obj, take_failed ) ) )
 
 def next_state2( state, obj, probe ):
 	if is_a( probe, "TAKE_FAILED" ): # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj] exists and state[ tag_edge_symbol(obj) ] does not, we can't evaluate the latter
@@ -212,7 +227,7 @@ def print_stuff( th ):
 		print_program( th )
 		debug( "|  history: %s", list_str( act.history, ":", debug_ellision_limit ) )
 		debug( "|   cursor: %s", repr( act.cursor ) )
-		debug( "|      env: %s", repr( act.cursor.environment ) )
+		debug( "|      env: %s %s", repr( act.cursor.environment ), act.cursor.environment.bindings )
 
 def print_backtrace( th ):
 	printing_level_threshold = meta_level( th )
@@ -262,7 +277,7 @@ def cursor_description( cursor ):
 def execute2( th, probe ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
 	while is_a( probe, "TRUE" ):
-		#print_stuff( th )
+		print_stuff( th )
 		command = tag( th.activation.history.head )
 		#debug( "-__ execute2 __" )
 		# if Python had tail call elimination, we could do this:
@@ -502,18 +517,26 @@ def define_builtins( bindings, global_scope ):
 		digress( th, tag_edge_symbol(obj) )
 	bind_with_name( _tag_edge_symbol, "tag_edge_symbol", 'obj', null )
 
-	def get( th, base, field ):
-		digress( th, base[ field ] )
-	bind( get, 'base', 'field', null )
+	def _uber( th, sym ): # TODO: This needs to be a prefix, to get into a state where sym won't be interpreted
+		digress( th, uber(sym) )
+	bind_with_name( _uber, 'uber', 'sym', null )
 
-	def _take( th, base, field, default ):
-		digress( th, take( base, field, default ) )
-	bind_with_name( _take, "take", 'base', 'field', 'default', null )
+	def _unter( th, sym ):
+		digress( th, unter(sym) )
+	bind_with_name( _unter, 'unter', 'sym', null )
 
-	def put( th, value, base, field ):
-		base[ field ] = value
+	def get_edge( th, base, field ):
+		digress( th, uber( base[ unter(field) ] ) )
+	bind( get_edge, 'base', 'field', null )
+
+	def take_edge( th, base, field, default ):
+		digress( th, uber( take( base, unter(field), default ) ) )
+	bind_with_name( take_edge, "take_edge", 'base', 'field', 'default', null )
+
+	def put_edge( th, value, base, field ):
+		base[ unter(field) ] = unter( value )
 		digress( th, "STATEMENT" )
-	bind( put, 'value', 'base', 'field', null )
+	bind( put_edge, 'value', 'base', 'field', null )
 
 	def pop( th ):
 		pass
@@ -565,6 +588,25 @@ def define_builtins( bindings, global_scope ):
 		digress( th, 'STATEMENT' )
 	bind_with_name( _print_program, 'print_program', 'th_arg', null )
 
+	# These could be macros, but they make the interpreter really tedious because they are so common
+
+	def get( th, base, field ):
+		digress( th, uber( base[ field ] ) )
+	bind( get, 'base', 'field', null )
+
+	def put( th, value, base, field ):
+		base[ field ] = unter( value )
+		digress( th, "STATEMENT" )
+	bind( put, 'value', 'base', 'field', null )
+
+	def _take( th, base, field, default ):
+		# Maybe I can't do this with a macro?
+		if is_symbol( field ) and field in base:
+			digress( th, uber( base[field] ) )
+		else:
+			digress( th, default ) # No uber/unter here!  Awkward
+	bind_with_name( _take, "take", 'base', 'field', 'default', null )
+
 # Meta-interpreter
 
 global_scope = ENVIRONMENT( null )
@@ -578,13 +620,13 @@ bindings = parse_macros("""
 ( value symbol ) bind 
 		value
 		current_environment digressor get bindings get
-	symbol put
+	symbol put_edge
 
 ( base field ) pop_list
-		base field get head get
+		base field get_edge head get
 	result bind
-		base field get tail get
-	base field put
+		base field get_edge tail get
+	base field put_edge
 	pop
 	result
 
@@ -598,7 +640,7 @@ bindings = parse_macros("""
 
 ( actual_arg arg_bindings formal_arg ) bind_arg/:SYMBOL
 		actual_arg
-	arg_bindings formal_arg put
+	arg_bindings formal_arg put_edge
 
 ( actual_arg arg_bindings formal_arg ) bind_arg/:NULL
 
@@ -635,11 +677,11 @@ bindings = parse_macros("""
 			environment bindings get
 			obj
 			TAKE_FAILED
-		take
+		take_edge
 	bound2
 
 ( state obj probe ) next_state2/TAKE_FAILED
-	state obj tag_edge_symbol get
+	state obj tag_edge_symbol get_edge
 
 ( state obj probe ) next_state2/:ACCEPT
 	probe
@@ -736,7 +778,6 @@ bindings = parse_macros("""
 	false
 
 ( th probe ) execute2/:TRUE
-	th print_stuff
 			th activation get history get head get
 		command bind
 	pop
