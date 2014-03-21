@@ -79,12 +79,12 @@ def list_str( lst, sep=", ", ellision_limit=999 ):
 		prefix = "... "
 	return prefix + string.join([ repr(s) for s in reversed( pl )], sep )
 
-def take( obj, key, default ):
+def take( obj, key ):
 	#debug( "--    %s.take( %s, %s )", repr(obj), repr(key), repr(default) )
 	if is_symbol( key ) and key in obj:
 		return obj[ key ]
 	else:
-		return default
+		return take_failed
 
 def tag_edge_symbol( obj ):
 	return ":" + tag( obj )
@@ -148,7 +148,7 @@ def bound( obj, environment ):
 		return obj
 	else:
 		#debug( "-- looking up %s in: %s", repr(obj), environment.bindings )
-		return bound2( obj, environment, take( environment.bindings, obj, take_failed ) )
+		return bound2( obj, environment, take( environment.bindings, obj ) )
 
 def next_state2( state, obj, probe ):
 	if is_a( probe, "TAKE_FAILED" ): # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj] exists and state[ tag_edge_symbol(obj) ] does not, we can't evaluate the latter
@@ -161,7 +161,7 @@ def next_state2( state, obj, probe ):
 
 def next_state( state, obj ):
 	# Note: this gives priority to SYMBOL over specific symbols, which might make keywords impossible.  We might want to rethink this.
-	return next_state2( state, obj, take( state, obj, take_failed ) )
+	return next_state2( state, obj, take( state, obj ) )
 
 def do_action( th, environment, action ):
 	debug_do = silence
@@ -178,13 +178,19 @@ def perform_accept( th ):
 	debug( "accept" )
 	return false
 
+def get_token( probe ):
+	if is_a( probe, 'TAKE_FAILED' ):
+		return eof
+	else:
+		return probe
+
 def perform_shift( th ):
 	#debug( "shift" )
 	act = th.activation
 	if act.operands != null and act.operands.head in action_words:
 		error( Missed_Action_Word( act.operands.head ) )
 	#debug( "  cursor: %s", repr( act.cursor ) )
-	raw_token = take( act.cursor.tokens, "head", eof )
+	raw_token = get_token( take( act.cursor.tokens, "head" ) )
 	act.cursor.tokens = act.cursor.tokens.tail
 	#debug( "  token: %s", repr( raw_token ) )
 	#debug( "    environment: %s", act.cursor.environment )
@@ -508,9 +514,9 @@ def define_builtins( bindings, global_scope ):
 		digress( th, base[ field ] )
 	bind( get, 'base', 'field', null )
 
-	def _take( th, base, field, default ):
-		digress( th, take( base, field, default ) )
-	bind_with_name( _take, "take", 'base', 'field', 'default', null )
+	def _take( th, base, field ):
+		digress( th, take( base, field ) )
+	bind_with_name( _take, "take", 'base', 'field', null )
 
 	def put( th, value, base, field ):
 		base[ field ] = value
@@ -636,7 +642,6 @@ bindings = parse_macros("""
 		environment
 			environment bindings get
 			obj
-			TAKE_FAILED
 		take
 	bound2
 
@@ -655,7 +660,6 @@ bindings = parse_macros("""
 		obj
 			state
 			obj
-			TAKE_FAILED
 		take
 	next_state2
 
@@ -678,13 +682,18 @@ bindings = parse_macros("""
 ( th state ) perform/:ACCEPT
 	false
 
+( probe ) get_token/TAKE_FAILED
+	eof
+
+( probe ) get_token
+	probe
+
 ( th state ) perform/:SHIFT
 			th activation get
 		act bind
 				act cursor get tokens get
 				head
-				eof
-			take
+			take get_token
 		raw_token bind
 			act cursor get tokens get tail get
 		act cursor get tokens put
