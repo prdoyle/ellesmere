@@ -41,7 +41,6 @@ eof = Eof()
 nothing = Nothing()
 false = Object( "FALSE" )
 true  = Object( "TRUE" )
-take_failed = Object( "TAKE_FAILED" )
 
 def ACTIVATION( cursor, operands, history, scope, caller ): return Object( "ACTIVATION", cursor=cursor, operands=operands, history=history, scope=scope, caller=caller )
 
@@ -84,7 +83,7 @@ def take( obj, key ):
 	if is_symbol( key ) and key in obj:
 		return obj[ key ]
 	else:
-		return take_failed
+		return 'TAKE_FAILED'
 
 def tag_edge_symbol( obj ):
 	return ":" + tag( obj )
@@ -99,7 +98,8 @@ def meta_level( th ):
 # The interpreter.
 # Some rules to make it look more like Sheppard code:
 #  - Procedures are only allowed one if statement sequence.  It must be at the
-#  top level, and must use is_a based on an argument, preferably the last argument.
+#  top level, and must use is_a based on the last argument or compare the last 
+#  argument against a specific symbol.
 # This represents sheppard automaton-based dispatch.
 #  - Loops will be replaced with tail digression.  There's only one loop anyway
 #  so that's no big deal.
@@ -138,7 +138,7 @@ def bind_args( th, arg_bindings, formal_args ):
 		bind_args( th, arg_bindings, formal_args.tail )
 
 def bound2( obj, environment, probe ):
-	if is_a( probe, "TAKE_FAILED" ):
+	if probe == "TAKE_FAILED":
 		return bound( obj, environment.outer )
 	else:
 		return probe
@@ -151,7 +151,7 @@ def bound( obj, environment ):
 		return bound2( obj, environment, take( environment.bindings, obj ) )
 
 def next_state2( state, obj, probe ):
-	if is_a( probe, "TAKE_FAILED" ): # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj] exists and state[ tag_edge_symbol(obj) ] does not, we can't evaluate the latter
+	if probe == "TAKE_FAILED": # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj] exists and state[ tag_edge_symbol(obj) ] does not, we can't evaluate the latter
 		try:
 			return state[ tag_edge_symbol(obj) ]
 		except AttributeError:
@@ -179,7 +179,7 @@ def perform_accept( th ):
 	return false
 
 def get_token( probe ):
-	if is_a( probe, 'TAKE_FAILED' ):
+	if probe == 'TAKE_FAILED':
 		return eof
 	else:
 		return probe
