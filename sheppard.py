@@ -94,8 +94,11 @@ def meta_level( th ):
 	else:
 		return 1 + meta_level( th.meta_thread )
 
+#####################################
 #
 # The interpreter.
+#
+#
 # Some rules to make it look more like Sheppard code:
 #  - Procedures are only allowed one if statement sequence.  It must be at the
 #  top level, and must use is_a based on the last argument or compare the last 
@@ -282,6 +285,11 @@ def execute( procedure, environment, scope ):
 	th = THREAD( ACTIVATION( DIGRESSION( procedure.script, environment, nothing ), null, LIST( procedure.dialect, null ), scope, null ), null )
 	debug( "starting thread: %s with digression:\n\t%s", repr(th), th.activation.cursor )
 	execute2( th, true )
+
+#
+#
+#####################################
+
 
 # PROBLEM: as I write this, perform_reduce contains a call to finish_digression.
 # The motivation for this is tail digression elimination: we want to clean up an
