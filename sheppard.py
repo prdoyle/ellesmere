@@ -1,4 +1,4 @@
-#! /usr/bin/python
+#! /usr/bin/python -O
 
 import string, re
 from sheppard_gen import generated_automaton
@@ -98,10 +98,12 @@ def give( value_sharp, obj, key_sharp ):
 
 def take( obj, key_sharp ):
 	#debug( "--    %s.take( %s, %s )", repr(obj), repr(key_sharp), repr(default) )
-	if is_symbol( key_sharp ) and flat( key_sharp ) in obj:
-		return sharp( obj[ flat( key_sharp ) ] )
-	else:
-		return 'TAKE_FAILED'
+	if is_symbol( key_sharp ):
+		try:
+			return sharp( obj[ flat( key_sharp ) ] )
+		except KeyError:
+			pass
+	return 'TAKE_FAILED'
 
 def make( tag_sharp ):
 	return Object( flat( tag_sharp ) )
@@ -241,25 +243,25 @@ def perform_accept( th ):
 	return false
 
 def perform_shift( th ):
-	debug_shift = silence
-	debug_shift( 'shift' )
+	#debug_shift = silence
+	#debug_shift( 'shift' )
 	act = th.activation
-	if act.operands != null and act.operands.head in action_words:
-		error( Missed_Action_Word( act.operands.head ) )
-	debug_shift( "  cursor: %s", repr( act.cursor ) )
+	#if act.operands != null and act.operands.head in action_words:
+	#	error( Missed_Action_Word( act.operands.head ) )
+	#debug_shift( "  cursor: %s", repr( act.cursor ) )
 	raw_token_sharp = get_token( take( act.cursor.tokens, 'head#' ) )
 	act.cursor.tokens = act.cursor.tokens.tail
-	debug_shift( "  token: %s", repr( flat( raw_token_sharp ) ) )
-	debug_shift( "    environment: %s", act.cursor.environment )
+	#debug_shift( "  token: %s", repr( flat( raw_token_sharp ) ) )
+	#debug_shift( "    environment: %s", act.cursor.environment )
 	token_sharp = bound( raw_token_sharp, act.cursor.environment )
 	finish_digression( th, act.cursor.tokens )
-	debug_shift( "    value: %s", repr( flat( token_sharp ) ) )
+	#debug_shift( "    value: %s", repr( flat( token_sharp ) ) )
 	act.operands = cons( token_sharp, act.operands )
 	new_state = next_state( act.history.head, token_sharp )
-	debug_shift( "  new_state: %s", repr( new_state ) )
+	#debug_shift( "  new_state: %s", repr( new_state ) )
 	act.history = cons( new_state, act.history )
-	if len( python_list( act.operands ) ) > 50:
-		error( RuntimeError( "Operand stack overflow" ) )
+	#if len( python_list( act.operands ) ) > 50:
+	#	error( RuntimeError( "Operand stack overflow" ) )
 	return true
 
 def perform_reduce0( th ):
@@ -272,8 +274,8 @@ def perform_reduce0( th ):
 	debug_reduce( ">-- reduce0 %s --", act.history.head.action )
 	action = bound( take( act.history.head, 'action#' ), act.scope ) # 'take' here just to get a sharp result
 	debug_reduce( "  action: %s", repr( action ) )
-	if is_a( action, 'MACRO' ):
-		debug_reduce( "    %s", python_list( action.script ) )
+	#if is_a( action, 'MACRO' ):
+	#	debug_reduce( "    %s", python_list( action.script ) )
 	reduce_env = ENVIRONMENT( action.environment )
 	reduce_env.digressor = act.cursor.environment  # Need this in order to make 'bind' a macro, or else I can't access the environment I'm trying to bind
 	bind_args( th, reduce_env.bindings, action.formal_args )

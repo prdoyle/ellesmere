@@ -19,10 +19,10 @@ class Object:
 	# Allow map syntax for convenience
 
 	def __getitem__( self, key ):
-		if isinstance( key, int ):
-			return self._elements[ key ]
-		else:
+		try:
 			return getattr( self, key )
+		except AttributeError:
+			return self._elements[ key ]
 
 	def __setitem__( self, key, value ):
 		if isinstance( key, int ):
@@ -107,12 +107,15 @@ def is_int( obj ):    return isinstance( obj, int ) # Sheppard integers are repr
 def is_symbol( obj ): return isinstance( obj, str ) # Sheppard symbols are represented by Python strs
 
 def tag( obj ):
-	if is_int( obj ):
-		result = "INT"
-	elif is_symbol( obj ):
-		result = "SYMBOL"
-	else: # All other Sheppard objects are represented by instances of Object
-		result = obj._tag
+	try:
+		return obj._tag
+	except AttributeError:
+		if is_symbol( obj ):
+			result = 'SYMBOL'
+		elif is_int( obj ):
+			result = "INT"
+		else: # All other Sheppard objects are represented by instances of Object
+			result = obj._tag
 	assert( result.isupper() )
 	return result
 
