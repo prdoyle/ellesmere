@@ -112,9 +112,9 @@ def meta_level( th ):
 # an unquoted value appears on the lowest-level operand stack, it's possible an
 # action can be taken.  Hence, values must always be manipulated in quoted form.
 
-def pop_list( base, field ):
-	result = base[ field ].head
-	base[ field ] = base[ field ].tail
+def pop_list( base, field_symbol ):
+	result = base[ field_symbol ].head
+	base[ field_symbol ] = base[ field_symbol ].tail
 	return result
 
 def finish_digression( th, remaining_tokens ):
@@ -123,13 +123,14 @@ def finish_digression( th, remaining_tokens ):
 		#debug( "  (finished %s)", repr( act.cursor ) )
 		act.cursor = act.cursor.resumption
 
-def bind_arg( actual_arg, arg_bindings, formal_arg ):
+def bind_arg( arg_value, arg_bindings, arg_symbol ):
 	debug_bind = silence
-	if is_a( formal_arg, 'SYMBOL' ):
-		arg_bindings[ formal_arg ] = actual_arg
-		debug_bind( "    %s=%s", formal_arg, repr( actual_arg ) )
+	if is_a( arg_symbol, 'SYMBOL' ):
+		arg_bindings[ arg_symbol ] = arg_value
+		debug_bind( "    %s=%s", arg_symbol, repr( arg_value ) )
 	else:
-		debug_bind( "    pop %s", repr( actual_arg ) )
+		assert( is_a( arg_symbol, 'NULL' ) )
+		debug_bind( "    pop %s", repr( arg_value ) )
 
 def bind_args( th, arg_bindings, formal_args ):
 	if is_a( formal_args, 'NULL' ):
@@ -188,21 +189,22 @@ def get_token( probe ):
 		return probe
 
 def perform_shift( th ):
-	#debug( 'shift' )
+	debug_shift = silence
+	debug_shift( 'shift' )
 	act = th.activation
 	if act.operands != null and act.operands.head in action_words:
 		error( Missed_Action_Word( act.operands.head ) )
-	#debug( "  cursor: %s", repr( act.cursor ) )
+	debug_shift( "  cursor: %s", repr( act.cursor ) )
 	raw_token = get_token( take( act.cursor.tokens, 'head' ) )
 	act.cursor.tokens = act.cursor.tokens.tail
-	#debug( "  token: %s", repr( raw_token ) )
-	#debug( "    environment: %s", act.cursor.environment )
+	debug_shift( "  token: %s", repr( raw_token ) )
+	debug_shift( "    environment: %s", act.cursor.environment )
 	current_token = bound( raw_token, act.cursor.environment )
 	finish_digression( th, act.cursor.tokens )
-	#debug( "    value: %s", current_token )
+	debug_shift( "    value: %s", current_token )
 	act.operands = LIST( current_token, act.operands )
 	new_state = next_state( act.history.head, current_token )
-	#debug( "  new_state: %s", repr( new_state ) )
+	debug_shift( "  new_state: %s", repr( new_state ) )
 	act.history = LIST( new_state, act.history )
 	if len( python_list( act.operands ) ) > 50:
 		error( RuntimeError( "Operand stack overflow" ) )
@@ -369,8 +371,8 @@ class Unexpected_token( BaseException ):
 
 class Start_script:
 
-	''" This just permits me to write some Sheppard code without enclosing every word in quotes
-	''"
+	""" This just permits me to write some Sheppard code without enclosing every word in quotes
+	"""
 
 	def __init__( self ):
 		self._tokens = []
@@ -584,7 +586,7 @@ def define_builtins( bindings, global_scope ):
 # Meta-interpreter
 
 global_scope = ENVIRONMENT( null )
-bindings = parse_macros(''"
+bindings = parse_macros("""
 ( statement ) STATEMENT/STATEMENT
 	STATEMENTS
 
@@ -779,7 +781,7 @@ bindings = parse_macros(''"
 			true
 		execute2
 	pop
-''", global_scope )
+""", global_scope )
 
 def meta_automaton( action_bindings ):
 	debug_ma = silence
