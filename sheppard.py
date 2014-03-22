@@ -242,7 +242,10 @@ def perform_accept( th ):
 	debug( 'accept' )
 	return false
 
+shift_count = 0
 def perform_shift( th ):
+	global shift_count
+	shift_count += 1
 	#debug_shift = silence
 	#debug_shift( 'shift' )
 	act = th.activation
@@ -498,8 +501,9 @@ def define_builtins( bindings, global_scope ):
 		bindings[ 'ACTION_' + name ] = PRIMITIVE( name, func, Stack( list( args ) ), global_scope )
 		debug_builtins( "Binding primitive: %s %s", name, list(args) )
 
-	def bind( func, *args ):
-		bind_with_name( func, func.func_name, *args )
+	# Cython doesn't support func_name
+	#def bind( func, *args ):
+	#	bind_with_name( func, func.func_name, *args )
 
 	def eat( th ):
 		digress( th, 'STATEMENTS' )
@@ -511,25 +515,25 @@ def define_builtins( bindings, global_scope ):
 		# One day, this might start some kind of local scope.  But not today.
 		# TODO: This could probably be a macro
 		digress( th, 'BEGIN_MARKER' )
-	bind( begin, null )
+	bind_with_name( begin, 'begin', null )
 
 	def compound_expr( th, result ):
 		# TODO: This could probably be a macro
 		digress( th, result )
-	bind( compound_expr, null, null, null, 'result', null )
+	bind_with_name( compound_expr, 'compound_expr', null, null, null, 'result', null )
 
 	def compound_stmt( th ):
 		# TODO: This could probably be a macro
 		pass
-	bind( compound_stmt, null, null, null )
+	bind_with_name( compound_stmt, 'compound_stmt', null, null, null )
 
 	def current_environment( th ):
 		digress( th, th.activation.cursor.environment )
-	bind( current_environment, null )
+	bind_with_name( current_environment, 'current_environment', null )
 
 	def current_thread( th ):
 		digress( th, th )
-	bind( current_thread, null )
+	bind_with_name( current_thread, 'current_thread', null )
 
 	def _tag( th, obj ):
 		digress( th, tag(obj) )
@@ -541,7 +545,7 @@ def define_builtins( bindings, global_scope ):
 
 	def get( th, base, field ):
 		digress( th, base[ field ] )
-	bind( get, 'base', 'field', null )
+	bind_with_name( get, 'get', 'base', 'field', null )
 
 	def _give( th, value, base, field ):
 		give( value, base, field )
@@ -555,19 +559,19 @@ def define_builtins( bindings, global_scope ):
 	def put( th, value, base, field ):
 		base[ field ] = value
 		digress( th, 'STATEMENT' )
-	bind( put, 'value', 'base', 'field', null )
+	bind_with_name( put, 'put', 'value', 'base', 'field', null )
 
 	def pop( th ):
 		pass
-	bind( pop, null, null )
+	bind_with_name( pop, 'pop', null, null )
 
 	def Null( th ):
 		digress( th, null )
-	bind( Null, null )
+	bind_with_name( Null, 'Null', null )
 
 	def Nothing( th ):
 		digress( th, nothing )
-	bind( Nothing, null )
+	bind_with_name( Nothing, 'Nothing', null )
 
 	def _cons( th, **args ):
 		digress( th, cons(**args) )
@@ -575,27 +579,27 @@ def define_builtins( bindings, global_scope ):
 
 	def Procedure( th, **args ):
 		digress( th, PROCEDURE( **args ) )
-	bind( Procedure, 'name', 'script', 'dialect', 'environment', null )
+	bind_with_name( Procedure, 'Procedure', 'name', 'script', 'dialect', 'environment', null )
 
 	def Digression( th, **args ):
 		digress( th, DIGRESSION( **args ) )
-	bind( Digression, 'tokens', 'environment', 'resumption', null )
+	bind_with_name( Digression, 'Digression', 'tokens', 'environment', 'resumption', null )
 
 	def Activation( th, **args ):
 		digress( th, ACTIVATION( **args ) )
-	bind( Activation, 'cursor', 'operands', 'history', 'scope', 'caller', null )
+	bind_with_name( Activation, 'Activation', 'cursor', 'operands', 'history', 'scope', 'caller', null )
 
 	def Thread( th, **args ):
 		digress( th, THREAD( **args ) )
-	bind( Thread, 'activation', 'meta_thread', null )
+	bind_with_name( Thread, 'Thread', 'activation', 'meta_thread', null )
 
 	def Environment( th, **args ):
 		digress( th, ENVIRONMENT( **args ) )
-	bind( Environment, 'outer', null )
+	bind_with_name( Environment, 'Environment', 'outer', null )
 
 	def do_primitive( th, th_arg, environment, action ):
 		action.function( th_arg, **dict( environment.bindings ) )
-	bind( do_primitive, 'th_arg', 'environment', 'action', null ) # Hmm, collision between th in the interpreter and th in the program
+	bind_with_name( do_primitive, 'do_primitive', 'th_arg', 'environment', 'action', null ) # Hmm, collision between th in the interpreter and th in the program
 
 	def _print_stuff( th, th_arg ):
 		print_stuff( th_arg )
@@ -887,8 +891,15 @@ def wrap_procedure( inner_procedure ):
 	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment, 'execute' ]), dialect, global_scope )
 	return outer_procedure
 
-if 1:
+def test( depth, plt ):
+	global printing_level_threshold
 	procedure = go_world()
+	printing_level_threshold = plt
+	for _ in range(depth):
+		procedure = wrap_procedure( procedure )
+	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
+
+def main():
 	try:
 		depth = int( argv[1] )
 	except IndexError:
@@ -897,7 +908,7 @@ if 1:
 		printing_level_threshold = int( argv[2] )
 	except IndexError:
 		printing_level_threshold = depth - 1
-	for _ in range(depth):
-		procedure = wrap_procedure( procedure )
-	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
+	test( depth, printing_level_threshold )
 
+main()
+print shift_count, "shifts"
