@@ -78,140 +78,45 @@ def list_str( lst, sep=", ", ellision_limit=999 ):
 		prefix = "... "
 	return prefix + string.join([ repr(s) for s in reversed( pl )], sep )
 
-def take( obj, key ):
-	#debug( "--    %s.take( %s, %s )", repr(obj), repr(key), repr(default) )
-	if is_symbol( key ) and key in obj:
-		return obj[ key ]
-	else:
-		return 'TAKE_FAILED'
-
-def tag_edge_symbol( obj ):
-	return ':' + tag( obj )
-
 def meta_level( th ):
 	if th.meta_thread is null:
 		return 0
 	else:
 		return 1 + meta_level( th.meta_thread )
 
-#####################################
-#
-# The interpreter.
-#
-#
-# Some rules to make it look more like Sheppard code:
-#  - Procedures are only allowed one if statement sequence.  It must be at the
-#  top level, and must use is_a based on the last argument or compare the last 
-#  argument against a specific symbol.
-# This represents sheppard automaton-based dispatch.
-#  - Loops will be replaced with tail digression.  There's only one loop anyway
-#  so that's no big deal.
-#
-#
-# PROBLEM: I think we must generally deal with quoted values, because the moment
-# an unquoted value appears on the lowest-level operand stack, it's possible an
-# action can be taken.  Hence, values must always be manipulated in quoted form.
+def tag_edge_symbol( obj ):
+	return ':' + tag( obj )
 
-def pop_list( base, field_symbol ):
-	result = base[ field_symbol ].head
-	base[ field_symbol ] = base[ field_symbol ].tail
-	return result
+# These functions operate in sharp-land, so they're safe to call directly from
+# a Sheppard program without interfering with the automaton
 
-def finish_digression( th, remaining_tokens ):
-	if is_a( remaining_tokens, 'NULL' ):
-		act = th.activation
-		#debug( "  (finished %s)", repr( act.cursor ) )
-		act.cursor = act.cursor.resumption
-
-def bind_arg( arg_value, arg_bindings, arg_symbol ):
-	debug_bind = silence
-	if is_a( arg_symbol, 'SYMBOL' ):
-		arg_bindings[ arg_symbol ] = arg_value
-		debug_bind( "    %s=%s", arg_symbol, repr( arg_value ) )
+def give( value_sharp, obj, key_sharp ):
+	if is_symbol( key_sharp ):
+		obj[ flat(key_sharp) ] = flat( value_sharp )
 	else:
-		assert( is_a( arg_symbol, 'NULL' ) )
-		debug_bind( "    pop %s", repr( arg_value ) )
+		return 'GIVE_FAILED'
 
-def bind_args( th, arg_bindings, formal_args ):
-	if is_a( formal_args, 'NULL' ):
-		pass
+def take( obj, key_sharp ):
+	#debug( "--    %s.take( %s, %s )", repr(obj), repr(key_sharp), repr(default) )
+	if is_symbol( key_sharp ) and flat( key_sharp ) in obj:
+		return sharp( obj[ flat( key_sharp ) ] )
 	else:
-		act = th.activation
-		act.history = act.history.tail
-		bind_arg( pop_list( th.activation, 'operands' ), arg_bindings, formal_args.head )
-		bind_args( th, arg_bindings, formal_args.tail )
+		return 'TAKE_FAILED'
 
-def bound2( obj, environment, probe ):
-	if probe == 'TAKE_FAILED':
-		return bound( obj, environment.outer )
-	else:
-		return probe
+def make( tag_sharp ):
+	return Object( flat( tag_sharp ) )
 
-def bound( obj, environment ):
-	if is_a( environment, 'NULL' ):
-		return obj
-	else:
-		#debug( "-- looking up %s in: %s", repr(obj), environment.bindings )
-		return bound2( obj, environment, take( environment.bindings, obj ) )
-
-def next_state2( state, obj, probe ):
-	if probe == 'TAKE_FAILED': # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj] exists and state[ tag_edge_symbol(obj) ] does not, we can't evaluate the latter
-		try:
-			return state[ tag_edge_symbol(obj) ]
-		except AttributeError:
-			error( Unexpected_token( state, obj ) )
-	else:
-		return probe
-
-def next_state( state, obj ):
-	# Note: this gives priority to SYMBOL over specific symbols, which might make keywords impossible.  We might want to rethink this.
-	return next_state2( state, obj, take( state, obj ) )
-
-def do_action( th, environment, action ):
-	debug_do = silence
-	if is_a( action, 'PRIMITIVE' ):
-		debug_do( "  Primitive bindings: %s", dict( environment.bindings ) )
-		action.function( th, **dict( environment.bindings ) )
-	else:
-		act = th.activation
-		act.cursor = DIGRESSION( action.script, environment, act.cursor )
-		debug_do( "    new_digression: %s", repr( act.cursor ) )
-		finish_digression( th, act.cursor.tokens ) # Just in case the macro is totally empty
-
-def perform_accept( th ):
-	debug( 'accept' )
-	return false
-
-def get_token( probe ):
-	if probe == 'TAKE_FAILED':
-		return eof
-	else:
-		return probe
-
-def perform_shift( th ):
-	debug_shift = silence
-	debug_shift( 'shift' )
-	act = th.activation
-	if act.operands != null and act.operands.head in action_words:
-		error( Missed_Action_Word( act.operands.head ) )
-	debug_shift( "  cursor: %s", repr( act.cursor ) )
-	raw_token = get_token( take( act.cursor.tokens, 'head' ) )
-	act.cursor.tokens = act.cursor.tokens.tail
-	debug_shift( "  token: %s", repr( raw_token ) )
-	debug_shift( "    environment: %s", act.cursor.environment )
-	current_token = bound( raw_token, act.cursor.environment )
-	finish_digression( th, act.cursor.tokens )
-	debug_shift( "    value: %s", current_token )
-	act.operands = LIST( current_token, act.operands )
-	new_state = next_state( act.history.head, current_token )
-	debug_shift( "  new_state: %s", repr( new_state ) )
-	act.history = LIST( new_state, act.history )
-	if len( python_list( act.operands ) ) > 50:
-		error( RuntimeError( "Operand stack overflow" ) )
-	return true
+def cons( head_sharp, tail ):
+	return LIST( flat( head_sharp ), tail )
 
 debug_ellision_limit=999
 printing_level_threshold=1
+
+def cursor_description( cursor ):
+	if cursor == nothing:
+		return ''
+	else:
+		return string.join( [ repr(x) for x in python_list( cursor.tokens ) ], "  " ) + " . " + cursor_description( cursor.resumption )
 
 def print_program( th ):
 	if meta_level( th ) >= printing_level_threshold:
@@ -239,6 +144,124 @@ def print_backtrace( th ):
 		debug( "|   | %s",      obj )
 	debug( "|   |      %s", history[-1] )
 
+#####################################
+#
+# The interpreter.
+#
+#
+# Some rules to make it look more like Sheppard code:
+#  - Procedures are only allowed one if statement sequence.  It must be at the
+#  top level, and must use is_a based on the last argument or compare the last 
+#  argument against a specific symbol.
+# This represents sheppard automaton-based dispatch.
+#  - Loops will be replaced with tail digression.  There's only one loop anyway
+#  so that's no big deal.
+#
+#
+# PROBLEM: I think we must generally deal with quoted values, because the moment
+# an unquoted value appears on the lowest-level operand stack, it's possible an
+# action can be taken.  Hence, values must always be manipulated in quoted form.
+
+def pop_list( base, field_symbol_sharp ):
+	current = take( base, field_symbol_sharp )
+	result  = take( current, 'head#' )
+	give( take( current, 'tail#' ), base, field_symbol_sharp )
+	return result
+
+def finish_digression( th, remaining_tokens ):
+	if is_a( remaining_tokens, 'NULL' ):
+		act = th.activation
+		#debug( "  (finished %s)", repr( act.cursor ) )
+		act.cursor = act.cursor.resumption
+
+def bind_arg( arg_value_sharp, arg_bindings, arg_symbol_sharp ):
+	debug_bind = silence
+	if is_a( arg_symbol_sharp, 'SYMBOL' ):
+		give( arg_value_sharp, arg_bindings, arg_symbol_sharp )
+		debug_bind( "    %s=%s", arg_symbol_sharp, repr( arg_value_sharp ) )
+	else:
+		assert( is_a( arg_symbol_sharp, 'NULL' ) )
+		debug_bind( "    pop %s", repr( arg_value_sharp ) )
+
+def bind_args( th, arg_bindings, formal_args ):
+	if is_a( formal_args, 'NULL' ):
+		pass
+	else:
+		act = th.activation
+		act.history = act.history.tail
+		bind_arg( pop_list( th.activation, 'operands#' ), arg_bindings, take( formal_args, 'head#' ) )
+		bind_args( th, arg_bindings, formal_args.tail )
+
+def bound2( obj_sharp, environment, probe ):
+	if probe == 'TAKE_FAILED':
+		return bound( obj_sharp, environment.outer )
+	else:
+		return probe
+
+def bound( obj_sharp, environment ):
+	if is_a( environment, 'NULL' ):
+		return obj_sharp
+	else:
+		#debug( "-- looking up %s in: %s", repr(obj_sharp), environment.bindings )
+		return bound2( obj_sharp, environment, take( environment.bindings, obj_sharp ) )
+
+def next_state2( state, obj_sharp, probe ):
+	if probe == 'TAKE_FAILED': # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj_sharp] exists and state[ tag_edge_symbol(obj_sharp) ] does not, we can't evaluate the latter
+		try:
+			return state[ tag_edge_symbol(obj_sharp) ]
+		except AttributeError:
+			error( Unexpected_token( state, obj_sharp ) )
+	else:
+		return probe
+
+def next_state( state, obj_sharp ):
+	# Note: this gives priority to SYMBOL over specific symbols, which might make keywords impossible.  We might want to rethink this.
+	return next_state2( state, obj_sharp, take( state, obj_sharp ) )
+
+def do_action( th, environment, action ):
+	debug_do = silence
+	if is_a( action, 'PRIMITIVE' ):
+		debug_do( "  Primitive bindings: %s", dict( environment.bindings ) )
+		action.function( th, **dict( environment.bindings ) )
+	else:
+		assert( is_a( action, 'MACRO' ) )
+		act = th.activation
+		act.cursor = DIGRESSION( action.script, environment, act.cursor )
+		debug_do( "    new_digression: %s", repr( act.cursor ) )
+		finish_digression( th, act.cursor.tokens ) # Just in case the macro is totally empty
+
+def get_token( probe ):
+	if probe == 'TAKE_FAILED':
+		return eof
+	else:
+		return probe
+
+def perform_accept( th ):
+	debug( 'accept' )
+	return false
+
+def perform_shift( th ):
+	debug_shift = silence
+	debug_shift( 'shift' )
+	act = th.activation
+	if act.operands != null and act.operands.head in action_words:
+		error( Missed_Action_Word( act.operands.head ) )
+	debug_shift( "  cursor: %s", repr( act.cursor ) )
+	raw_token_sharp = get_token( take( act.cursor.tokens, 'head#' ) )
+	act.cursor.tokens = act.cursor.tokens.tail
+	debug_shift( "  token: %s", repr( flat( raw_token_sharp ) ) )
+	debug_shift( "    environment: %s", act.cursor.environment )
+	token_sharp = bound( raw_token_sharp, act.cursor.environment )
+	finish_digression( th, act.cursor.tokens )
+	debug_shift( "    value: %s", repr( flat( token_sharp ) ) )
+	act.operands = cons( token_sharp, act.operands )
+	new_state = next_state( act.history.head, token_sharp )
+	debug_shift( "  new_state: %s", repr( new_state ) )
+	act.history = cons( new_state, act.history )
+	if len( python_list( act.operands ) ) > 50:
+		error( RuntimeError( "Operand stack overflow" ) )
+	return true
+
 def perform_reduce0( th ):
 	if meta_level( th ) >= printing_level_threshold:
 		debug_reduce = debug
@@ -247,7 +270,7 @@ def perform_reduce0( th ):
 	print_stuff( th )
 	act = th.activation
 	debug_reduce( ">-- reduce0 %s --", act.history.head.action )
-	action = bound( act.history.head.action, act.scope )
+	action = bound( take( act.history.head, 'action#' ), act.scope ) # 'take' here just to get a sharp result
 	debug_reduce( "  action: %s", repr( action ) )
 	if is_a( action, 'MACRO' ):
 		debug_reduce( "    %s", python_list( action.script ) )
@@ -265,12 +288,6 @@ perform = {
 	'SHIFT':   perform_shift,
 	"REDUCE0": perform_reduce0,
 	}
-
-def cursor_description( cursor ):
-	if cursor == nothing:
-		return ''
-	else:
-		return string.join( [ repr(x) for x in python_list( cursor.tokens ) ], "  " ) + " . " + cursor_description( cursor.resumption )
 
 def execute2( th, probe ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
@@ -454,7 +471,7 @@ def parse_macros( string, environment ):
 			args.append( null ) # Automatically add a don't-care arg for the macro name
 			result[ 'ACTION_' + name ] = MACRO( name, List( script ), Stack( args ), environment )
 			debug_parse( "PARSED MACRO[ ACTION_%s ]: %s", name, name )
-	for word in re.findall( r'\w+(?:/:?\w+)?|\([^)]*\)', string.strip() ):
+	for word in re.findall( r'\w+#*(?:/:?\w+#*)?|\([^)]*\)', string.strip() ):
 		debug_parse( "WORD: '%s'", word )
 		if word[0] == '(':
 			done( result, name, args, script )
@@ -524,6 +541,11 @@ def define_builtins( bindings, global_scope ):
 		digress( th, base[ field ] )
 	bind( get, 'base', 'field', null )
 
+	def _give( th, value, base, field ):
+		give( value, base, field )
+		digress( th, 'STATEMENT' )
+	bind_with_name( _give, 'give', 'value', 'base', 'field', null )
+
 	def _take( th, base, field ):
 		digress( th, take( base, field ) )
 	bind_with_name( _take, 'take', 'base', 'field', null )
@@ -545,9 +567,9 @@ def define_builtins( bindings, global_scope ):
 		digress( th, nothing )
 	bind( Nothing, null )
 
-	def Cons( th, **args ):
-		digress( th, LIST(**args) )
-	bind( Cons, 'head', 'tail', null )
+	def _cons( th, **args ):
+		digress( th, cons(**args) )
+	bind_with_name( _cons, 'cons', 'head_sharp', 'tail', null )
 
 	def Procedure( th, **args ):
 		digress( th, PROCEDURE( **args ) )
@@ -583,7 +605,18 @@ def define_builtins( bindings, global_scope ):
 		digress( th, 'STATEMENT' )
 	bind_with_name( _print_program, 'print_program', 'th_arg', null )
 
+	def _sharp( th, **args ):
+		digress( th, sharp( **args ) )
+	bind_with_name( _sharp, 'sharp', 'arg' )
+
+	def _flat( th, **args ):
+		digress( th, flat( **args ) )
+	bind_with_name( _flat, 'flat', 'arg' )
+
+#####################################
+#
 # Meta-interpreter
+#
 
 global_scope = ENVIRONMENT( null )
 bindings = parse_macros("""
@@ -598,11 +631,13 @@ bindings = parse_macros("""
 		current_environment digressor get bindings get
 	symbol put
 
-( base field ) pop_list
-		base field get head get
+( base field_symbol_sharp ) pop_list
+		base field_symbol_sharp take
+	current bind
+		current head# take
 	result bind
-		base field get tail get
-	base field put
+		current tail# take
+	base field_symbol_sharp give
 	pop
 	result
 
@@ -614,11 +649,11 @@ bindings = parse_macros("""
 
 ( th remaining_tokens ) finish_digression/:LIST
 
-( actual_arg arg_bindings formal_arg ) bind_arg/:SYMBOL
-		actual_arg
-	arg_bindings formal_arg put
+( arg_value_sharp arg_bindings arg_symbol_sharp ) bind_arg/:SYMBOL
+		arg_value_sharp
+	arg_bindings arg_symbol_sharp give
 
-( actual_arg arg_bindings formal_arg ) bind_arg/:NULL
+( arg_value_sharp arg_bindings arg_symbol_sharp ) bind_arg/:NULL
 
 ( th arg_bindings formal_args ) bind_args/:NULL
 
@@ -627,49 +662,45 @@ bindings = parse_macros("""
 	act bind
 		act history get tail get
 	act history put
-		act operands pop_list
+		act operands# pop_list
 		arg_bindings
-		formal_args head get
+		formal_args head# take
 	bind_arg
 		th
 		arg_bindings
 		formal_args tail get
 	bind_args
 
-( obj environment probe ) bound2
+( obj_sharp environment probe ) bound2
 	probe
 
-( obj environment probe ) bound2/TAKE_FAILED
-		obj
+( obj_sharp environment probe ) bound2/TAKE_FAILED
+		obj_sharp
 		environment outer get
 	bound
 
-( obj environment ) bound/:NULL
-	obj
+( obj_sharp environment ) bound/:NULL
+	obj_sharp
 
-( obj environment ) bound/:ENVIRONMENT
-		obj
+( obj_sharp environment ) bound/:ENVIRONMENT
+		obj_sharp
 		environment
 			environment bindings get
-			obj
+			obj_sharp
 		take
 	bound2
 
-( state obj probe ) next_state2/TAKE_FAILED
-	state obj tag_edge_symbol get
+( state obj_sharp probe ) next_state2/TAKE_FAILED
+	state obj_sharp tag_edge_symbol get
 
-( state obj probe ) next_state2/:ACCEPT
-	probe
-( state obj probe ) next_state2/:SHIFT
-	probe
-( state obj probe ) next_state2/:REDUCE0
+( state obj_sharp probe ) next_state2
 	probe
 
-( state obj ) next_state
+( state obj_sharp ) next_state
 		state
-		obj
+		obj_sharp
 			state
-			obj
+			obj_sharp
 		take
 	next_state2
 
@@ -702,29 +733,29 @@ bindings = parse_macros("""
 			th activation get
 		act bind
 				act cursor get tokens get
-				head
+				head#
 			take get_token
-		raw_token bind
+		raw_token_sharp bind
 			act cursor get tokens get tail get
 		act cursor get tokens put
-				raw_token
+				raw_token_sharp
 				act cursor get environment get
 			bound
-		current_token bind
+		token_sharp bind
 			th
 			act cursor get tokens get
 		finish_digression
-				current_token
+				token_sharp
 				act operands get
-			Cons
+			cons
 		act operands put
 				act history get head get
-				current_token
+				token_sharp
 			next_state
 		new_state bind
 				new_state
 				act history get
-			Cons
+			cons
 		act history put
 	pop
 	true
@@ -733,7 +764,7 @@ bindings = parse_macros("""
 	th print_stuff
 		th activation get
 	act bind
-			act history get head get action get
+			act history get head get action# take
 			act scope get
 		bound
 	action bind
@@ -757,7 +788,6 @@ bindings = parse_macros("""
 	false
 
 ( th probe ) execute2/:TRUE
-	th print_stuff
 			th activation get history get head get
 		command bind
 	pop
@@ -771,7 +801,7 @@ bindings = parse_macros("""
 				nothing
 			Digression
 			null
-			procedure dialect get null Cons
+			procedure dialect get null cons
 			scope
 			null
 		Activation
@@ -787,7 +817,7 @@ def meta_automaton( action_bindings ):
 	debug_ma = silence
 	symbols = { 
 		':ACCEPT', ':ACTIVATION', ':BINDINGS', ':BOOLEAN', ':DIGRESSION', ':ENVIRONMENT', ':EOF', ':FALSE', ':LIST', ':MACRO', ':NOTHING', ':NULL', ':OBJECT', ':PRIMITIVE', ':PROCEDURE', ':PROGRAM', ':SHIFT', ':STATE', ':SYMBOL', ':THREAD', ':TRUE',
-		'ACCEPT', 'Activation', 'BEGIN_MARKER', 'Cons', 'Digression', 'Environment', 'Procedure', 'SHIFT', 'STATEMENT', 'STATEMENTS', 'TAKE_FAILED',
+		'ACCEPT', 'Activation', 'BEGIN_MARKER', 'cons', 'Digression', 'Environment', 'Procedure', 'SHIFT', 'STATEMENT', 'STATEMENTS', 'TAKE_FAILED',
 		'Thread', 'begin', 'bind', 'bind_arg', 'bind_args', 'bound', 'bound2', 'compound_expr', 'compound_stmt', 'current_environment',
 		'default', 'do_action', 'end', 'execute', 'finish_digression', 'get', 'next_state', 'perform', 'pop', 'pop_list', 'put',
 		'return', 'set', 'tag', 'tag_edge_symbol', 'take',
@@ -828,6 +858,10 @@ def meta_automaton( action_bindings ):
 			pass
 	default_state[ ':EOF' ] = Accept()
 	return default_state
+
+#
+#
+#####################################
 
 global_scope.bindings = bindings
 #print "global_scope: " + str( global_scope )

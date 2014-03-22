@@ -120,3 +120,16 @@ def is_a( obj, t ):
 	assert( t.isupper() )
 	return tag( obj ) == t # TODO: inheritance
 
+def sharp( arg ):
+	if is_a( arg, 'SYMBOL' ):
+		return arg + '#'
+	else:
+		return arg
+
+def flat( arg ):
+	if is_a( arg, 'SYMBOL' ):
+		assert( arg[-1] == '#' )
+		return arg[:-1]
+	else:
+		return arg
+
