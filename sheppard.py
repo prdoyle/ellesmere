@@ -10,7 +10,7 @@ def popped( stack ):  return ( stack.head, stack.tail )
 
 # Object constructors
 
-def LIST( head, tail ): return Object( "LIST", head=head, tail=tail, _fields=['head','tail'] )
+def LIST( head, tail ): return Object( 'LIST', head=head, tail=tail, _fields=['head','tail'] )
 def List( items ):
 	if items:
 		return LIST( items[0], List( items[1:] ) )
@@ -22,15 +22,15 @@ def Stack( items ):
 	else:
 		return null
 
-def ENVIRONMENT( outer, **bindings ): return Object( "ENVIRONMENT", outer=outer, bindings=Object("BINDINGS", **bindings) )
+def ENVIRONMENT( outer, **bindings ): return Object( 'ENVIRONMENT', outer=outer, bindings=Object('BINDINGS', **bindings) )
 
-def DIGRESSION( tokens, environment, resumption ): return Object( "DIGRESSION", tokens=tokens, environment=environment, resumption=resumption )
+def DIGRESSION( tokens, environment, resumption ): return Object( 'DIGRESSION', tokens=tokens, environment=environment, resumption=resumption )
 
-def Eof(): return Object( "EOF" )
+def Eof(): return Object( 'EOF' )
 
 def Nothing():
 	# An endless stack of digressions each returning an endless stream of EOFs
-	result = Object( "NOTHING", environment=ENVIRONMENT(null) )
+	result = Object( 'NOTHING', environment=ENVIRONMENT(null) )
 	endless_eof = LIST( Eof(), null )
 	endless_eof.tail = endless_eof
 	result.tokens = endless_eof
@@ -39,12 +39,12 @@ def Nothing():
 
 eof = Eof()
 nothing = Nothing()
-false = Object( "FALSE" )
-true  = Object( "TRUE" )
+false = Object( 'FALSE' )
+true  = Object( 'TRUE' )
 
-def ACTIVATION( cursor, operands, history, scope, caller ): return Object( "ACTIVATION", cursor=cursor, operands=operands, history=history, scope=scope, caller=caller )
+def ACTIVATION( cursor, operands, history, scope, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, scope=scope, caller=caller )
 
-def THREAD( activation, meta_thread ): return Object( "THREAD", activation=activation, meta_thread=meta_thread )
+def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
 
 # Main execute procedure
 
@@ -72,7 +72,7 @@ def stack_str( stack, sep=", " ):
 
 def list_str( lst, sep=", ", ellision_limit=999 ):
 	pl = python_list( lst )
-	prefix = ""
+	prefix = ''
 	if len( pl ) > ellision_limit:
 		pl = pl[ : ellision_limit-2 ]
 		prefix = "... "
@@ -86,7 +86,7 @@ def take( obj, key ):
 		return 'TAKE_FAILED'
 
 def tag_edge_symbol( obj ):
-	return ":" + tag( obj )
+	return ':' + tag( obj )
 
 def meta_level( th ):
 	if th.meta_thread is null:
@@ -110,26 +110,26 @@ def meta_level( th ):
 # action can be taken.  Hence, values must always be manipulated in quoted form.
 
 def pop_list( base, field ):
-	result = base[field].head
-	base[field] = base[field].tail
+	result = base[ field ].head
+	base[ field ] = base[ field ].tail
 	return result
 
 def finish_digression( th, remaining_tokens ):
-	if is_a( remaining_tokens, "NULL" ):
+	if is_a( remaining_tokens, 'NULL' ):
 		act = th.activation
 		#debug( "  (finished %s)", repr( act.cursor ) )
 		act.cursor = act.cursor.resumption
 
 def bind_arg( actual_arg, arg_bindings, formal_arg ):
 	debug_bind = silence
-	if is_a( formal_arg, "SYMBOL" ):
+	if is_a( formal_arg, 'SYMBOL' ):
 		arg_bindings[ formal_arg ] = actual_arg
 		debug_bind( "    %s=%s", formal_arg, repr( actual_arg ) )
 	else:
 		debug_bind( "    pop %s", repr( actual_arg ) )
 
 def bind_args( th, arg_bindings, formal_args ):
-	if is_a( formal_args, "NULL" ):
+	if is_a( formal_args, 'NULL' ):
 		pass
 	else:
 		act = th.activation
@@ -144,7 +144,7 @@ def bound2( obj, environment, probe ):
 		return probe
 
 def bound( obj, environment ):
-	if is_a( environment, "NULL" ):
+	if is_a( environment, 'NULL' ):
 		return obj
 	else:
 		#debug( "-- looking up %s in: %s", repr(obj), environment.bindings )
@@ -165,7 +165,7 @@ def next_state( state, obj ):
 
 def do_action( th, environment, action ):
 	debug_do = silence
-	if is_a( action, "PRIMITIVE" ):
+	if is_a( action, 'PRIMITIVE' ):
 		debug_do( "  Primitive bindings: %s", dict( environment.bindings ) )
 		action.function( th, **dict( environment.bindings ) )
 	else:
@@ -218,7 +218,7 @@ def print_stuff( th ):
 		act = th.activation
 		#debug( "stack: %s", zip( python_list( act.history ), python_list( act.operands ) ) )
 		print_program( th )
-		debug( "|  history: %s", list_str( act.history, ":", debug_ellision_limit ) )
+		debug( "|  history: %s", list_str( act.history, ':', debug_ellision_limit ) )
 		debug( "|   cursor: %s", repr( act.cursor ) )
 		debug( "|      env: %s %s", repr( act.cursor.environment ), act.cursor.environment.bindings )
 
@@ -244,7 +244,7 @@ def perform_reduce0( th ):
 	debug_reduce( ">-- reduce0 %s --", act.history.head.action )
 	action = bound( act.history.head.action, act.scope )
 	debug_reduce( "  action: %s", repr( action ) )
-	if is_a( action, "MACRO" ):
+	if is_a( action, 'MACRO' ):
 		debug_reduce( "    %s", python_list( action.script ) )
 	reduce_env = ENVIRONMENT( action.environment )
 	reduce_env.digressor = act.cursor.environment  # Need this in order to make "bind" a macro, or else I can't access the environment I'm trying to bind
@@ -256,20 +256,20 @@ def perform_reduce0( th ):
 	return true
 
 perform = {
-	"ACCEPT":  perform_accept,
-	"SHIFT":   perform_shift,
+	'ACCEPT':  perform_accept,
+	'SHIFT':   perform_shift,
 	"REDUCE0": perform_reduce0,
 	}
 
 def cursor_description( cursor ):
 	if cursor == nothing:
-		return ""
+		return ''
 	else:
 		return string.join( [ repr(x) for x in python_list( cursor.tokens ) ], "  " ) + " . " + cursor_description( cursor.resumption )
 
 def execute2( th, probe ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
-	while is_a( probe, "TRUE" ):
+	while is_a( probe, 'TRUE' ):
 		#print_stuff( th )
 		command = tag( th.activation.history.head )
 		#debug( "-__ execute2 __" )
@@ -323,17 +323,17 @@ def execute( procedure, environment, scope ):
 #
 # Maybe this is just how digressions roll.  Maybe I can live with that.
 
-def MACRO( name, script, formal_args, environment ): return Object( "MACRO", name=name, script=script, formal_args=formal_args, environment=environment )
-def PROCEDURE( name, script, dialect, environment ): return Object( "PROCEDURE", name=name, script=script, dialect=dialect, environment=environment )
-def PRIMITIVE( name, function, formal_args, environment ): return Object( "PRIMITIVE", name=name, function=function, formal_args=formal_args, environment=environment )
+def MACRO( name, script, formal_args, environment ): return Object( 'MACRO', name=name, script=script, formal_args=formal_args, environment=environment )
+def PROCEDURE( name, script, dialect, environment ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, environment=environment )
+def PRIMITIVE( name, function, formal_args, environment ): return Object( 'PRIMITIVE', name=name, function=function, formal_args=formal_args, environment=environment )
 def Reduce0( action ): return Object( "REDUCE0", action=action )
-def Accept(): return Object( "ACCEPT" )
+def Accept(): return Object( 'ACCEPT' )
 def Shift( **edges ):
 	# For convenience, we stick a colon on the front of each uppercase field name because that's probably what you want
-	result = Object( "SHIFT" )
+	result = Object( 'SHIFT' )
 	for ( name, value ) in edges.iteritems():
 		if name.isupper():
-			result[ ":"+name ] = value
+			result[ ':'+name ] = value
 		else:
 			result[     name ] = value
 	return result
@@ -361,8 +361,8 @@ class Unexpected_token( BaseException ):
 
 class Start_script:
 
-	""" This just permits me to write some Sheppard code without enclosing every word in quotes
-	"""
+	''" This just permits me to write some Sheppard code without enclosing every word in quotes
+	''"
 
 	def __init__( self ):
 		self._tokens = []
@@ -437,7 +437,7 @@ if 0:
 def parse_macros( string, environment ):
 	debug_parse = silence
 	# Start_script is still too cumbersome
-	result = Object("BINDINGS")
+	result = Object('BINDINGS')
 	( name, args, script ) = ( None, None, [] )
 	def done( result, name, args, script ):
 		if name != None:
@@ -473,7 +473,7 @@ def define_builtins( bindings, global_scope ):
 		bind_with_name( func, func.func_name, *args )
 
 	def eat( th ):
-		digress( th, "STATEMENTS" )
+		digress( th, 'STATEMENTS' )
 	bind_with_name( eat, "eat0" )
 	bind_with_name( eat, "eat1", null )
 	bind_with_name( eat, "eat2", null, null )
@@ -520,7 +520,7 @@ def define_builtins( bindings, global_scope ):
 
 	def put( th, value, base, field ):
 		base[ field ] = value
-		digress( th, "STATEMENT" )
+		digress( th, 'STATEMENT' )
 	bind( put, 'value', 'base', 'field', null )
 
 	def pop( th ):
@@ -576,7 +576,7 @@ def define_builtins( bindings, global_scope ):
 # Meta-interpreter
 
 global_scope = ENVIRONMENT( null )
-bindings = parse_macros("""
+bindings = parse_macros(''"
 ( statement ) STATEMENT/STATEMENT
 	STATEMENTS
 
@@ -771,7 +771,7 @@ bindings = parse_macros("""
 			true
 		execute2
 	pop
-""", global_scope )
+''", global_scope )
 
 def meta_automaton( action_bindings ):
 	debug_ma = silence
@@ -782,7 +782,7 @@ def meta_automaton( action_bindings ):
 		'default', 'do_action', 'end', 'execute', 'finish_digression', 'get', 'next_state', 'perform', 'pop', 'pop_list', 'put',
 		'return', 'set', 'tag', 'tag_edge_symbol', 'take',
 		}
-	dispatch_symbols = { ':FALSE', ':TRUE', ':NULL', ':SHIFT', ':ACCEPT', ':REDUCE0', 'TAKE_FAILED', ':ENVIRONMENT', ':LIST', ':SYMBOL', ":MACRO", ":PRIMITIVE", "STATEMENT", "STATEMENTS" }
+	dispatch_symbols = { ':FALSE', ':TRUE', ':NULL', ':SHIFT', ':ACCEPT', ':REDUCE0', 'TAKE_FAILED', ':ENVIRONMENT', ':LIST', ':SYMBOL', ':MACRO', ':PRIMITIVE', 'STATEMENT', 'STATEMENTS' }
 	default_state = Shift()
 	def shifty():
 		while 1:
