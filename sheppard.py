@@ -61,7 +61,7 @@ def error( exception ):
 	print_backtrace( th )
 	raise exception
 
-def python_list( sheppard_list, head="head", tail="tail" ):
+def python_list( sheppard_list, head='head', tail='tail' ):
 	if sheppard_list:
 		return [ sheppard_list[ head ] ] + python_list( sheppard_list[ tail ], head, tail )
 	else:
@@ -137,11 +137,11 @@ def bind_args( th, arg_bindings, formal_args ):
 	else:
 		act = th.activation
 		act.history = act.history.tail
-		bind_arg( pop_list( th.activation, "operands" ), arg_bindings, formal_args.head )
+		bind_arg( pop_list( th.activation, 'operands' ), arg_bindings, formal_args.head )
 		bind_args( th, arg_bindings, formal_args.tail )
 
 def bound2( obj, environment, probe ):
-	if probe == "TAKE_FAILED":
+	if probe == 'TAKE_FAILED':
 		return bound( obj, environment.outer )
 	else:
 		return probe
@@ -154,7 +154,7 @@ def bound( obj, environment ):
 		return bound2( obj, environment, take( environment.bindings, obj ) )
 
 def next_state2( state, obj, probe ):
-	if probe == "TAKE_FAILED": # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj] exists and state[ tag_edge_symbol(obj) ] does not, we can't evaluate the latter
+	if probe == 'TAKE_FAILED': # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj] exists and state[ tag_edge_symbol(obj) ] does not, we can't evaluate the latter
 		try:
 			return state[ tag_edge_symbol(obj) ]
 		except AttributeError:
@@ -178,7 +178,7 @@ def do_action( th, environment, action ):
 		finish_digression( th, act.cursor.tokens ) # Just in case the macro is totally empty
 
 def perform_accept( th ):
-	debug( "accept" )
+	debug( 'accept' )
 	return false
 
 def get_token( probe ):
@@ -188,12 +188,12 @@ def get_token( probe ):
 		return probe
 
 def perform_shift( th ):
-	#debug( "shift" )
+	#debug( 'shift' )
 	act = th.activation
 	if act.operands != null and act.operands.head in action_words:
 		error( Missed_Action_Word( act.operands.head ) )
 	#debug( "  cursor: %s", repr( act.cursor ) )
-	raw_token = get_token( take( act.cursor.tokens, "head" ) )
+	raw_token = get_token( take( act.cursor.tokens, 'head' ) )
 	act.cursor.tokens = act.cursor.tokens.tail
 	#debug( "  token: %s", repr( raw_token ) )
 	#debug( "    environment: %s", act.cursor.environment )
@@ -250,7 +250,7 @@ def perform_reduce0( th ):
 	if is_a( action, 'MACRO' ):
 		debug_reduce( "    %s", python_list( action.script ) )
 	reduce_env = ENVIRONMENT( action.environment )
-	reduce_env.digressor = act.cursor.environment  # Need this in order to make "bind" a macro, or else I can't access the environment I'm trying to bind
+	reduce_env.digressor = act.cursor.environment  # Need this in order to make 'bind' a macro, or else I can't access the environment I'm trying to bind
 	bind_args( th, reduce_env.bindings, action.formal_args )
 	debug_reduce( "  environment: %s", reduce_env )
 	debug_reduce( "    based on: %s", act.cursor )
@@ -323,8 +323,8 @@ def execute( procedure, environment, scope ):
 # PROBLEM: I can't figure out how to write a digression that can reliably
 # access the environment of its caller.  In other words, I'm having trouble
 # making macros that are unsanitary.  I guess that's meant to be a good thing,
-# but it's hampering my ability to do things like define "bind" in terms of
-# doing a "put" on the caller's environment.  The trouble is: if the call to
+# but it's hampering my ability to do things like define 'bind' in terms of
+# doing a 'put' on the caller's environment.  The trouble is: if the call to
 # the unsanitary macro shifts the last token from the digression it's in, then
 # that digression's environment disappears before the callee can get its hands
 # on it.
@@ -376,8 +376,8 @@ class Start_script:
 		self._tokens = []
 
 	def __getattr__( self, key ):
-		if key == "_tokens":
-			return getattr( self, "_tokens" )
+		if key == '_tokens':
+			return getattr( self, '_tokens' )
 		else:
 			self._tokens.append( key )
 			return self
@@ -399,8 +399,8 @@ class Start_script:
 		return "Script_builder()" + string.join([ '.' + str(t) for t in self._tokens ])
 
 if 0:
-	x = LIST("first", null)
-	x = LIST("second", x)
+	x = LIST('first', null)
+	x = LIST('second', x)
 
 def go_world():
 	def primitive_hello( th, where ):
@@ -409,12 +409,12 @@ def go_world():
 	global_scope = ENVIRONMENT( null )
 	bindings = global_scope.bindings
 	bindings[ "A1" ] = MACRO( "A1",
-		formal_args = Stack([ null, "arg" ]),
-		script = List([ "hello", "arg" ]),
+		formal_args = Stack([ null, 'arg' ]),
+		script = List([ 'hello', 'arg' ]),
 		environment = global_scope
 		)
 	bindings[ "A2" ] = PRIMITIVE( "A1",
-		formal_args= Stack([ null, "where" ]), # ignore the "go" keyword
+		formal_args= Stack([ null, 'where' ]), # ignore the 'go' keyword
 		function = primitive_hello,
 		environment = global_scope
 		)
@@ -427,7 +427,7 @@ def go_world():
 	debug( "  bindings: %s", global_scope.bindings )
 	debug( "  dialect: %s", dialect.description() )
 
-	return PROCEDURE( "go_world",
+	return PROCEDURE( 'go_world',
 		Start_script().
 			go.world.
 		End_script(),
@@ -474,7 +474,7 @@ def define_builtins( bindings, global_scope ):
 		th.activation.cursor = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
 
 	def bind_with_name( func, name, *args ):
-		bindings[ "ACTION_" + name ] = PRIMITIVE( name, func, Stack( list( args ) ), global_scope )
+		bindings[ 'ACTION_' + name ] = PRIMITIVE( name, func, Stack( list( args ) ), global_scope )
 		debug_builtins( "Binding primitive: %s %s", name, list(args) )
 
 	def bind( func, *args ):
@@ -489,7 +489,7 @@ def define_builtins( bindings, global_scope ):
 	def begin( th ):
 		# One day, this might start some kind of local scope.  But not today.
 		# TODO: This could probably be a macro
-		digress( th, "BEGIN_MARKER" )
+		digress( th, 'BEGIN_MARKER' )
 	bind( begin, null )
 
 	def compound_expr( th, result ):
@@ -512,11 +512,11 @@ def define_builtins( bindings, global_scope ):
 
 	def _tag( th, obj ):
 		digress( th, tag(obj) )
-	bind_with_name( _tag, "tag", 'obj', null )
+	bind_with_name( _tag, 'tag', 'obj', null )
 
 	def _tag_edge_symbol( th, obj ):
 		digress( th, tag_edge_symbol(obj) )
-	bind_with_name( _tag_edge_symbol, "tag_edge_symbol", 'obj', null )
+	bind_with_name( _tag_edge_symbol, 'tag_edge_symbol', 'obj', null )
 
 	def get( th, base, field ):
 		digress( th, base[ field ] )
@@ -524,7 +524,7 @@ def define_builtins( bindings, global_scope ):
 
 	def _take( th, base, field ):
 		digress( th, take( base, field ) )
-	bind_with_name( _take, "take", 'base', 'field', null )
+	bind_with_name( _take, 'take', 'base', 'field', null )
 
 	def put( th, value, base, field ):
 		base[ field ] = value
@@ -846,7 +846,7 @@ def wrap_procedure( inner_procedure ):
 	bindings[ 'false' ] = false
 	bindings[ 'true' ] = true
 	bindings[ 'nothing' ] = nothing
-	outer_procedure = PROCEDURE( "meta_" + inner_procedure.name, List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment, "execute" ]), dialect, global_scope )
+	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment, 'execute' ]), dialect, global_scope )
 	return outer_procedure
 
 if 1:
