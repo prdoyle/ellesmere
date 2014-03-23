@@ -90,20 +90,23 @@ def tag_edge_symbol( obj ):
 # These functions operate in sharp-land, so they're safe to call directly from
 # a Sheppard program without interfering with the automaton
 
+give_failed = 'GIVE_FAILED'
+
 def give( value_sharp, obj, key_sharp ):
 	if is_symbol( key_sharp ):
 		obj[ flat(key_sharp) ] = flat( value_sharp )
 	else:
-		return 'GIVE_FAILED'
+		return give_failed
+
+take_failed = 'TAKE_FAILED'
 
 def take( obj, key_sharp ):
 	#debug( "--    %s.take( %s, %s )", repr(obj), repr(key_sharp), repr(default) )
-	if is_symbol( key_sharp ):
-		try:
-			return sharp( obj[ flat( key_sharp ) ] )
-		except KeyError:
-			pass
-	return 'TAKE_FAILED'
+	try:
+		return sharp( obj[ flat( key_sharp ) ] )
+	except (KeyError, TypeError):
+		pass
+	return take_failed
 
 def make( tag_sharp ):
 	return Object( flat( tag_sharp ) )
@@ -171,22 +174,22 @@ def pop_list( base, field_symbol_sharp ):
 	return result
 
 def finish_digression( th, remaining_tokens ):
-	if is_a( remaining_tokens, 'NULL' ):
+	if remaining_tokens is null: #is_a( remaining_tokens, 'NULL' ):
 		act = th.activation
 		#debug( "  (finished %s)", repr( act.cursor ) )
 		act.cursor = act.cursor.resumption
 
 def bind_arg( arg_value_sharp, arg_bindings, arg_symbol_sharp ):
 	debug_bind = silence
-	if is_a( arg_symbol_sharp, 'SYMBOL' ):
+	if arg_symbol_sharp is null: # is_a( arg_symbol_sharp, 'NULL' )
+		debug_bind( "    pop %s", repr( arg_value_sharp ) )
+	else:
+		assert( is_a( arg_symbol_sharp, 'SYMBOL' ) )
 		give( arg_value_sharp, arg_bindings, arg_symbol_sharp )
 		debug_bind( "    %s=%s", arg_symbol_sharp, repr( arg_value_sharp ) )
-	else:
-		assert( is_a( arg_symbol_sharp, 'NULL' ) )
-		debug_bind( "    pop %s", repr( arg_value_sharp ) )
 
 def bind_args( th, arg_bindings, formal_args ):
-	if is_a( formal_args, 'NULL' ):
+	if formal_args is null: #is_a( formal_args, 'NULL' ):
 		pass
 	else:
 		act = th.activation
@@ -195,20 +198,20 @@ def bind_args( th, arg_bindings, formal_args ):
 		bind_args( th, arg_bindings, formal_args.tail )
 
 def bound2( obj_sharp, environment, probe ):
-	if probe == 'TAKE_FAILED':
+	if probe is take_failed:
 		return bound( obj_sharp, environment.outer )
 	else:
 		return probe
 
 def bound( obj_sharp, environment ):
-	if is_a( environment, 'NULL' ):
+	if environment is null: #is_a( environment, 'NULL' ):
 		return obj_sharp
 	else:
 		#debug( "-- looking up %s in: %s", repr(obj_sharp), environment.bindings )
 		return bound2( obj_sharp, environment, take( environment.bindings, obj_sharp ) )
 
 def next_state2( state, obj_sharp, probe ):
-	if probe == 'TAKE_FAILED': # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj_sharp] exists and state[ tag_edge_symbol(obj_sharp) ] does not, we can't evaluate the latter
+	if probe is take_failed: # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj_sharp] exists and state[ tag_edge_symbol(obj_sharp) ] does not, we can't evaluate the latter
 		try:
 			return state[ tag_edge_symbol(obj_sharp) ]
 		except AttributeError:
@@ -220,20 +223,25 @@ def next_state( state, obj_sharp ):
 	# Note: this gives priority to SYMBOL over specific symbols, which might make keywords impossible.  We might want to rethink this.
 	return next_state2( state, obj_sharp, take( state, obj_sharp ) )
 
-def do_action( th, environment, action ):
-	debug_do = silence
-	if is_a( action, 'PRIMITIVE' ):
-		debug_do( "  Primitive bindings: %s", dict( environment.bindings ) )
-		action.function( th, **dict( environment.bindings ) )
-	else:
-		assert( is_a( action, 'MACRO' ) )
-		act = th.activation
-		act.cursor = DIGRESSION( action.script, environment, act.cursor )
-		debug_do( "    new_digression: %s", repr( act.cursor ) )
-		finish_digression( th, act.cursor.tokens ) # Just in case the macro is totally empty
+debug_do = silence
+
+def do_action_primitive( th, environment, action ):
+	debug_do( "  Primitive bindings: %s", dict( environment.bindings ) )
+	action.function( th, **dict( environment.bindings ) )
+
+def do_action_macro( th, environment, action ):
+	act = th.activation
+	act.cursor = DIGRESSION( action.script, environment, act.cursor )
+	debug_do( "    new_digression: %s", repr( act.cursor ) )
+	finish_digression( th, act.cursor.tokens ) # Just in case the macro is totally empty
+
+do_action = {
+	'PRIMITIVE': do_action_primitive,
+	'MACRO':     do_action_macro,
+	}
 
 def get_token( probe ):
-	if probe == 'TAKE_FAILED':
+	if probe is take_failed:
 		return eof
 	else:
 		return probe
@@ -284,19 +292,19 @@ def perform_reduce0( th ):
 	bind_args( th, reduce_env.bindings, action.formal_args )
 	debug_reduce( "  environment: %s", reduce_env )
 	debug_reduce( "    based on: %s", act.cursor )
-	do_action( th, reduce_env, action )
+	do_action[ tag( action ) ]( th, reduce_env, action )
 	print_program( th )
 	return true
 
 perform = {
 	'ACCEPT':  perform_accept,
 	'SHIFT':   perform_shift,
-	"REDUCE0": perform_reduce0,
+	'REDUCE0': perform_reduce0,
 	}
 
 def execute2( th, probe ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
-	while is_a( probe, 'TRUE' ):
+	while probe == true: #is_a( probe, 'TRUE' ):
 		#print_stuff( th )
 		command = tag( th.activation.history.head )
 		#debug( "-__ execute2 __" )
@@ -358,7 +366,7 @@ def execute( procedure, environment, scope ):
 def MACRO( name, script, formal_args, environment ): return Object( 'MACRO', name=name, script=script, formal_args=formal_args, environment=environment )
 def PROCEDURE( name, script, dialect, environment ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, environment=environment )
 def PRIMITIVE( name, function, formal_args, environment ): return Object( 'PRIMITIVE', name=name, function=function, formal_args=formal_args, environment=environment )
-def Reduce0( action ): return Object( "REDUCE0", action=action )
+def Reduce0( action ): return Object( 'REDUCE0', action=action )
 def Accept(): return Object( 'ACCEPT' )
 def Shift( **edges ):
 	# For convenience, we stick a colon on the front of each uppercase field name because that's probably what you want
