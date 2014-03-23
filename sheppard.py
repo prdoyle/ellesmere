@@ -1,6 +1,6 @@
 #! /usr/bin/python -O
 
-import string, re
+import string, re, time
 from sheppard_gen import generated_automaton
 from sheppard_object import *
 from itertools import islice
@@ -64,7 +64,7 @@ def silence( message, *args ):
 
 def error( exception ):
 	debug( "!! ERROR: %s", exception )
-	print_backtrace( th )
+	print_backtrace( current_thread )
 	raise exception
 
 def python_list( sheppard_list, head='head', tail='tail' ):
@@ -150,7 +150,6 @@ def print_reduce_stuff( th, action, environment ):
 		debug( " |    with: %s %s", repr( environment ), environment.bindings )
 
 def print_backtrace( th ):
-	printing_level_threshold = meta_level( th )
 	print_stuff( th )
 	act = th.activation
 	debug( "| backtrace:" )
@@ -185,9 +184,8 @@ def pop_list( base, field_symbol_sharp ):
 	give( take( current, 'tail#' ), base, field_symbol_sharp )
 	return result
 
-def finish_digression( th, remaining_tokens ):
+def finish_digression( act, remaining_tokens ):
 	if remaining_tokens is null: #is_a( remaining_tokens, 'NULL' ):
-		act = th.activation
 		#debug( "  (finished %s)", repr( act.cursor ) )
 		act.cursor = act.cursor.resumption
 
@@ -200,14 +198,13 @@ def bind_arg( arg_value_sharp, arg_bindings, arg_symbol_sharp ):
 		give( arg_value_sharp, arg_bindings, arg_symbol_sharp )
 		debug_bind( "    %s=%s", arg_symbol_sharp, repr( arg_value_sharp ) )
 
-def bind_args( th, arg_bindings, formal_args ):
+def bind_args( act, arg_bindings, formal_args ):
 	if formal_args is null: #is_a( formal_args, 'NULL' ):
 		pass
 	else:
-		act = th.activation
 		act.history = act.history.tail
-		bind_arg( pop_list( th.activation, 'operands#' ), arg_bindings, take( formal_args, 'head#' ) )
-		bind_args( th, arg_bindings, formal_args.tail )
+		bind_arg( pop_list( act, 'operands#' ), arg_bindings, take( formal_args, 'head#' ) )
+		bind_args( act, arg_bindings, formal_args.tail )
 
 def bound2( obj_sharp, environment, probe ):
 	if probe is take_failed:
@@ -237,15 +234,14 @@ def next_state( state, obj_sharp ):
 
 debug_do = silence
 
-def do_action_primitive( th, environment, action ):
+def do_action_primitive( act, environment, action ):
 	debug_do( "  Primitive bindings: %s", dict( environment.bindings ) )
-	action.function( th, **dict( environment.bindings ) )
+	action.function( act.thread, **dict( environment.bindings ) )
 
-def do_action_macro( th, environment, action ):
-	act = th.activation
+def do_action_macro( act, environment, action ):
 	act.cursor = DIGRESSION( action.script, environment, act.cursor )
 	debug_do( "    new_digression: %s", repr( act.cursor ) )
-	finish_digression( th, act.cursor.tokens ) # Just in case the macro is totally empty
+	finish_digression( act, act.cursor.tokens ) # Just in case the macro is totally empty
 
 do_action = {
 	'PRIMITIVE': do_action_primitive,
@@ -258,17 +254,16 @@ def get_token( probe ):
 	else:
 		return probe
 
-def perform_accept( th ):
+def perform_accept( act ):
 	debug( 'accept' )
 	return false
 
 shift_count = 0
-def perform_shift( th ):
+def perform_shift( act ):
 	global shift_count
 	shift_count += 1
 	#debug_shift = silence
 	#debug_shift( 'shift' )
-	act = th.activation
 	#if act.operands != null and act.operands.head in action_words:
 	#	error( Missed_Action_Word( act.operands.head ) )
 	#debug_shift( "  cursor: %s", repr( act.cursor ) )
@@ -277,7 +272,7 @@ def perform_shift( th ):
 	#debug_shift( "  token: %s", repr( flat( raw_token_sharp ) ) )
 	#debug_shift( "    environment: %s", act.cursor.environment )
 	token_sharp = bound( raw_token_sharp, act.cursor.environment )
-	finish_digression( th, act.cursor.tokens )
+	finish_digression( act, act.cursor.tokens )
 	#debug_shift( "    value: %s", repr( flat( token_sharp ) ) )
 	act.operands = cons( token_sharp, act.operands )
 	new_state = next_state( act.history.head, token_sharp )
@@ -287,13 +282,12 @@ def perform_shift( th ):
 		error( RuntimeError( "Operand stack overflow" ) )
 	return true
 
-def perform_reduce0( th ):
-	if meta_level( th ) >= printing_level_threshold:
+def perform_reduce0( act ):
+	if meta_level( act.thread ) >= printing_level_threshold:
 		debug_reduce = debug
 	else:
 		debug_reduce = silence
-	print_stuff( th )
-	act = th.activation
+	print_stuff( act.thread )
 	#debug_reduce( ">-- reduce0 %s --", act.history.head.action )
 	action = bound( take( act.history.head, 'action#' ), act.scope ) # 'take' here just to get a sharp result
 	#debug_reduce( "  action: %s", repr( action ) )
@@ -301,12 +295,12 @@ def perform_reduce0( th ):
 	#	debug_reduce( "    %s", python_list( action.script ) )
 	reduce_env = ENVIRONMENT( action.environment )
 	reduce_env.digressor = act.cursor.environment  # Need this in order to make 'bind' a macro, or else I can't access the environment I'm trying to bind
-	bind_args( th, reduce_env.bindings, action.formal_args )
-	print_reduce_stuff( th, action, reduce_env )
+	bind_args( act, reduce_env.bindings, action.formal_args )
+	print_reduce_stuff( act.thread, action, reduce_env )
 	#debug_reduce( "  environment: %s", reduce_env )
 	#debug_reduce( "    based on: %s", act.cursor )
-	do_action[ tag( action ) ]( th, reduce_env, action )
-	print_program( th )
+	do_action[ tag( action ) ]( act, reduce_env, action )
+	print_program( act.thread )
 	return true
 
 perform = {
@@ -315,21 +309,23 @@ perform = {
 	'REDUCE0': perform_reduce0,
 	}
 
-def execute2( th, probe ):
+def execute2( act, probe ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
 	while probe == true: #is_a( probe, 'TRUE' ):
-		#print_stuff( th )
-		command = tag( th.activation.history.head )
+		#print_stuff( act.thread )
+		command = tag( act.history.head )
 		#debug( "-__ execute2 __" )
 		# if Python had tail call elimination, we could do this:
-		# execute2( th, perform[ command ]( th ) )
-		probe = perform[ command ]( th )
+		# execute2( act, perform[ command ]( act ) )
+		probe = perform[ command ]( act )
 
 def execute( procedure, environment, scope ):
-	global th # Allow us to print debug info without passing this all over the place
-	th = THREAD( ACTIVATION( DIGRESSION( procedure.script, environment, nothing ), null, LIST( procedure.dialect, null ), scope, null ), null )
-	debug( "starting thread: %s with digression:\n\t%s", repr(th), th.activation.cursor )
-	execute2( th, true )
+	act = ACTIVATION( DIGRESSION( procedure.script, environment, nothing ), null, LIST( procedure.dialect, null ), scope, null )
+	global current_thread # Allow us to print debug info without passing this all over the place
+	current_thread = THREAD( act, null )
+	act.thread = current_thread # I don't love this back link, but it's really handy and efficient
+	debug( "starting thread: %s with digression:\n\t%s", repr(current_thread), act.cursor )
+	execute2( act, true )
 
 #
 #
@@ -667,13 +663,11 @@ bindings = parse_macros("""
 	base field_symbol_sharp give
 	result
 
-( th remaining_tokens ) finish_digression/:NULL
-		th activation get
-	act bind
+( act remaining_tokens ) finish_digression/:NULL
 		act cursor get resumption get
 	act cursor put
 
-( th remaining_tokens ) finish_digression/:LIST
+( act remaining_tokens ) finish_digression/:LIST
 
 ( arg_value_sharp arg_bindings arg_symbol_sharp ) bind_arg/:SYMBOL
 		arg_value_sharp
@@ -681,18 +675,16 @@ bindings = parse_macros("""
 
 ( arg_value_sharp arg_bindings arg_symbol_sharp ) bind_arg/:NULL
 
-( th arg_bindings formal_args ) bind_args/:NULL
+( act arg_bindings formal_args ) bind_args/:NULL
 
-( th arg_bindings formal_args ) bind_args/:LIST
-		th activation get
-	act bind
+( act arg_bindings formal_args ) bind_args/:LIST
 		act history get tail get
 	act history put
 		act operands# pop_list
 		arg_bindings
 		formal_args head# take
 	bind_arg
-		th
+		act
 		arg_bindings
 		formal_args tail get
 	bind_args
@@ -730,22 +722,20 @@ bindings = parse_macros("""
 		take
 	next_state2
 
-( th environment action ) do_action/:PRIMITIVE
-	th environment action do_primitive
+( act environment action ) do_action/:PRIMITIVE
+	act thread get environment action do_primitive
 
-( th environment action ) do_action/:MACRO
-		th activation get
-	act bind
+( act environment action ) do_action/:MACRO
 			action script get
 			environment
 			act cursor get
 		Digression
 	act cursor put
-		th
+		act
 		act cursor get tokens get
 	finish_digression
 
-( th state ) perform/:ACCEPT
+( act state ) perform/:ACCEPT
 	false
 
 ( probe ) get_token/TAKE_FAILED
@@ -754,9 +744,7 @@ bindings = parse_macros("""
 ( probe ) get_token
 	probe
 
-( th state ) perform/:SHIFT
-		th activation get
-	act bind
+( act state ) perform/:SHIFT
 			act cursor get tokens get
 			head#
 		take get_token
@@ -767,7 +755,7 @@ bindings = parse_macros("""
 			act cursor get environment get
 		bound
 	token_sharp bind
-		th
+		act
 		act cursor get tokens get
 	finish_digression
 			token_sharp
@@ -784,10 +772,8 @@ bindings = parse_macros("""
 	act history put
 	true
 
-( th state ) perform/:REDUCE0
-	th print_stuff
-		th activation get
-	act bind
+( act state ) perform/:REDUCE0
+	act thread get print_stuff
 			act history get head get action# take
 			act scope get
 		bound
@@ -796,41 +782,44 @@ bindings = parse_macros("""
 	reduce_env bind
 		act cursor get environment get
 	reduce_env digressor put
-		th
+		act
 		reduce_env bindings get
 		action formal_args get
 	bind_args
-	th action reduce_env print_reduce_stuff
-		th
+		act thread get
+		action
+		reduce_env
+	print_reduce_stuff
+		act
 		reduce_env
 		action
 	do_action
-	th print_program
+	act thread get print_program
 	true
 
-( th probe ) execute2/:FALSE
+( act probe ) execute2/:FALSE
 	false
 
-( th probe ) execute2/:TRUE
-		th
-			th
-			th activation get history get head get
+( act probe ) execute2/:TRUE
+		act
+			act
+			act history get head get
 		perform
 	execute2
 
-( procedure environment scope ) execute/:ENVIRONMENT
-				procedure script get
-				environment
-				nothing
-			Digression
-			null
-			procedure dialect get null cons
-			scope
-			null
-		Activation
-		current_thread
-	Thread th bind
-		th
+( procedure environment scope ) execute
+			procedure script get
+			environment
+			nothing
+		Digression
+		null
+		procedure dialect get null cons
+		scope
+		null
+	Activation act bind
+		act current_thread Thread
+	act thread put
+		act
 		true
 	execute2
 """, global_scope )
@@ -926,5 +915,17 @@ def main():
 		printing_level_threshold = depth
 	test( depth, printing_level_threshold )
 
+def pretty_time( t ):
+	if t < 1:
+		return "%.2fms" % (t*1000)
+	elif t < 60:
+		return "%.2fs" % t
+	elif t < 3600:
+		return "%dm%ds" % ( t/60, t%60 )
+	else:
+		return "%dh%dm%ds" % ( t/3600, (t%3600)/60, t%60 )
+
+start_time = time.time()
 main()
-print shift_count, "shifts"
+elapsed_time = time.time() - start_time
+print shift_count, "shifts in", pretty_time( elapsed_time )
