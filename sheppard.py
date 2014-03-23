@@ -565,6 +565,14 @@ def define_builtins( bindings, global_scope ):
 		digress( th, base[ field ] )
 	bind_with_name( get, 'get', 'base', 'field', null )
 
+	def get2( th, base, field1, field2 ):
+		digress( th, base[ field1 ][ field2 ] )
+	bind_with_name( get2, 'get2', 'base', 'field1', 'field2', null )
+
+	def get3( th, base, field1, field2, field3 ):
+		digress( th, base[ field1 ][ field2 ][ field3 ] )
+	bind_with_name( get3, 'get3', 'base', 'field1', 'field2', 'field3', null )
+
 	def _give( th, value, base, field ):
 		give( value, base, field )
 		#digress( th, 'STATEMENT' )
@@ -651,7 +659,7 @@ global_scope = ENVIRONMENT( null )
 bindings = parse_macros("""
 ( value symbol ) bind 
 		value
-		current_environment digressor get bindings get
+		current_environment digressor bindings get2
 	symbol put
 
 ( base field_symbol_sharp ) pop_list
@@ -664,7 +672,7 @@ bindings = parse_macros("""
 	result
 
 ( act remaining_tokens ) finish_digression/:NULL
-		act cursor get resumption get
+		act cursor resumption get2
 	act cursor put
 
 ( act remaining_tokens ) finish_digression/:LIST
@@ -678,7 +686,7 @@ bindings = parse_macros("""
 ( act arg_bindings formal_args ) bind_args/:NULL
 
 ( act arg_bindings formal_args ) bind_args/:LIST
-		act history get tail get
+		act history tail get2
 	act history put
 		act operands# pop_list
 		arg_bindings
@@ -732,7 +740,7 @@ bindings = parse_macros("""
 		Digression
 	act cursor put
 		act
-		act cursor get tokens get
+		act cursor tokens get2
 	finish_digression
 
 ( act state ) perform/:ACCEPT
@@ -745,24 +753,24 @@ bindings = parse_macros("""
 	probe
 
 ( act state ) perform/:SHIFT
-			act cursor get tokens get
+			act cursor tokens get2
 			head#
 		take get_token
 	raw_token_sharp bind
-		act cursor get tokens get tail get
+		act cursor tokens tail get3
 	act cursor get tokens put
 			raw_token_sharp
-			act cursor get environment get
+			act cursor environment get2
 		bound
 	token_sharp bind
 		act
-		act cursor get tokens get
+		act cursor tokens get2
 	finish_digression
 			token_sharp
 			act operands get
 		cons
 	act operands put
-			act history get head get
+			act history head get2
 			token_sharp
 		next_state
 	new_state bind
@@ -774,13 +782,13 @@ bindings = parse_macros("""
 
 ( act state ) perform/:REDUCE0
 	act thread get print_stuff
-			act history get head get action# take
+			act history head get2 action# take
 			act scope get
 		bound
 	action bind
 		action environment get Environment
 	reduce_env bind
-		act cursor get environment get
+		act cursor environment get2
 	reduce_env digressor put
 		act
 		reduce_env bindings get
@@ -803,7 +811,7 @@ bindings = parse_macros("""
 ( act probe ) execute2/:TRUE
 		act
 			act
-			act history get head get
+			act history head get2
 		perform
 	execute2
 
