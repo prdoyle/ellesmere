@@ -268,10 +268,10 @@ def perform_shift( act ):
 	#	error( Missed_Action_Word( act.operands.head ) )
 	#debug_shift( "  cursor: %s", repr( act.cursor ) )
 	raw_token_sharp = get_token( take( act.cursor.tokens, 'head#' ) )
-	act.cursor.tokens = act.cursor.tokens.tail
 	#debug_shift( "  token: %s", repr( flat( raw_token_sharp ) ) )
 	#debug_shift( "    environment: %s", act.cursor.environment )
 	token_sharp = bound( raw_token_sharp, act.cursor.environment )
+	act.cursor.tokens = act.cursor.tokens.tail
 	finish_digression( act, act.cursor.tokens )
 	#debug_shift( "    value: %s", repr( flat( token_sharp ) ) )
 	act.operands = cons( token_sharp, act.operands )
@@ -757,12 +757,12 @@ bindings = parse_macros("""
 			head#
 		take get_token
 	raw_token_sharp bind
-		act cursor tokens tail get3
-	act cursor get tokens put
 			raw_token_sharp
 			act cursor environment get2
 		bound
 	token_sharp bind
+		act cursor tokens tail get3
+	act cursor get tokens put
 		act
 		act cursor tokens get2
 	finish_digression
