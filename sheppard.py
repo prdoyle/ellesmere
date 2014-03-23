@@ -137,6 +137,12 @@ def print_stuff( th ):
 		debug( "|   cursor: %s", repr( act.cursor ) )
 		debug( "|      env: %s %s", repr( act.cursor.environment ), act.cursor.environment.bindings )
 
+def print_reduce_stuff( th, action, environment ):
+	if meta_level( th ) >= printing_level_threshold:
+		act = th.activation
+		debug( ">+  ACTION: %s %s", action.name, action )
+		debug( " |    with: %s %s", repr( environment ), environment.bindings )
+
 def print_backtrace( th ):
 	printing_level_threshold = meta_level( th )
 	print_stuff( th )
@@ -282,16 +288,17 @@ def perform_reduce0( th ):
 		debug_reduce = silence
 	print_stuff( th )
 	act = th.activation
-	debug_reduce( ">-- reduce0 %s --", act.history.head.action )
+	#debug_reduce( ">-- reduce0 %s --", act.history.head.action )
 	action = bound( take( act.history.head, 'action#' ), act.scope ) # 'take' here just to get a sharp result
-	debug_reduce( "  action: %s", repr( action ) )
+	#debug_reduce( "  action: %s", repr( action ) )
 	#if is_a( action, 'MACRO' ):
 	#	debug_reduce( "    %s", python_list( action.script ) )
 	reduce_env = ENVIRONMENT( action.environment )
 	reduce_env.digressor = act.cursor.environment  # Need this in order to make 'bind' a macro, or else I can't access the environment I'm trying to bind
 	bind_args( th, reduce_env.bindings, action.formal_args )
-	debug_reduce( "  environment: %s", reduce_env )
-	debug_reduce( "    based on: %s", act.cursor )
+	print_reduce_stuff( th, action, reduce_env )
+	#debug_reduce( "  environment: %s", reduce_env )
+	#debug_reduce( "    based on: %s", act.cursor )
 	do_action[ tag( action ) ]( th, reduce_env, action )
 	print_program( th )
 	return true
@@ -445,7 +452,7 @@ def go_world():
 		script = List([ 'hello', 'arg' ]),
 		environment = global_scope
 		)
-	bindings[ "A2" ] = PRIMITIVE( "A1",
+	bindings[ "A2" ] = PRIMITIVE( "A2",
 		formal_args= Stack([ null, 'where' ]), # ignore the 'go' keyword
 		function = primitive_hello,
 		environment = global_scope
@@ -514,7 +521,8 @@ def define_builtins( bindings, global_scope ):
 	#	bind_with_name( func, func.func_name, *args )
 
 	def eat( th ):
-		digress( th, 'STATEMENTS' )
+		pass
+		#digress( th, 'STATEMENTS' )
 	bind_with_name( eat, "eat0" )
 	bind_with_name( eat, "eat1", null )
 	bind_with_name( eat, "eat2", null, null )
@@ -557,7 +565,7 @@ def define_builtins( bindings, global_scope ):
 
 	def _give( th, value, base, field ):
 		give( value, base, field )
-		digress( th, 'STATEMENT' )
+		#digress( th, 'STATEMENT' )
 	bind_with_name( _give, 'give', 'value', 'base', 'field', null )
 
 	def _take( th, base, field ):
@@ -566,7 +574,7 @@ def define_builtins( bindings, global_scope ):
 
 	def put( th, value, base, field ):
 		base[ field ] = value
-		digress( th, 'STATEMENT' )
+		#digress( th, 'STATEMENT' )
 	bind_with_name( put, 'put', 'value', 'base', 'field', null )
 
 	def pop( th ):
@@ -611,12 +619,17 @@ def define_builtins( bindings, global_scope ):
 
 	def _print_stuff( th, th_arg ):
 		print_stuff( th_arg )
-		digress( th, 'STATEMENT' )
+		#digress( th, 'STATEMENT' )
 	bind_with_name( _print_stuff, 'print_stuff', 'th_arg', null )
+
+	def _print_reduce_stuff( th, th_arg, action, env ):
+		print_reduce_stuff( th_arg, action, env )
+		#digress( th, 'STATEMENT' )
+	bind_with_name( _print_reduce_stuff, 'print_reduce_stuff', 'th_arg', 'action', 'env', null )
 
 	def _print_program( th, th_arg ):
 		print_program( th_arg )
-		digress( th, 'STATEMENT' )
+		#digress( th, 'STATEMENT' )
 	bind_with_name( _print_program, 'print_program', 'th_arg', null )
 
 	def _sharp( th, **args ):
@@ -634,12 +647,6 @@ def define_builtins( bindings, global_scope ):
 
 global_scope = ENVIRONMENT( null )
 bindings = parse_macros("""
-( statement ) STATEMENT/STATEMENT
-	STATEMENTS
-
-( statements ) STATEMENT/STATEMENTS
-	STATEMENTS
-
 ( value symbol ) bind 
 		value
 		current_environment digressor get bindings get
@@ -652,7 +659,6 @@ bindings = parse_macros("""
 	result bind
 		current tail# take
 	base field_symbol_sharp give
-	pop
 	result
 
 ( th remaining_tokens ) finish_digression/:NULL
@@ -732,7 +738,6 @@ bindings = parse_macros("""
 		th
 		act cursor get tokens get
 	finish_digression
-	pop
 
 ( th state ) perform/:ACCEPT
 	false
@@ -771,7 +776,6 @@ bindings = parse_macros("""
 				act history get
 			cons
 		act history put
-	pop
 	true
 
 ( th state ) perform/:REDUCE0
@@ -790,21 +794,20 @@ bindings = parse_macros("""
 		reduce_env bindings get
 		action formal_args get
 	bind_args
+	th action reduce_env print_reduce_stuff
 		th
 		reduce_env
 		action
 	do_action
 	th print_program
-	pop
 	true
 
 ( th probe ) execute2/:FALSE
 	false
 
 ( th probe ) execute2/:TRUE
-			th activation get history get head get
-		command bind
-	pop
+		th activation get history get head get
+	command bind
 		th
 		th command perform
 	execute2
@@ -821,10 +824,9 @@ bindings = parse_macros("""
 		Activation
 		current_thread
 	Thread th bind
-			th
-			true
-		execute2
-	pop
+		th
+		true
+	execute2
 """, global_scope )
 
 def meta_automaton( action_bindings ):
