@@ -812,10 +812,10 @@ bindings = parse_macros("""
 	false
 
 ( th probe ) execute2/:TRUE
-		th activation get history get head get
-	command bind
 		th
-		th command perform
+			th
+			th activation get history get head get
+		perform
 	execute2
 
 ( procedure environment scope ) execute/:ENVIRONMENT
@@ -923,7 +923,7 @@ def main():
 	try:
 		printing_level_threshold = int( argv[2] )
 	except IndexError:
-		printing_level_threshold = depth - 1
+		printing_level_threshold = depth
 	test( depth, printing_level_threshold )
 
 main()
