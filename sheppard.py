@@ -22,6 +22,12 @@ def Stack( items ):
 	else:
 		return null
 
+def list_length( arg ):
+	if arg is null:
+		return 0
+	else:
+		return 1 + list_length( arg.tail )
+
 def ENVIRONMENT( outer, **bindings ): return Object( 'ENVIRONMENT', outer=outer, bindings=Object('BINDINGS', **bindings) )
 
 def DIGRESSION( tokens, environment, resumption ): return Object( 'DIGRESSION', tokens=tokens, environment=environment, resumption=resumption )
@@ -277,8 +283,8 @@ def perform_shift( th ):
 	new_state = next_state( act.history.head, token_sharp )
 	#debug_shift( "  new_state: %s", repr( new_state ) )
 	act.history = cons( new_state, act.history )
-	#if len( python_list( act.operands ) ) > 50:
-	#	error( RuntimeError( "Operand stack overflow" ) )
+	if list_length( act.operands ) > 50:
+		error( RuntimeError( "Operand stack overflow" ) )
 	return true
 
 def perform_reduce0( th ):
@@ -749,33 +755,33 @@ bindings = parse_macros("""
 	probe
 
 ( th state ) perform/:SHIFT
-			th activation get
-		act bind
-				act cursor get tokens get
-				head#
-			take get_token
-		raw_token_sharp bind
-			act cursor get tokens get tail get
-		act cursor get tokens put
-				raw_token_sharp
-				act cursor get environment get
-			bound
-		token_sharp bind
-			th
+		th activation get
+	act bind
 			act cursor get tokens get
-		finish_digression
-				token_sharp
-				act operands get
-			cons
-		act operands put
-				act history get head get
-				token_sharp
-			next_state
-		new_state bind
-				new_state
-				act history get
-			cons
-		act history put
+			head#
+		take get_token
+	raw_token_sharp bind
+		act cursor get tokens get tail get
+	act cursor get tokens put
+			raw_token_sharp
+			act cursor get environment get
+		bound
+	token_sharp bind
+		th
+		act cursor get tokens get
+	finish_digression
+			token_sharp
+			act operands get
+		cons
+	act operands put
+			act history get head get
+			token_sharp
+		next_state
+	new_state bind
+			new_state
+			act history get
+		cons
+	act history put
 	true
 
 ( th state ) perform/:REDUCE0
