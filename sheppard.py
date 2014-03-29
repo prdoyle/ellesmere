@@ -464,9 +464,9 @@ def go_world():
 		hello = Shift( SYMBOL = Reduce0( "A2" )),
 		EOF = Accept())
 
-	debug( "Global scope: %s", global_scope )
-	debug( "  bindings: %s", global_scope.bindings )
-	debug( "  dialect: %s", dialect.description() )
+	#debug( "Global scope: %s", global_scope )
+	#debug( "  bindings: %s", global_scope.bindings )
+	#debug( "  dialect: %s", dialect.description() )
 
 	return PROCEDURE( 'go_world',
 		Start_script().
@@ -492,7 +492,7 @@ def parse_macros( string, environment ):
 			args.append( null ) # Automatically add a don't-care arg for the macro name
 			bindings[ 'ACTION_' + name ] = MACRO( name, List( script ), Stack( args ), environment )
 			debug_parse( "PARSED MACRO[ ACTION_%s ]: %s", name, name )
-	for word in re.findall( r'\w+#*(?:/:?\w+#*)?|\([^)]*\)', string.strip() ):
+	for word in re.findall( r':*\w+#*(?:/:?\w+#*)?|\([^)]*\)', string.strip() ):
 		debug_parse( "WORD: '%s'", word )
 		if word[0] == '(':
 			done( bindings, name, args, script )
@@ -508,7 +508,7 @@ def parse_macros( string, environment ):
 def meta_automaton( scope ):
 	action_bindings = scope.bindings
 	debug_ma = silence
-	symbols = { 
+	all_symbols = { 
 		':ACCEPT', ':ACTIVATION', ':BINDINGS', ':BOOLEAN', ':DIGRESSION', ':ENVIRONMENT', ':EOF', ':FALSE', ':LIST', ':MACRO', ':NOTHING', ':NULL', ':OBJECT', ':PRIMITIVE', ':PROCEDURE', ':PROGRAM', ':SHIFT', ':STATE', ':SYMBOL', ':THREAD', ':TRUE',
 		'ACCEPT', 'Activation', 'BEGIN_MARKER', 'cons', 'Digression', 'Environment', 'Procedure', 'SHIFT', 'STATEMENT', 'STATEMENTS', 'TAKE_FAILED',
 		'Thread', 'begin', 'bind', 'bind_arg', 'bind_args', 'bound', 'bound2', 'compound_expr', 'compound_stmt', 'current_environment',
@@ -526,7 +526,7 @@ def meta_automaton( scope ):
 	debug_ma( "dispatch_states: %s", dispatch_states )
 	for state in dispatch_states.values() + [ default_state ]:
 		# The default shift action
-		for symbol in symbols-dispatch_symbols:
+		for symbol in all_symbols-dispatch_symbols:
 			state[ symbol ] = default_state
 		# Symbol-specific shift actions
 		for symbol in dispatch_symbols:
@@ -908,6 +908,10 @@ def test( depth, plt ):
 	printing_level_threshold = plt
 	for _ in range(depth):
 		procedure = wrap_procedure( procedure )
+	if printing_level_threshold < depth:
+		debug( "procedure: %s", str( procedure ) )
+		debug( " bindings: %s", str( procedure.environment.bindings ) )
+		#debug( "  dialect: %s", sheppard_interpreter_library.dialect.description() )
 	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
 
 def main():
