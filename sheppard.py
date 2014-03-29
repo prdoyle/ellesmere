@@ -485,7 +485,7 @@ if 0:
 
 def parse_macros( string, environment ):
 	debug_parse = silence
-	bindings = Object('BINDINGS')
+	bindings = environment.bindings
 	( name, args, script ) = ( None, None, [] )
 	def done( bindings, name, args, script ):
 		if name != None:
@@ -504,9 +504,9 @@ def parse_macros( string, environment ):
 		else:
 			script.append( word )
 	done( bindings, name, args, script )
-	return bindings
 
-def meta_automaton( action_bindings ):
+def meta_automaton( scope ):
+	action_bindings = scope.bindings
 	debug_ma = silence
 	symbols = { 
 		':ACCEPT', ':ACTIVATION', ':BINDINGS', ':BOOLEAN', ':DIGRESSION', ':ENVIRONMENT', ':EOF', ':FALSE', ':LIST', ':MACRO', ':NOTHING', ':NULL', ':OBJECT', ':PRIMITIVE', ':PROCEDURE', ':PROGRAM', ':SHIFT', ':STATE', ':SYMBOL', ':THREAD', ':TRUE',
@@ -701,7 +701,8 @@ def define_builtins( bindings, global_scope ):
 #
 
 global_scope = ENVIRONMENT( null )
-bindings = parse_macros("""
+define_builtins( global_scope.bindings, global_scope )
+parse_macros("""
 ( value symbol ) bind 
 		value
 		current_environment digressor bindings get2
@@ -881,14 +882,12 @@ bindings = parse_macros("""
 #
 #####################################
 
-global_scope.bindings = bindings
 #print "global_scope: " + str( global_scope )
-define_builtins( global_scope.bindings, global_scope )
 #print "  bindings: " + str( global_scope.bindings )
-action_words = [ s[7:] for s in bindings._fields ]
+action_words = [ s[7:] for s in global_scope.bindings._fields ]
 #print "  action words: " + str( action_words )
 #dialect = generated_automaton()
-dialect = meta_automaton( bindings )
+dialect = meta_automaton( global_scope )
 #print "  dialect:\n" + dialect.description()
 print "\n#===================\n"
 
