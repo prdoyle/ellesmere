@@ -1,10 +1,144 @@
 #! /usr/bin/python -O
 
 import string, re, time
-from sheppard_gen import generated_automaton
-from sheppard_object import *
 from itertools import islice
 from sys import argv
+
+object_counter = 0
+
+class Object:
+
+	def __init__( self, tag, **edges ):
+		global object_counter
+		assert( tag.isupper() )
+		self._tag = tag
+		self._elements = {}
+		self._fields = sorted([ k for k in edges ]) # _fields can be adjusted if we want a particular field ordering
+		self._id = object_counter
+		object_counter = object_counter+1
+		for ( name, value ) in edges.iteritems():
+			setattr( self, name, value )
+
+	# Allow map syntax for convenience
+
+	def __getitem__( self, key ):
+		try:
+			return getattr( self, key )
+		except AttributeError:
+			return self._elements[ key ]
+
+	def __setitem__( self, key, value ):
+		if isinstance( key, int ):
+			self._elements[ key ] = value
+		else:
+			setattr( self, key, value )
+			if not key in self._fields:
+				self._fields.append( key )
+
+	def __contains__( self, key ):
+		try:
+			self[ key ]
+			return True
+		except:
+			return False
+
+	def __delitem__( self, key ):
+		if key in [ "_tag", "_elements", "_fields", "_id" ]:
+			raise KeyError # TODO: Use a Sheppard exception?
+		else:
+			delattr( self, key )
+			self._fields.remove( key )
+
+	def __iter__( self ): # Range over array (index,value) pairs; TODO: do normal fields too?
+		for key in self._fields:
+			yield ( key, getattr( self, key ) )
+		for key in self._elements.iterkeys():
+			yield ( key, self._elements[ key ] )
+
+	def __repr__( self ):
+		try:
+			return self._name
+		except AttributeError:
+			pass
+		if self is null:
+			return "null"
+#		elif is_a( self, "ENVIRONMENT" ):
+#			return "%s_%d{ %s }" % ( self._tag, self._id, repr( self.outer ) )
+		else:
+			return "%s_%d" % ( self._tag, self._id )
+
+	def __str__( self ):
+		if self is null:
+			return "null"
+		else:
+			return repr( self ) + "{ " + string.join([ "%s:%s" % ( field, repr( self[field] ) ) for field in self._fields ], ', ') + " }"
+
+	def description( self, already_described=None, indent=1 ):
+		if already_described is None:
+			already_described = set()
+		if self is null:
+			return "null"
+		elif self in already_described:
+			return repr( self )
+		else:
+			already_described.add( self )
+			indent_str = " |" * indent
+			return repr( self ) + "{" + string.join([ "\n%s%s:%s" % ( indent_str, field, self._description( self[ field ], already_described, indent+1 ) ) for field in self._fields ], ',' ) + " }"
+
+	def _description( self, value, already_described, indent ):
+		if isinstance( value, Object ):
+			return value.description( already_described, indent )
+		else:
+			return str( value )
+
+	# null and zero are false; all else are true
+
+	def __nonzero__( self ): return self != 0 and self != null
+
+class Null( Object ): # Just to make debugging messages more informative
+
+	def __init__( self ):
+		Object.__init__( self, "NULL" )
+
+null = Null()
+
+# Generally, these can't be methods, because some Python objects like symbols are
+# represented by plain old Python objects like strings that have no such methods.
+# Also, methods of Object can confuse __getattr__ and end up trying to call Sheppard objects.
+
+def is_int( obj ):    return isinstance( obj, int ) # Sheppard integers are represented by Python ints
+def is_symbol( obj ): return isinstance( obj, str ) # Sheppard symbols are represented by Python strs
+
+def tag( obj ):
+	try:
+		return obj._tag
+	except AttributeError:
+		if is_symbol( obj ):
+			result = 'SYMBOL'
+		elif is_int( obj ):
+			result = "INT"
+		else: # All other Sheppard objects are represented by instances of Object
+			result = obj._tag
+	assert( result.isupper() )
+	return result
+
+def is_a( obj, t ):
+	assert( t.isupper() )
+	return tag( obj ) == t # TODO: inheritance
+
+def sharp( arg ):
+	if isinstance( arg, str ): #if is_a( arg, 'SYMBOL' ):
+		return arg + '#'
+	else:
+		return arg
+
+def flat( arg ):
+	if isinstance( arg, str ): #if is_a( arg, 'SYMBOL' ):
+		assert( arg[-1] == '#' )
+		return arg[:-1]
+	else:
+		return arg
+
 
 def popped( stack ):  return ( stack.head, stack.tail )
 
@@ -230,7 +364,9 @@ def next_state2( state, obj_sharp, probe ):
 		return probe
 
 def next_state( state, obj_sharp ):
-	# Note: this gives priority to SYMBOL over specific symbols, which might make keywords impossible.  We might want to rethink this.
+	# First we check of the object is itself a symbol that has an edge from this
+	# state (ie. it's acting as a keyword).  Failing that, we check the object's
+	# "tag edge symbol" to see if the object is of a type that has an edge.
 	return next_state2( state, obj_sharp, take( state, obj_sharp ) )
 
 debug_do = silence
@@ -516,15 +652,24 @@ def parse_library( name, string, environment ):
 			script.append( word )
 			all_symbols.add( word )
 	done( bindings, name, args, script )
-	all_symbols = set( filter( lambda s: s[-1] != '#', all_symbols ) ) # Slight cheese here.  Why do we have to filter out the sharp symbols?  Is this the right way to do this?
+
+	# In the language we're parsing here, sharp symbols are never meant to be
+	# keywords.  Don't add edges for those -- just let them get treated as
+	# :SYMBOL.
+	all_symbols = set( filter( lambda s: s[-1] != '#', all_symbols ) )
+
 	debug_parse( "     all_symbols = %s", sorted( all_symbols ) )
 	debug_parse( "dispatch_symbols = %s", sorted( dispatch_symbols ) )
+
 	automaton = polymorphic_postfix_automaton( environment, all_symbols, dispatch_symbols )
 	return LIBRARY( name, automaton, bindings )
 
 def polymorphic_postfix_automaton( scope, all_symbols, dispatch_symbols ):
+	# A little silly parser generator algorithm to deal with postfix languages
+	# with single-dispatch based on the topmost operand on the stack.
+	# This will suffice until I write a proper parser generator.
 	action_bindings = scope.bindings
-	debug_ppa = debug
+	debug_ppa = silence
 	default_state = Shift()
 	debug_ppa( "default_state: %s", default_state )
 	def shifty():
@@ -543,10 +688,6 @@ def polymorphic_postfix_automaton( scope, all_symbols, dispatch_symbols ):
 			state[ symbol ] = dispatch_states[ symbol ]
 		# Monomorphic reduce actions
 		for ( symbol, action ) in action_bindings:
-			#try:
-			#	[ name, dispatch_symbol ] = action.name.split( '/' )
-			#except ValueError: # No slash in the name
-			#	[ name, dispatch_symbol ] = [ action.name, None ]
 			if not '/' in action.name:
 				name = action.name
 				state[ name ] = Reduce0( symbol )
@@ -710,9 +851,7 @@ def define_builtins( bindings, global_scope ):
 # Meta-interpreter
 #
 
-global_scope = ENVIRONMENT( null )
-define_builtins( global_scope.bindings, global_scope )
-sheppard_interpreter_library = parse_library("sheppard_interpreter", """
+meta_interpreter_text = """
 ( value symbol ) bind 
 		value
 		current_environment digressor bindings get2
@@ -910,19 +1049,20 @@ sheppard_interpreter_library = parse_library("sheppard_interpreter", """
 	:THREAD
 	:TRUE
 	
-""", global_scope )
+"""
 
 #
 #
 #####################################
 
-#print "global_scope: " + str( global_scope )
-#print "  bindings: " + str( global_scope.bindings )
-action_words = [ s[7:] for s in global_scope.bindings._fields ]
-#print "  action words: " + str( action_words )
-print "\n#===================\n"
-
+sheppard_interpreter_library = None
 def wrap_procedure( inner_procedure ):
+	global global_scope, sheppard_interpreter_library, action_words
+	if sheppard_interpreter_library is None:
+		global_scope = ENVIRONMENT( null )
+		define_builtins( global_scope.bindings, global_scope )
+		sheppard_interpreter_library = parse_library( "sheppard_interpreter", meta_interpreter_text, global_scope )
+	action_words = [ s[7:] for s in global_scope.bindings._fields ]
 	nothing.environment = global_scope
 	bindings = global_scope.bindings
 	bindings[ 'null' ] = null
@@ -969,4 +1109,4 @@ def pretty_time( t ):
 start_time = time.time()
 main()
 elapsed_time = time.time() - start_time
-print shift_count, "shifts in", pretty_time( elapsed_time )
+print shift_count, "shifts in", pretty_time( elapsed_time ), "with", object_counter, "objects"

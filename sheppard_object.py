@@ -1,18 +1,18 @@
 
 import string
 
-object_id = 0
+object_counter = 0
 
 class Object:
 
 	def __init__( self, tag, **edges ):
-		global object_id
+		global object_counter
 		assert( tag.isupper() )
 		self._tag = tag
 		self._elements = {}
 		self._fields = sorted([ k for k in edges ]) # _fields can be adjusted if we want a particular field ordering
-		self._id = object_id
-		object_id = object_id+1
+		self._id = object_counter
+		object_counter = object_counter+1
 		for ( name, value ) in edges.iteritems():
 			setattr( self, name, value )
 
