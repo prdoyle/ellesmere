@@ -146,7 +146,7 @@ def print_stuff( th ):
 def print_reduce_stuff( th, action, environment ):
 	if meta_level( th ) >= printing_level_threshold:
 		act = th.activation
-		debug( ">+  ACTION: %s %s", action.name, action )
+		debug( ">+  ACTION: ( %s ) %s %s", list_str( action.formal_args ), action.name, action )
 		debug( " |    with: %s %s", repr( environment ), environment.bindings )
 
 def print_backtrace( th ):
@@ -181,6 +181,7 @@ def print_backtrace( th ):
 def pop_list( base, field_symbol_sharp ):
 	current = take( base, field_symbol_sharp )
 	result  = take( current, 'head#' )
+	#debug( "!!! pop_list( %s, %s ) = %s", base, field_symbol_sharp, result )
 	give( take( current, 'tail#' ), base, field_symbol_sharp )
 	return result
 
@@ -262,7 +263,7 @@ shift_count = 0
 def perform_shift( act ):
 	global shift_count
 	shift_count += 1
-	#debug_shift = silence
+	#debug_shift = debug
 	#debug_shift( 'shift' )
 	#if act.operands != null and act.operands.head in action_words:
 	#	error( Missed_Action_Word( act.operands.head ) )
@@ -386,6 +387,7 @@ def Shift( **edges ):
 		else:
 			result[     name ] = value
 	return result
+def LIBRARY( name, dialect, environment ): return Object( 'LIBRARY', name=name, dialect=dialect, environment=environment )
 
 #
 # Testing
@@ -483,9 +485,11 @@ if 0:
 		print "%s: %s" % ( symbol, binding )
 		#global_scope[ symbol ] = MACRO
 
-def parse_macros( string, environment ):
+def parse_library( name, string, environment ):
 	debug_parse = silence
 	bindings = environment.bindings
+	all_symbols = set()
+	dispatch_symbols = set()
 	( name, args, script ) = ( None, None, [] )
 	def done( bindings, name, args, script ):
 		if name != None:
@@ -498,32 +502,38 @@ def parse_macros( string, environment ):
 			done( bindings, name, args, script )
 			name = None
 			args = word[1:-1].split()
+			all_symbols.update( args )
 			script = []
 		elif name == None:
 			name = word
+			try:
+				[ actual_name, dispatch_symbol ] = name.split( '/' )
+				dispatch_symbols.add( dispatch_symbol )
+				all_symbols.add( dispatch_symbol )
+			except ValueError: # No slash in the name
+				pass
 		else:
 			script.append( word )
+			all_symbols.add( word )
 	done( bindings, name, args, script )
+	all_symbols = set( filter( lambda s: s[-1] != '#', all_symbols ) ) # Slight cheese here.  Why do we have to filter out the sharp symbols?  Is this the right way to do this?
+	debug_parse( "     all_symbols = %s", sorted( all_symbols ) )
+	debug_parse( "dispatch_symbols = %s", sorted( dispatch_symbols ) )
+	automaton = polymorphic_postfix_automaton( environment, all_symbols, dispatch_symbols )
+	return LIBRARY( name, automaton, bindings )
 
-def meta_automaton( scope ):
+def polymorphic_postfix_automaton( scope, all_symbols, dispatch_symbols ):
 	action_bindings = scope.bindings
-	debug_ma = silence
-	all_symbols = { 
-		':ACCEPT', ':ACTIVATION', ':BINDINGS', ':BOOLEAN', ':DIGRESSION', ':ENVIRONMENT', ':EOF', ':FALSE', ':LIST', ':MACRO', ':NOTHING', ':NULL', ':OBJECT', ':PRIMITIVE', ':PROCEDURE', ':PROGRAM', ':SHIFT', ':STATE', ':SYMBOL', ':THREAD', ':TRUE',
-		'ACCEPT', 'Activation', 'BEGIN_MARKER', 'cons', 'Digression', 'Environment', 'Procedure', 'SHIFT', 'STATEMENT', 'STATEMENTS', 'TAKE_FAILED',
-		'Thread', 'begin', 'bind', 'bind_arg', 'bind_args', 'bound', 'bound2', 'compound_expr', 'compound_stmt', 'current_environment',
-		'default', 'do_action', 'end', 'execute', 'finish_digression', 'get', 'next_state', 'perform', 'pop', 'pop_list', 'put',
-		'return', 'set', 'tag', 'tag_edge_symbol', 'take',
-		}
-	dispatch_symbols = { ':FALSE', ':TRUE', ':NULL', ':SHIFT', ':ACCEPT', ':REDUCE0', 'TAKE_FAILED', ':ENVIRONMENT', ':LIST', ':SYMBOL', ':MACRO', ':PRIMITIVE', 'STATEMENT', 'STATEMENTS' }
+	debug_ppa = debug
 	default_state = Shift()
+	debug_ppa( "default_state: %s", default_state )
 	def shifty():
 		while 1:
 			yield Shift()
 	dispatch_states = {}
 	for symbol, state in zip( dispatch_symbols, shifty() ):
 		dispatch_states[ symbol ] = state # dispatch_states[ x ] is the state we're in if the last item shifted was x
-	debug_ma( "dispatch_states: %s", dispatch_states )
+	debug_ppa( "dispatch_states: %s", dispatch_states )
 	for state in dispatch_states.values() + [ default_state ]:
 		# The default shift action
 		for symbol in all_symbols-dispatch_symbols:
@@ -540,13 +550,13 @@ def meta_automaton( scope ):
 			if not '/' in action.name:
 				name = action.name
 				state[ name ] = Reduce0( symbol )
-				debug_ma( 'Monomorphic: %s[ %s ] = Reduce0( %s )', repr(state), name, symbol )
+				debug_ppa( 'Monomorphic: %s[ %s ] = Reduce0( %s )', repr(state), name, symbol )
 	# Polymorphic reduce actions
 	for ( symbol, action ) in action_bindings:
 		try:
 			[ name, dispatch_symbol ] = action.name.split( '/' )
 			dispatch_states[ dispatch_symbol ][ name ] = Reduce0( symbol )
-			debug_ma( 'Polymorphic: state[ %s ][ %s ] = Reduce0( %s ) # %s', dispatch_symbol, name, symbol, repr(dispatch_states[ dispatch_symbol ]) )
+			debug_ppa( 'Polymorphic: state[ %s ][ %s ] = Reduce0( %s ) # %s', dispatch_symbol, name, symbol, repr(dispatch_states[ dispatch_symbol ]) )
 		except ValueError: # No slash in the name
 			pass
 	default_state[ ':EOF' ] = Accept()
@@ -702,7 +712,7 @@ def define_builtins( bindings, global_scope ):
 
 global_scope = ENVIRONMENT( null )
 define_builtins( global_scope.bindings, global_scope )
-parse_macros("""
+sheppard_interpreter_library = parse_library("sheppard_interpreter", """
 ( value symbol ) bind 
 		value
 		current_environment digressor bindings get2
@@ -876,6 +886,30 @@ parse_macros("""
 		act
 		true
 	execute2
+
+( ) object_types
+	:ACCEPT
+	:ACTIVATION
+	:BINDINGS
+	:BOOLEAN
+	:DIGRESSION
+	:ENVIRONMENT
+	:EOF
+	:FALSE
+	:LIST
+	:MACRO
+	:NOTHING
+	:NULL
+	:OBJECT
+	:PRIMITIVE
+	:PROCEDURE
+	:PROGRAM
+	:SHIFT
+	:STATE
+	:SYMBOL
+	:THREAD
+	:TRUE
+	
 """, global_scope )
 
 #
@@ -886,9 +920,6 @@ parse_macros("""
 #print "  bindings: " + str( global_scope.bindings )
 action_words = [ s[7:] for s in global_scope.bindings._fields ]
 #print "  action words: " + str( action_words )
-#dialect = generated_automaton()
-dialect = meta_automaton( global_scope )
-#print "  dialect:\n" + dialect.description()
 print "\n#===================\n"
 
 def wrap_procedure( inner_procedure ):
@@ -899,7 +930,7 @@ def wrap_procedure( inner_procedure ):
 	bindings[ 'false' ] = false
 	bindings[ 'true' ] = true
 	bindings[ 'nothing' ] = nothing
-	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment, 'execute' ]), dialect, global_scope )
+	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment, 'execute' ]), sheppard_interpreter_library.dialect, global_scope )
 	return outer_procedure
 
 def test( depth, plt ):
@@ -911,7 +942,7 @@ def test( depth, plt ):
 	if printing_level_threshold < depth:
 		debug( "procedure: %s", str( procedure ) )
 		debug( " bindings: %s", str( procedure.environment.bindings ) )
-		#debug( "  dialect: %s", sheppard_interpreter_library.dialect.description() )
+		debug( "  dialect: %s", sheppard_interpreter_library.dialect.description() )
 	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
 
 def main():
