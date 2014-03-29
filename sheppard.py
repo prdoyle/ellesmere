@@ -485,18 +485,17 @@ if 0:
 
 def parse_macros( string, environment ):
 	debug_parse = silence
-	# Start_script is still too cumbersome
-	result = Object('BINDINGS')
+	bindings = Object('BINDINGS')
 	( name, args, script ) = ( None, None, [] )
-	def done( result, name, args, script ):
+	def done( bindings, name, args, script ):
 		if name != None:
 			args.append( null ) # Automatically add a don't-care arg for the macro name
-			result[ 'ACTION_' + name ] = MACRO( name, List( script ), Stack( args ), environment )
+			bindings[ 'ACTION_' + name ] = MACRO( name, List( script ), Stack( args ), environment )
 			debug_parse( "PARSED MACRO[ ACTION_%s ]: %s", name, name )
 	for word in re.findall( r'\w+#*(?:/:?\w+#*)?|\([^)]*\)', string.strip() ):
 		debug_parse( "WORD: '%s'", word )
 		if word[0] == '(':
-			done( result, name, args, script )
+			done( bindings, name, args, script )
 			name = None
 			args = word[1:-1].split()
 			script = []
@@ -504,8 +503,54 @@ def parse_macros( string, environment ):
 			name = word
 		else:
 			script.append( word )
-	done( result, name, args, script )
-	return result
+	done( bindings, name, args, script )
+	return bindings
+
+def meta_automaton( action_bindings ):
+	debug_ma = silence
+	symbols = { 
+		':ACCEPT', ':ACTIVATION', ':BINDINGS', ':BOOLEAN', ':DIGRESSION', ':ENVIRONMENT', ':EOF', ':FALSE', ':LIST', ':MACRO', ':NOTHING', ':NULL', ':OBJECT', ':PRIMITIVE', ':PROCEDURE', ':PROGRAM', ':SHIFT', ':STATE', ':SYMBOL', ':THREAD', ':TRUE',
+		'ACCEPT', 'Activation', 'BEGIN_MARKER', 'cons', 'Digression', 'Environment', 'Procedure', 'SHIFT', 'STATEMENT', 'STATEMENTS', 'TAKE_FAILED',
+		'Thread', 'begin', 'bind', 'bind_arg', 'bind_args', 'bound', 'bound2', 'compound_expr', 'compound_stmt', 'current_environment',
+		'default', 'do_action', 'end', 'execute', 'finish_digression', 'get', 'next_state', 'perform', 'pop', 'pop_list', 'put',
+		'return', 'set', 'tag', 'tag_edge_symbol', 'take',
+		}
+	dispatch_symbols = { ':FALSE', ':TRUE', ':NULL', ':SHIFT', ':ACCEPT', ':REDUCE0', 'TAKE_FAILED', ':ENVIRONMENT', ':LIST', ':SYMBOL', ':MACRO', ':PRIMITIVE', 'STATEMENT', 'STATEMENTS' }
+	default_state = Shift()
+	def shifty():
+		while 1:
+			yield Shift()
+	dispatch_states = {}
+	for symbol, state in zip( dispatch_symbols, shifty() ):
+		dispatch_states[ symbol ] = state # dispatch_states[ x ] is the state we're in if the last item shifted was x
+	debug_ma( "dispatch_states: %s", dispatch_states )
+	for state in dispatch_states.values() + [ default_state ]:
+		# The default shift action
+		for symbol in symbols-dispatch_symbols:
+			state[ symbol ] = default_state
+		# Symbol-specific shift actions
+		for symbol in dispatch_symbols:
+			state[ symbol ] = dispatch_states[ symbol ]
+		# Monomorphic reduce actions
+		for ( symbol, action ) in action_bindings:
+			#try:
+			#	[ name, dispatch_symbol ] = action.name.split( '/' )
+			#except ValueError: # No slash in the name
+			#	[ name, dispatch_symbol ] = [ action.name, None ]
+			if not '/' in action.name:
+				name = action.name
+				state[ name ] = Reduce0( symbol )
+				debug_ma( 'Monomorphic: %s[ %s ] = Reduce0( %s )', repr(state), name, symbol )
+	# Polymorphic reduce actions
+	for ( symbol, action ) in action_bindings:
+		try:
+			[ name, dispatch_symbol ] = action.name.split( '/' )
+			dispatch_states[ dispatch_symbol ][ name ] = Reduce0( symbol )
+			debug_ma( 'Polymorphic: state[ %s ][ %s ] = Reduce0( %s ) # %s', dispatch_symbol, name, symbol, repr(dispatch_states[ dispatch_symbol ]) )
+		except ValueError: # No slash in the name
+			pass
+	default_state[ ':EOF' ] = Accept()
+	return default_state
 
 # Sheppard builtins
 
@@ -831,52 +876,6 @@ bindings = parse_macros("""
 		true
 	execute2
 """, global_scope )
-
-def meta_automaton( action_bindings ):
-	debug_ma = silence
-	symbols = { 
-		':ACCEPT', ':ACTIVATION', ':BINDINGS', ':BOOLEAN', ':DIGRESSION', ':ENVIRONMENT', ':EOF', ':FALSE', ':LIST', ':MACRO', ':NOTHING', ':NULL', ':OBJECT', ':PRIMITIVE', ':PROCEDURE', ':PROGRAM', ':SHIFT', ':STATE', ':SYMBOL', ':THREAD', ':TRUE',
-		'ACCEPT', 'Activation', 'BEGIN_MARKER', 'cons', 'Digression', 'Environment', 'Procedure', 'SHIFT', 'STATEMENT', 'STATEMENTS', 'TAKE_FAILED',
-		'Thread', 'begin', 'bind', 'bind_arg', 'bind_args', 'bound', 'bound2', 'compound_expr', 'compound_stmt', 'current_environment',
-		'default', 'do_action', 'end', 'execute', 'finish_digression', 'get', 'next_state', 'perform', 'pop', 'pop_list', 'put',
-		'return', 'set', 'tag', 'tag_edge_symbol', 'take',
-		}
-	dispatch_symbols = { ':FALSE', ':TRUE', ':NULL', ':SHIFT', ':ACCEPT', ':REDUCE0', 'TAKE_FAILED', ':ENVIRONMENT', ':LIST', ':SYMBOL', ':MACRO', ':PRIMITIVE', 'STATEMENT', 'STATEMENTS' }
-	default_state = Shift()
-	def shifty():
-		while 1:
-			yield Shift()
-	dispatch_states = {}
-	for symbol, state in zip( dispatch_symbols, shifty() ):
-		dispatch_states[ symbol ] = state # dispatch_states[ x ] is the state we're in if the last item shifted was x
-	debug_ma( "dispatch_states: %s", dispatch_states )
-	for state in dispatch_states.values() + [ default_state ]:
-		# The default shift action
-		for symbol in symbols-dispatch_symbols:
-			state[ symbol ] = default_state
-		# Symbol-specific shift actions
-		for symbol in dispatch_symbols:
-			state[ symbol ] = dispatch_states[ symbol ]
-		# Monomorphic reduce actions
-		for ( symbol, action ) in action_bindings:
-			#try:
-			#	[ name, dispatch_symbol ] = action.name.split( '/' )
-			#except ValueError: # No slash in the name
-			#	[ name, dispatch_symbol ] = [ action.name, None ]
-			if not '/' in action.name:
-				name = action.name
-				state[ name ] = Reduce0( symbol )
-				debug_ma( 'Monomorphic: %s[ %s ] = Reduce0( %s )', repr(state), name, symbol )
-	# Polymorphic reduce actions
-	for ( symbol, action ) in action_bindings:
-		try:
-			[ name, dispatch_symbol ] = action.name.split( '/' )
-			dispatch_states[ dispatch_symbol ][ name ] = Reduce0( symbol )
-			debug_ma( 'Polymorphic: state[ %s ][ %s ] = Reduce0( %s ) # %s', dispatch_symbol, name, symbol, repr(dispatch_states[ dispatch_symbol ]) )
-		except ValueError: # No slash in the name
-			pass
-	default_state[ ':EOF' ] = Accept()
-	return default_state
 
 #
 #
