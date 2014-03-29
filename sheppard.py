@@ -482,6 +482,8 @@ def Shift( **edges ):
 	return result
 def LIBRARY( name, dialect, environment ): return Object( 'LIBRARY', name=name, dialect=dialect, environment=environment )
 
+
+#####################################
 #
 # Testing
 #
@@ -534,10 +536,6 @@ class Start_script:
 	def __repr__( self ):
 		return "Script_builder()" + string.join([ '.' + str(t) for t in self._tokens ])
 
-if 0:
-	x = LIST('first', null)
-	x = LIST('second', x)
-
 def go_world():
 	def primitive_hello( th, where ):
 		print "!! Called primitive_hello( %s )" % where
@@ -568,15 +566,6 @@ def go_world():
 			go.world.
 		End_script(),
 		dialect, global_scope )
-
-if 0:
-	procedure = go_world()
-	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
-
-if 0:
-	for ( symbol, binding ) in sorted( global_scope.bindings ):
-		print "%s: %s" % ( symbol, binding )
-		#global_scope[ symbol ] = MACRO
 
 def parse_library( name, string, environment ):
 	debug_parse = silence
@@ -663,6 +652,8 @@ def polymorphic_postfix_automaton( scope, all_symbols, dispatch_symbols ):
 # Sheppard builtins
 
 def define_builtins( bindings, global_scope ):
+	# TODO: parse_library ought to be able to define primitives itself
+
 	debug_builtins = silence
 	def digress( th, *values ):
 		th.activation.cursor = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
