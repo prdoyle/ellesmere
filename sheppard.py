@@ -294,6 +294,7 @@ def print_backtrace( th ):
 		debug( "|   | %s",      obj )
 	debug( "|   |      %s", history[-1] )
 
+
 #####################################
 #
 # The interpreter.
@@ -307,10 +308,6 @@ def print_backtrace( th ):
 #  - Loops will be replaced with tail digression.  There's only one loop anyway
 #  so that's no big deal.
 #
-#
-# PROBLEM: I think we must generally deal with quoted values, because the moment
-# an unquoted value appears on the lowest-level operand stack, it's possible an
-# action can be taken.  Hence, values must always be manipulated in quoted form.
 
 def pop_list( base, field_symbol_sharp ):
 	current = take( base, field_symbol_sharp )
@@ -468,46 +465,6 @@ def execute( procedure, environment, scope ):
 #
 #####################################
 
-
-# PROBLEM: as I write this, perform_reduce contains a call to finish_digression.
-# The motivation for this is tail digression elimination: we want to clean up an
-# exhausted digression before starting a new one.  Really, since environments
-# are for looking up the values bound to shifted tokens, this could be done
-# even earlier, right after the last shift from the digression.  However, we
-# also use the environment to look up the reduce actions, and this is where the
-# problem comes from.  There could be multiple consectuve reduce actions (with
-# no intervening shifts) at the end of a digression, and we may want to use
-# that digression's environment to look up the actions to take.  Or, we might
-# not want that.  The environment to use for binding reduce actions is, I
-# think, ill-defined under the digression model.  That binding operation may
-# need to use a separate mechanism entirely.
-#
-# In the mean time, we finish_digression right after looking up the reduce
-# action.  That gets us tail digression elimination, and usually does the right
-# thing.  It also makes no difference as long as all the action bindings are in
-# the global_scope anyway.  Once I work out how to bind reduce actions, it
-# would probably be better and cleaner to finish_digression as soon as that
-# digression's last token has been bound.
-#
-# WORSE PROBLEM: what happens if the digressions ends without doing a reduce?
-# Then we need to finish the digression, but if we're only doing that at reduce
-# actions, then it never happens.  I really need to figure out how to bind
-# reduce actions, and I don't think I can do it using digressions at all.
-#
-# UPDATE: I created a new environment, the reduce_environment, used for all
-# reduces.  Now I can finish_digression after we shift the last token out of
-# it.
-#
-# PROBLEM: I can't figure out how to write a digression that can reliably
-# access the environment of its caller.  In other words, I'm having trouble
-# making macros that are unsanitary.  I guess that's meant to be a good thing,
-# but it's hampering my ability to do things like define 'bind' in terms of
-# doing a 'put' on the caller's environment.  The trouble is: if the call to
-# the unsanitary macro shifts the last token from the digression it's in, then
-# that digression's environment disappears before the callee can get its hands
-# on it.
-#
-# Maybe this is just how digressions roll.  Maybe I can live with that.
 
 def MACRO( name, script, formal_args, environment ): return Object( 'MACRO', name=name, script=script, formal_args=formal_args, environment=environment )
 def PROCEDURE( name, script, dialect, environment ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, environment=environment )
@@ -846,6 +803,7 @@ def define_builtins( bindings, global_scope ):
 		digress( th, flat( **args ) )
 	bind_with_name( _flat, 'flat', 'arg' )
 
+
 #####################################
 #
 # Meta-interpreter
@@ -1054,6 +1012,7 @@ meta_interpreter_text = """
 #
 #
 #####################################
+
 
 sheppard_interpreter_library = None
 def wrap_procedure( inner_procedure ):
