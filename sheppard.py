@@ -848,7 +848,15 @@ meta_interpreter_text = """
 	next_state2
 
 ( act environment action ) do_action/:PRIMITIVE
+			null
+			environment
+			act cursor get
+		Digression
+	act cursor put
 	act thread get environment action do_primitive
+		act
+		act cursor tokens get2
+	finish_digression
 
 ( act environment action ) do_action/:MACRO
 			action script get
