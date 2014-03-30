@@ -668,29 +668,6 @@ def define_builtins( bindings, global_scope ):
 	#def bind( func, *args ):
 	#	bind_with_name( func, func.func_name, *args )
 
-	def eat( th ):
-		pass
-		#digress( th, 'STATEMENTS' )
-	bind_with_name( eat, "eat0" )
-	bind_with_name( eat, "eat1", null )
-	bind_with_name( eat, "eat2", null, null )
-
-	def begin( th ):
-		# One day, this might start some kind of local scope.  But not today.
-		# TODO: This could probably be a macro
-		digress( th, 'BEGIN_MARKER' )
-	bind_with_name( begin, 'begin', null )
-
-	def compound_expr( th, result ):
-		# TODO: This could probably be a macro
-		digress( th, result )
-	bind_with_name( compound_expr, 'compound_expr', null, null, null, 'result', null )
-
-	def compound_stmt( th ):
-		# TODO: This could probably be a macro
-		pass
-	bind_with_name( compound_stmt, 'compound_stmt', null, null, null )
-
 	def current_environment( th ):
 		digress( th, th.activation.cursor.environment )
 	bind_with_name( current_environment, 'current_environment', null )
@@ -732,18 +709,6 @@ def define_builtins( bindings, global_scope ):
 		base[ field ] = value
 		#digress( th, 'STATEMENT' )
 	bind_with_name( put, 'put', 'value', 'base', 'field', null )
-
-	def pop( th ):
-		pass
-	bind_with_name( pop, 'pop', null, null )
-
-	def Null( th ):
-		digress( th, null )
-	bind_with_name( Null, 'Null', null )
-
-	def Nothing( th ):
-		digress( th, nothing )
-	bind_with_name( Nothing, 'Nothing', null )
 
 	def _cons( th, **args ):
 		digress( th, cons(**args) )
