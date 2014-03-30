@@ -570,7 +570,7 @@ def go_world():
 def parse_library( name, string, environment ):
 	debug_parse = silence
 	bindings = environment.bindings
-	all_symbols = set()
+	edge_symbols = set()
 	dispatch_symbols = set()
 	( name, args, script ) = ( None, None, [] )
 	def done( bindings, name, args, script ):
@@ -578,39 +578,39 @@ def parse_library( name, string, environment ):
 			args.append( null ) # Automatically add a don't-care arg for the macro name
 			bindings[ 'ACTION_' + name ] = MACRO( name, List( script ), Stack( args ), environment )
 			debug_parse( "PARSED MACRO[ ACTION_%s ]: %s", name, name )
-	for word in re.findall( r':*\w+#*(?:/:?\w+#*)?|\([^)]*\)', string.strip() ):
+	for word in re.findall( r'\([^)]*\)|\[[^)]*\]|\S+(?:/:?\w+#*)?', string.strip() ):
 		debug_parse( "WORD: '%s'", word )
 		if word[0] == '(':
 			done( bindings, name, args, script )
 			name = None
-			args = word[1:-1].split()
-			all_symbols.update( args )
 			script = []
+			args = word[1:-1].split()
+		elif word[0] == '[':
+			done( bindings, name, args, script )
+			name = None
+			script = []
+			object_types = word[1:-1].split()
+			debug_parse( "object_types: %s", object_types )
+			edge_symbols.update( object_types )
 		elif name == None:
 			name = word
 			try:
 				[ actual_name, dispatch_symbol ] = name.split( '/' )
 				dispatch_symbols.add( dispatch_symbol )
-				all_symbols.add( dispatch_symbol )
+				edge_symbols.add( actual_name )
 			except ValueError: # No slash in the name
 				pass
 		else:
 			script.append( word )
-			all_symbols.add( word )
 	done( bindings, name, args, script )
 
-	# In the language we're parsing here, sharp symbols are never meant to be
-	# keywords.  Don't add edges for those -- just let them get treated as
-	# :SYMBOL.
-	all_symbols = set( filter( lambda s: s[-1] != '#', all_symbols ) )
-
-	debug_parse( "     all_symbols = %s", sorted( all_symbols ) )
+	debug_parse( "    edge_symbols = %s", sorted( edge_symbols ) )
 	debug_parse( "dispatch_symbols = %s", sorted( dispatch_symbols ) )
 
-	automaton = polymorphic_postfix_automaton( environment, all_symbols, dispatch_symbols )
+	automaton = polymorphic_postfix_automaton( environment, edge_symbols, dispatch_symbols )
 	return LIBRARY( name, automaton, bindings )
 
-def polymorphic_postfix_automaton( scope, all_symbols, dispatch_symbols ):
+def polymorphic_postfix_automaton( scope, edge_symbols, dispatch_symbols ):
 	# A little silly parser generator algorithm to deal with postfix languages
 	# with single-dispatch based on the topmost operand on the stack.
 	# This will suffice until I write a proper parser generator.
@@ -627,7 +627,7 @@ def polymorphic_postfix_automaton( scope, all_symbols, dispatch_symbols ):
 	debug_ppa( "dispatch_states: %s", dispatch_states )
 	for state in dispatch_states.values() + [ default_state ]:
 		# The default shift action
-		for symbol in all_symbols-dispatch_symbols:
+		for symbol in edge_symbols-dispatch_symbols:
 			state[ symbol ] = default_state
 		# Symbol-specific shift actions
 		for symbol in dispatch_symbols:
@@ -975,29 +975,11 @@ meta_interpreter_text = """
 		true
 	execute2
 
-( ) object_types
-	:ACCEPT
-	:ACTIVATION
-	:BINDINGS
-	:BOOLEAN
-	:DIGRESSION
-	:ENVIRONMENT
-	:EOF
-	:FALSE
-	:LIST
-	:MACRO
-	:NOTHING
-	:NULL
-	:OBJECT
-	:PRIMITIVE
-	:PROCEDURE
-	:PROGRAM
-	:SHIFT
-	:STATE
-	:SYMBOL
-	:THREAD
-	:TRUE
-	
+[ :ACCEPT :ACTIVATION :BINDINGS :BOOLEAN :DIGRESSION
+	:ENVIRONMENT :EOF :FALSE :LIST :MACRO :NOTHING :NULL
+	:OBJECT :PRIMITIVE :PROCEDURE :PROGRAM :SHIFT :STATE
+	:SYMBOL :THREAD :TRUE ]
+
 """
 
 #
