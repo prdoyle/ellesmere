@@ -698,7 +698,6 @@ def define_builtins( bindings, global_scope ):
 
 	def _give( th, value, base, field ):
 		give( value, base, field )
-		#digress( th, 'STATEMENT' )
 	bind_with_name( _give, 'give', 'value', 'base', 'field', null )
 
 	def _take( th, base, field ):
@@ -707,7 +706,6 @@ def define_builtins( bindings, global_scope ):
 
 	def put( th, value, base, field ):
 		base[ field ] = value
-		#digress( th, 'STATEMENT' )
 	bind_with_name( put, 'put', 'value', 'base', 'field', null )
 
 	def _cons( th, **args ):
@@ -740,17 +738,14 @@ def define_builtins( bindings, global_scope ):
 
 	def _print_stuff( th, th_arg ):
 		print_stuff( th_arg )
-		#digress( th, 'STATEMENT' )
 	bind_with_name( _print_stuff, 'print_stuff', 'th_arg', null )
 
 	def _print_reduce_stuff( th, th_arg, action, env ):
 		print_reduce_stuff( th_arg, action, env )
-		#digress( th, 'STATEMENT' )
 	bind_with_name( _print_reduce_stuff, 'print_reduce_stuff', 'th_arg', 'action', 'env', null )
 
 	def _print_program( th, th_arg ):
 		print_program( th_arg )
-		#digress( th, 'STATEMENT' )
 	bind_with_name( _print_program, 'print_program', 'th_arg', null )
 
 	def _sharp( th, **args ):
