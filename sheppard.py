@@ -739,18 +739,6 @@ def define_builtins( bindings, global_scope ):
 		action.function( th_arg, **dict( environment.bindings ) )
 	bind_with_name( do_primitive, 'do_primitive', 'th_arg', 'environment', 'action', null ) # Hmm, collision between th in the interpreter and th in the program
 
-	def _print_stuff( th, th_arg ):
-		print_stuff( th_arg )
-	bind_with_name( _print_stuff, 'print_stuff', 'th_arg', null )
-
-	def _print_reduce_stuff( th, th_arg, action, env ):
-		print_reduce_stuff( th_arg, action, env )
-	bind_with_name( _print_reduce_stuff, 'print_reduce_stuff', 'th_arg', 'action', 'env', null )
-
-	def _print_program( th, th_arg ):
-		print_program( th_arg )
-	bind_with_name( _print_program, 'print_program', 'th_arg', null )
-
 	def _sharp( th, **args ):
 		digress( th, sharp( **args ) )
 	bind_with_name( _sharp, 'sharp', 'arg', null )
@@ -906,7 +894,7 @@ meta_interpreter_text = """
 	true
 
 ( act state ) perform/:REDUCE0
-	act thread get print_stuff
+	{ print_stuff( act.thread ) } exec
 			act history head get2 action# take
 			act scope get
 		bound
@@ -919,15 +907,12 @@ meta_interpreter_text = """
 		reduce_env bindings get
 		action formal_args get
 	bind_args
-		act thread get
-		action
-		reduce_env
-	print_reduce_stuff
+	{ print_reduce_stuff( act.thread, action, reduce_env ) } exec
 		act
 		reduce_env
 		action
 	do_action
-	act thread get print_program
+	{ print_program( act.thread ) } exec
 	true
 
 ( act probe ) execute2/:FALSE
