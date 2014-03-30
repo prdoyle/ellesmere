@@ -140,8 +140,6 @@ def flat( arg ):
 		return arg
 
 
-def popped( stack ):  return ( stack.head, stack.tail )
-
 # Object constructors
 
 def LIST( head, tail ): return Object( 'LIST', head=head, tail=tail, _fields=['head','tail'] )
@@ -166,18 +164,17 @@ def ENVIRONMENT( outer, **bindings ): return Object( 'ENVIRONMENT', outer=outer,
 
 def DIGRESSION( tokens, environment, resumption ): return Object( 'DIGRESSION', tokens=tokens, environment=environment, resumption=resumption )
 
-def Eof(): return Object( 'EOF' )
+eof = Object( 'EOF' )
 
 def Nothing():
 	# An endless stack of digressions each returning an endless stream of EOFs
 	result = Object( 'NOTHING', environment=ENVIRONMENT(null) )
-	endless_eof = LIST( Eof(), null )
+	endless_eof = LIST( eof, null )
 	endless_eof.tail = endless_eof
 	result.tokens = endless_eof
 	result.resumption   = result
 	return result
 
-eof = Eof()
 nothing = Nothing()
 false = Object( 'FALSE' )
 true  = Object( 'TRUE' )
