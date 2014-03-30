@@ -759,12 +759,12 @@ def define_builtins( bindings, global_scope ):
 		digress( th, flat( **args ) )
 	bind_with_name( _flat, 'flat', 'arg', null )
 
-	def _foobar_exec( th, code ):
-		exec code.strip() in globals(), th.activation.cursor.environment.bindings
-	bind_with_name( _foobar_exec, 'exec', 'code', null )
+	def buildin_exec( th, code ):
+		exec code.strip() in globals(), th.activation.cursor.environment.digressor.bindings
+	bind_with_name( buildin_exec, 'exec', 'code', null )
 
 	def _eval( th, code ):
-		digress( th, eval( code.strip(), globals(), th.activation.cursor.environment.bindings ) )
+		digress( th, eval( code.strip(), globals(), th.activation.cursor.environment.digressor.bindings ) )
 	bind_with_name( _eval, 'eval', 'code', null )
 
 
