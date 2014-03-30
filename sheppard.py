@@ -578,21 +578,23 @@ def parse_library( name, string, environment ):
 			args.append( null ) # Automatically add a don't-care arg for the macro name
 			bindings[ 'ACTION_' + name ] = MACRO( name, List( script ), Stack( args ), environment )
 			debug_parse( "PARSED MACRO[ ACTION_%s ]: %s", name, name )
-	for word in re.findall( r'\([^)]*\)|\[[^)]*\]|\S+(?:/:?\w+#*)?', string.strip() ):
+	for word in re.findall( r'\([^)]*\)|\{[^}]*\}|\[[^]]*\]|\S+(?:/:?\w+#*)?', string.strip() ):
 		debug_parse( "WORD: '%s'", word )
-		if word[0] == '(':
+		if word[0] == '(': # Arguments to a new macro
 			done( bindings, name, args, script )
 			name = None
 			script = []
 			args = word[1:-1].split()
-		elif word[0] == '[':
+		elif word[0] == '{': # Long symbol/string
+			script.append( word[1:-1] )
+		elif word[0] == '[': # List of object types
 			done( bindings, name, args, script )
 			name = None
 			script = []
 			object_types = word[1:-1].split()
 			debug_parse( "object_types: %s", object_types )
 			edge_symbols.update( object_types )
-		elif name == None:
+		elif name == None: # Macro name
 			name = word
 			try:
 				[ actual_name, dispatch_symbol ] = name.split( '/' )
@@ -600,7 +602,7 @@ def parse_library( name, string, environment ):
 				edge_symbols.add( actual_name )
 			except ValueError: # No slash in the name
 				pass
-		else:
+		else: # Append word to the script
 			script.append( word )
 	done( bindings, name, args, script )
 
@@ -788,11 +790,19 @@ def define_builtins( bindings, global_scope ):
 
 	def _sharp( th, **args ):
 		digress( th, sharp( **args ) )
-	bind_with_name( _sharp, 'sharp', 'arg' )
+	bind_with_name( _sharp, 'sharp', 'arg', null )
 
 	def _flat( th, **args ):
 		digress( th, flat( **args ) )
-	bind_with_name( _flat, 'flat', 'arg' )
+	bind_with_name( _flat, 'flat', 'arg', null )
+
+	def _foobar_exec( th, code ):
+		exec code.strip() in globals(), th.activation.cursor.environment.bindings
+	bind_with_name( _foobar_exec, 'exec', 'code', null )
+
+	def _eval( th, code ):
+		digress( th, eval( code.strip(), globals(), th.activation.cursor.environment.bindings ) )
+	bind_with_name( _eval, 'eval', 'code', null )
 
 
 #####################################
