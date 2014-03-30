@@ -370,7 +370,9 @@ debug_do = silence
 
 def do_action_primitive( act, environment, action ):
 	debug_do( "  Primitive bindings: %s", dict( environment.bindings ) )
+	act.cursor = DIGRESSION( null, environment, act.cursor )
 	action.function( act.thread, **dict( environment.bindings ) )
+	finish_digression( act, act.cursor.tokens ) # Just in case the macro is totally empty
 
 def do_action_macro( act, environment, action ):
 	act.cursor = DIGRESSION( action.script, environment, act.cursor )
@@ -658,6 +660,7 @@ def define_builtins( bindings, global_scope ):
 
 	debug_builtins = silence
 	def digress( th, *values ):
+		finish_digression( th.activation, th.activation.cursor.tokens )
 		th.activation.cursor = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
 
 	def bind_with_name( func, name, *args ):
@@ -669,7 +672,7 @@ def define_builtins( bindings, global_scope ):
 	#	bind_with_name( func, func.func_name, *args )
 
 	def current_environment( th ):
-		digress( th, th.activation.cursor.environment )
+		digress( th, th.activation.cursor.environment.digressor )
 	bind_with_name( current_environment, 'current_environment', null )
 
 	def current_thread( th ):
