@@ -776,8 +776,7 @@ meta_interpreter_text = """
 ( act remaining_tokens ) finish_digression/:LIST
 
 ( arg_value_sharp arg_bindings arg_symbol_sharp ) bind_arg/:SYMBOL
-		arg_value_sharp
-	arg_bindings arg_symbol_sharp give
+	arg_value_sharp arg_bindings arg_symbol_sharp give
 
 ( arg_value_sharp arg_bindings arg_symbol_sharp ) bind_arg/:NULL
 
@@ -976,17 +975,6 @@ def test( depth, plt ):
 		debug( "  dialect: %s", sheppard_interpreter_library.dialect.description() )
 	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
 
-def main():
-	try:
-		depth = int( argv[1] )
-	except IndexError:
-		depth = 0
-	try:
-		printing_level_threshold = int( argv[2] )
-	except IndexError:
-		printing_level_threshold = depth
-	test( depth, printing_level_threshold )
-
 def pretty_time( t ):
 	if t < 1:
 		return "%.2fms" % (t*1000)
@@ -997,7 +985,18 @@ def pretty_time( t ):
 	else:
 		return "%dh%dm%ds" % ( t/3600, (t%3600)/60, t%60 )
 
-start_time = time.time()
+def main():
+	try:
+		depth = int( argv[1] )
+	except IndexError:
+		depth = 0
+	try:
+		printing_level_threshold = int( argv[2] )
+	except IndexError:
+		printing_level_threshold = depth
+	start_time = time.time()
+	test( depth, printing_level_threshold )
+	elapsed_time = time.time() - start_time
+	print shift_count, "shifts in", pretty_time( elapsed_time ), "with", object_counter, "objects"
+
 main()
-elapsed_time = time.time() - start_time
-print shift_count, "shifts in", pretty_time( elapsed_time ), "with", object_counter, "objects"
