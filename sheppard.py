@@ -732,10 +732,6 @@ def define_builtins( bindings, global_scope ):
 		digress( th, ENVIRONMENT( **args ) )
 	bind_with_name( Environment, 'Environment', 'outer', null )
 
-	def do_primitive( th, th_arg, environment, action ):
-		action.function( th_arg, **dict( environment.bindings ) )
-	bind_with_name( do_primitive, 'do_primitive', 'th_arg', 'environment', 'action', null ) # Hmm, collision between th in the interpreter and th in the program
-
 	def _sharp( th, **args ):
 		digress( th, sharp( **args ) )
 	bind_with_name( _sharp, 'sharp', 'arg', null )
@@ -838,7 +834,7 @@ meta_interpreter_text = """
 			act cursor get
 		Digression
 	act cursor put
-	act thread get environment action do_primitive
+	{ action.function( act.thread, **dict( environment.bindings ) ) } exec
 		act
 		act cursor tokens get2
 	finish_digression
