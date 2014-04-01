@@ -49,7 +49,7 @@ class Object:
 			delattr( self, key )
 			self._fields.remove( key )
 
-	def __iter__( self ): # Range over array (index,value) pairs; TODO: do normal fields too?
+	def __iter__( self ): # Range over all (index,value) pairs
 		for key in self._fields:
 			yield ( key, getattr( self, key ) )
 		for key in self._elements.iterkeys():
@@ -672,17 +672,9 @@ def define_builtins( bindings, global_scope ):
 		digress( th, th.activation.cursor.environment.digressor )
 	bind_with_name( current_environment, 'current_environment', null )
 
-	def current_thread( th ):
+	def meta_thread( th ):
 		digress( th, th )
-	bind_with_name( current_thread, 'current_thread', null )
-
-	def _tag( th, obj ):
-		digress( th, tag(obj) )
-	bind_with_name( _tag, 'tag', 'obj', null )
-
-	def _tag_edge_symbol( th, obj ):
-		digress( th, tag_edge_symbol(obj) )
-	bind_with_name( _tag_edge_symbol, 'tag_edge_symbol', 'obj', null )
+	bind_with_name( meta_thread, 'meta_thread', null )
 
 	def get( th, base, field ):
 		digress( th, base[ field ] )
@@ -740,13 +732,13 @@ def define_builtins( bindings, global_scope ):
 		digress( th, flat( **args ) )
 	bind_with_name( _flat, 'flat', 'arg', null )
 
-	def buildin_exec( th, code ):
+	def builtin_exec( th, code ):
 		exec code.strip() in globals(), th.activation.cursor.environment.digressor.bindings
-	bind_with_name( buildin_exec, 'exec', 'code', null )
+	bind_with_name( builtin_exec, 'exec', 'code', null )
 
-	def _eval( th, code ):
+	def builtin_eval( th, code ):
 		digress( th, eval( code.strip(), globals(), th.activation.cursor.environment.digressor.bindings ) )
-	bind_with_name( _eval, 'eval', 'code', null )
+	bind_with_name( builtin_eval, 'eval', 'code', null )
 
 
 #####################################
@@ -755,6 +747,10 @@ def define_builtins( bindings, global_scope ):
 #
 
 meta_interpreter_text = """
+() nop
+
+( obj ) tag_edge_symbol     { ':' + tag( obj ) } eval nop
+
 ( value symbol ) bind 
 		value
 		current_environment digressor bindings get2
@@ -927,7 +923,7 @@ meta_interpreter_text = """
 		scope
 		null
 	Activation act bind
-		act current_thread Thread
+		act meta_thread Thread
 	act thread put
 		act
 		true
