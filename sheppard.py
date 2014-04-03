@@ -672,65 +672,29 @@ def define_builtins( bindings, global_scope ):
 		digress( th, th.activation.cursor.environment.digressor )
 	bind_with_name( current_environment, 'current_environment', null )
 
-	def meta_thread( th ):
+	def current_thread( th ):
 		digress( th, th )
-	bind_with_name( meta_thread, 'meta_thread', null )
+	bind_with_name( current_thread, 'current_thread', null )
 
-	def get( th, base, field ):
+	def get( th, base, field ): # Saves 163 shifts
 		digress( th, base[ field ] )
 	bind_with_name( get, 'get', 'base', 'field', null )
 
-	def get2( th, base, field1, field2 ):
+	def get2( th, base, field1, field2 ): # Saves 146 shifts
 		digress( th, base[ field1 ][ field2 ] )
 	bind_with_name( get2, 'get2', 'base', 'field1', 'field2', null )
 
-	def get3( th, base, field1, field2, field3 ):
-		digress( th, base[ field1 ][ field2 ][ field3 ] )
-	bind_with_name( get3, 'get3', 'base', 'field1', 'field2', 'field3', null )
-
-	def _give( th, value, base, field ):
-		give( value, base, field )
-	bind_with_name( _give, 'give', 'value', 'base', 'field', null )
-
-	def _take( th, base, field ):
+	def _take( th, base, field ): # Saves 107 shifts
 		digress( th, take( base, field ) )
 	bind_with_name( _take, 'take', 'base', 'field', null )
 
-	def put( th, value, base, field ):
+	def put( th, value, base, field ): # Saves 147 shifts
 		base[ field ] = value
 	bind_with_name( put, 'put', 'value', 'base', 'field', null )
 
-	def _cons( th, **args ):
+	def _cons( th, **args ): # Saves 27 shifts
 		digress( th, cons(**args) )
 	bind_with_name( _cons, 'cons', 'head_sharp', 'tail', null )
-
-	def Procedure( th, **args ):
-		digress( th, PROCEDURE( **args ) )
-	bind_with_name( Procedure, 'Procedure', 'name', 'script', 'dialect', 'environment', null )
-
-	def Digression( th, **args ):
-		digress( th, DIGRESSION( **args ) )
-	bind_with_name( Digression, 'Digression', 'tokens', 'environment', 'resumption', null )
-
-	def Activation( th, **args ):
-		digress( th, ACTIVATION( **args ) )
-	bind_with_name( Activation, 'Activation', 'cursor', 'operands', 'history', 'scope', 'caller', null )
-
-	def Thread( th, **args ):
-		digress( th, THREAD( **args ) )
-	bind_with_name( Thread, 'Thread', 'activation', 'meta_thread', null )
-
-	def Environment( th, **args ):
-		digress( th, ENVIRONMENT( **args ) )
-	bind_with_name( Environment, 'Environment', 'outer', null )
-
-	def _sharp( th, **args ):
-		digress( th, sharp( **args ) )
-	bind_with_name( _sharp, 'sharp', 'arg', null )
-
-	def _flat( th, **args ):
-		digress( th, flat( **args ) )
-	bind_with_name( _flat, 'flat', 'arg', null )
 
 	def builtin_exec( th, code ):
 		exec code.strip() in globals(), th.activation.cursor.environment.digressor.bindings
@@ -746,10 +710,26 @@ def define_builtins( bindings, global_scope ):
 # Meta-interpreter
 #
 
+not_used_because_they_are_too_slow = """
+( base field )              take { take( base, field ) }        eval nop
+( base field )               get { base[ field ] }              eval nop
+( base f1 f2 )              get2 { base[ f1 ][ f2 ] }           eval nop
+( value base field )         put { base[ field ] = value }      exec nop
+( head_sharp tail )         cons { cons( head_sharp, tail ) }   eval nop
+"""
+
 meta_interpreter_text = """
 () nop
 
-( obj ) tag_edge_symbol     { ':' + tag( obj ) } eval nop
+( name script dialect environment )       Procedure   { PROCEDURE(**dict( locals() )) }   eval nop
+( tokens environment resumption )         Digression  { DIGRESSION(**dict( locals() )) }  eval nop
+( cursor operands history scope caller )  Activation  { ACTIVATION(**dict( locals() )) }  eval nop
+( activation meta_thread )                Thread      { THREAD(**dict( locals() )) }      eval nop
+( outer )                                 Environment { ENVIRONMENT(**dict( locals() )) } eval nop
+
+( obj )          tag_edge_symbol { ':' + tag( obj ) }           eval nop
+( base f1 f2 f3 )           get3 { base[ f1 ][ f2 ][ f3 ] }     eval nop
+( value base field )        give { give( value, base, field ) } exec nop
 
 ( value symbol ) bind 
 		value
@@ -923,7 +903,7 @@ meta_interpreter_text = """
 		scope
 		null
 	Activation act bind
-		act meta_thread Thread
+		act current_thread Thread
 	act thread put
 		act
 		true
