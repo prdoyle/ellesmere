@@ -668,34 +668,6 @@ def define_builtins( bindings, global_scope ):
 	#def bind( func, *args ):
 	#	bind_with_name( func, func.func_name, *args )
 
-	def current_environment( th ):
-		digress( th, th.activation.cursor.environment.digressor )
-	bind_with_name( current_environment, 'current_environment', null )
-
-	def current_thread( th ):
-		digress( th, th )
-	bind_with_name( current_thread, 'current_thread', null )
-
-	def get( th, base, field ): # Saves 163 shifts
-		digress( th, base[ field ] )
-	bind_with_name( get, 'get', 'base', 'field', null )
-
-	def get2( th, base, field1, field2 ): # Saves 146 shifts
-		digress( th, base[ field1 ][ field2 ] )
-	bind_with_name( get2, 'get2', 'base', 'field1', 'field2', null )
-
-	def _take( th, base, field ): # Saves 107 shifts
-		digress( th, take( base, field ) )
-	bind_with_name( _take, 'take', 'base', 'field', null )
-
-	def put( th, value, base, field ): # Saves 147 shifts
-		base[ field ] = value
-	bind_with_name( put, 'put', 'value', 'base', 'field', null )
-
-	def _cons( th, **args ): # Saves 27 shifts
-		digress( th, cons(**args) )
-	bind_with_name( _cons, 'cons', 'head_sharp', 'tail', null )
-
 	def builtin_exec( th, code ):
 		exec code.strip() in globals(), th.activation.cursor.environment.digressor.bindings
 	bind_with_name( builtin_exec, 'exec', 'code', null )
@@ -704,19 +676,46 @@ def define_builtins( bindings, global_scope ):
 		digress( th, eval( code.strip(), globals(), th.activation.cursor.environment.digressor.bindings ) )
 	bind_with_name( builtin_eval, 'eval', 'code', null )
 
+	def buildin_current_thread( th ):
+		digress( th, th )
+	bind_with_name( buildin_current_thread, 'current_thread', null )
+
+	def builtin_current_environment( th ):
+		# I could probably implement this somehow using current_thread and exec,
+		# but it's awkward as long as "bind" uses this, because I have no easy
+		# way to bind "th" before calling this.
+		digress( th, th.activation.cursor.environment.digressor )
+	bind_with_name( builtin_current_environment, 'current_environment', null )
+
+	# These are not really needed, but make a huge impact on performance.
+	# I'd like to keep the level-2 meta-interpreter under one minute right now,
+	# but one day I could eliminate these.
+
+	def builtin_get( th, base, field ): # Saves 163 shifts
+		digress( th, base[ field ] )
+	bind_with_name( builtin_get, 'get', 'base', 'field', null )
+
+	def builtin_get2( th, base, field1, field2 ): # Saves 146 shifts
+		digress( th, base[ field1 ][ field2 ] )
+	bind_with_name( builtin_get2, 'get2', 'base', 'field1', 'field2', null )
+
+	def builtin_take( th, base, field ): # Saves 107 shifts
+		digress( th, take( base, field ) )
+	bind_with_name( builtin_take, 'take', 'base', 'field', null )
+
+	def builtin_put( th, value, base, field ): # Saves 147 shifts
+		base[ field ] = value
+	bind_with_name( builtin_put, 'put', 'value', 'base', 'field', null )
+
+	def builtin_cons( th, **args ): # Saves 27 shifts
+		digress( th, cons(**args) )
+	bind_with_name( builtin_cons, 'cons', 'head_sharp', 'tail', null )
+
 
 #####################################
 #
 # Meta-interpreter
 #
-
-not_used_because_they_are_too_slow = """
-( base field )              take { take( base, field ) }        eval nop
-( base field )               get { base[ field ] }              eval nop
-( base f1 f2 )              get2 { base[ f1 ][ f2 ] }           eval nop
-( value base field )         put { base[ field ] = value }      exec nop
-( head_sharp tail )         cons { cons( head_sharp, tail ) }   eval nop
-"""
 
 meta_interpreter_text = """
 () nop
@@ -914,6 +913,18 @@ meta_interpreter_text = """
 	:OBJECT :PRIMITIVE :PROCEDURE :PROGRAM :SHIFT :STATE
 	:SYMBOL :THREAD :TRUE ]
 
+"""
+
+# Implementing a primitive with eval/exec requires three additional shifts
+# (including the nop) compared with a builtin.  In some cases, that's enough to
+# make the interpreter much slower, so we just leave them as builtins for now.
+#
+not_used_because_they_are_too_slow = """
+( base field )              take { take( base, field ) }        eval nop
+( base field )               get { base[ field ] }              eval nop
+( base f1 f2 )              get2 { base[ f1 ][ f2 ] }           eval nop
+( value base field )         put { base[ field ] = value }      exec nop
+( head_sharp tail )         cons { cons( head_sharp, tail ) }   eval nop
 """
 
 #
