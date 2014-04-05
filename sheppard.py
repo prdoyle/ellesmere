@@ -83,7 +83,7 @@ class Object:
 		else:
 			already_described.add( self )
 			indent_str = " |" * indent
-			return repr( self ) + "{" + string.join([ "\n%s%s:%s" % ( indent_str, field, self._description( self[ field ], already_described, indent+1 ) ) for field in self._fields ], ',' ) + " }"
+			return repr( self ) + "{" + string.join([ "\n%s%s:%s" % ( indent_str, key, self._description( value, already_described, indent+1 ) ) for ( key, value ) in self ], ',' ) + " }"
 
 	def _description( self, value, already_described, indent ):
 		if isinstance( value, Object ):
@@ -277,7 +277,8 @@ def print_stuff( th ):
 def print_reduce_stuff( th, action, environment ):
 	if meta_level( th ) >= printing_level_threshold:
 		act = th.activation
-		debug( ">+  ACTION: ( %s ) %s %s", list_str( action.formal_args ), action.name, action )
+		#debug( ">+  ACTION: ( %s ) %s %s", list_str( action.formal_args ), action.name, action )
+		debug( ">+  ACTION: %s %s", action.name, action )
 		debug( " |    with: %s %s", repr( environment ), environment.bindings )
 
 def print_backtrace( th ):
@@ -352,7 +353,7 @@ def next_state2( state, obj_sharp, probe ):
 	if probe is take_failed: # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj_sharp] exists and state[ tag_edge_symbol(obj_sharp) ] does not, we can't evaluate the latter
 		try:
 			return state[ tag_edge_symbol(obj_sharp) ]
-		except AttributeError:
+		except (AttributeError, KeyError):
 			error( Unexpected_token( state, obj_sharp ) )
 	else:
 		return probe
@@ -395,21 +396,21 @@ shift_count = 0
 def perform_shift( act ):
 	global shift_count
 	shift_count += 1
-	#debug_shift = debug
-	#debug_shift( 'shift' )
+	debug_shift = silence
+	debug_shift( 'shift' )
 	#if act.operands != null and act.operands.head in action_words:
 	#	error( Missed_Action_Word( act.operands.head ) )
-	#debug_shift( "  cursor: %s", repr( act.cursor ) )
+	debug_shift( "  cursor: %s", repr( act.cursor ) )
 	raw_token_sharp = get_token( take( act.cursor.tokens, 'head#' ) )
-	#debug_shift( "  token: %s", repr( flat( raw_token_sharp ) ) )
-	#debug_shift( "    environment: %s", act.cursor.environment )
+	debug_shift( "  token: %s", repr( flat( raw_token_sharp ) ) )
+	debug_shift( "    environment: %s", act.cursor.environment )
 	token_sharp = bound( raw_token_sharp, act.cursor.environment )
 	act.cursor.tokens = act.cursor.tokens.tail
 	finish_digression( act, act.cursor.tokens )
-	#debug_shift( "    value: %s", repr( flat( token_sharp ) ) )
+	debug_shift( "    value: %s", repr( flat( token_sharp ) ) )
 	act.operands = cons( token_sharp, act.operands )
 	new_state = next_state( act.history.head, token_sharp )
-	#debug_shift( "  new_state: %s", repr( new_state ) )
+	debug_shift( "  new_state: %s", repr( new_state ) )
 	act.history = cons( new_state, act.history )
 	if list_length( act.operands ) > 50:
 		error( RuntimeError( "Operand stack overflow" ) )
@@ -566,6 +567,12 @@ def go_world():
 		End_script(),
 		dialect, global_scope )
 
+def maybe_int( symbol ):
+	try:
+		return int( symbol, 0 )
+	except( TypeError, ValueError ):
+		return symbol
+
 def parse_library( name, string, environment ):
 	debug_parse = silence
 	bindings = environment.bindings
@@ -597,12 +604,12 @@ def parse_library( name, string, environment ):
 			name = word
 			try:
 				[ actual_name, dispatch_symbol ] = name.split( '/' )
-				dispatch_symbols.add( dispatch_symbol )
-				edge_symbols.add( actual_name )
+				dispatch_symbols.add( maybe_int( dispatch_symbol ) )
+				edge_symbols.add( maybe_int( actual_name ) )
 			except ValueError: # No slash in the name
 				pass
 		else: # Append word to the script
-			script.append( word )
+			script.append( maybe_int( word ) )
 	done( bindings, name, args, script )
 
 	debug_parse( "    edge_symbols = %s", sorted( edge_symbols ) )
@@ -643,6 +650,7 @@ def polymorphic_postfix_automaton( scope, edge_symbols, dispatch_symbols ):
 	for ( symbol, action ) in action_bindings:
 		try:
 			[ name, dispatch_symbol ] = action.name.split( '/' )
+			[ name, dispatch_symbol ] = [ maybe_int( name ), maybe_int( dispatch_symbol ) ]
 			dispatch_states[ dispatch_symbol ][ name ] = Reduce0( symbol )
 			debug_ppa( 'Polymorphic: state[ %s ][ %s ] = Reduce0( %s ) # %s', dispatch_symbol, name, symbol, repr(dispatch_states[ dispatch_symbol ]) )
 		except ValueError: # No slash in the name
@@ -652,8 +660,7 @@ def polymorphic_postfix_automaton( scope, edge_symbols, dispatch_symbols ):
 
 # Sheppard builtins
 
-def define_builtins( bindings, global_scope ):
-	# TODO: parse_library ought to be able to define primitives itself
+def define_builtins( global_scope ):
 
 	debug_builtins = silence
 	def digress( th, *values ):
@@ -661,7 +668,7 @@ def define_builtins( bindings, global_scope ):
 		th.activation.cursor = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
 
 	def bind_with_name( func, name, *args ):
-		bindings[ 'ACTION_' + name ] = PRIMITIVE( name, func, Stack( list( args ) ), global_scope )
+		global_scope.bindings[ 'ACTION_' + name ] = PRIMITIVE( name, func, Stack( list( args ) ), global_scope )
 		debug_builtins( "Binding primitive: %s %s", name, list(args) )
 
 	# Cython doesn't support func_name
@@ -909,7 +916,7 @@ meta_interpreter_text = """
 	execute2
 
 [ :ACCEPT :ACTIVATION :BINDINGS :BOOLEAN :DIGRESSION
-	:ENVIRONMENT :EOF :FALSE :LIST :MACRO :NOTHING :NULL
+	:ENVIRONMENT :EOF :FALSE :INT :LIST :MACRO :NOTHING :NULL
 	:OBJECT :PRIMITIVE :PROCEDURE :PROGRAM :SHIFT :STATE
 	:SYMBOL :THREAD :TRUE ]
 
@@ -931,13 +938,65 @@ not_used_because_they_are_too_slow = """
 #
 #####################################
 
+fib_text_with_compare = """
+() nop
+( a b ) +   { a+b } eval nop
+( a b ) -   { a-b } eval nop
+( a b ) <=  { a<=b and true or false } eval nop
+
+( n ) print_result { print "*** RESULT IS", n, "***" } exec nop
+
+( n is_base_case ) fib2/:TRUE
+	1
+
+( n is_base_case ) fib2/:FALSE
+	n 1 - fib
+	n 2 - fib
+	+
+
+( n ) fib
+	n
+	n 1 <=
+	fib2
+
+[ :INT :SYMBOL ]
+"""
+
+# This one doesn't work yet because we don't have a way to sharp an INT.
+fib_text_with_dispatch = """
+() nop
+( a b ) +   { a+b } eval nop
+( a b ) -   { a-b } eval nop
+
+( n ) print_result { print "*** RESULT IS", n, "***" } exec nop
+
+( n ) fib
+	n 1 - fib
+	n 2 - fib
+	+
+
+( n ) fib/0
+	1
+
+( n ) fib/1
+	1
+
+[ :INT :SYMBOL ]
+"""
+
+def fib_procedure():
+	env = ENVIRONMENT( null )
+	define_builtins( env )
+	lib = parse_library( "fib", fib_text_with_compare, env )
+	result = PROCEDURE( "fib", List([ 3, "fib", "print_result" ]), lib.dialect, env )
+	return result
 
 sheppard_interpreter_library = None
 def wrap_procedure( inner_procedure ):
 	global global_scope, sheppard_interpreter_library, action_words
 	if sheppard_interpreter_library is None:
 		global_scope = ENVIRONMENT( null )
-		define_builtins( global_scope.bindings, global_scope )
+		define_builtins( global_scope )
 		sheppard_interpreter_library = parse_library( "sheppard_interpreter", meta_interpreter_text, global_scope )
 	action_words = [ s[7:] for s in global_scope.bindings._fields ]
 	nothing.environment = global_scope
@@ -953,13 +1012,15 @@ def wrap_procedure( inner_procedure ):
 def test( depth, plt ):
 	global printing_level_threshold
 	procedure = go_world()
+	#procedure = fib_procedure()
 	printing_level_threshold = plt
 	for _ in range(depth):
 		procedure = wrap_procedure( procedure )
 	if printing_level_threshold < depth:
 		debug( "procedure: %s", str( procedure ) )
+		debug( "   script: %s", str( procedure.script ) )
 		debug( " bindings: %s", str( procedure.environment.bindings ) )
-		debug( "  dialect: %s", sheppard_interpreter_library.dialect.description() )
+		debug( "  dialect: %s", procedure.dialect.description() )
 	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
 
 def pretty_time( t ):
