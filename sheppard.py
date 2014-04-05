@@ -25,7 +25,9 @@ class Object:
 		try:
 			return getattr( self, key )
 		except AttributeError:
-			return self._elements[ key ]
+			raise KeyError # When using dict syntax, we should raise the dict exception, so this can be used as bindings for python exec and eval
+		except TypeError:
+			return self._elements[ key ] # If _elements were implemented as a list, we should catch IndexError and raise KeyError
 
 	def __setitem__( self, key, value ):
 		if isinstance( key, int ):
@@ -71,7 +73,7 @@ class Object:
 		if self is null:
 			return "null"
 		else:
-			return repr( self ) + "{ " + string.join([ "%s:%s" % ( field, repr( self[field] ) ) for field in self._fields ], ', ') + " }"
+			return repr( self ) + "{ " + string.join([ "%s=%s" % ( field, repr( self[field] ) ) for field in self._fields ], ', ') + " }"
 
 	def description( self, already_described=None, indent=1 ):
 		if already_described is None:
@@ -83,7 +85,7 @@ class Object:
 		else:
 			already_described.add( self )
 			indent_str = " |" * indent
-			return repr( self ) + "{" + string.join([ "\n%s%s:%s" % ( indent_str, key, self._description( value, already_described, indent+1 ) ) for ( key, value ) in self ], ',' ) + " }"
+			return repr( self ) + "{" + string.join([ "\n%s%s=%s" % ( indent_str, key, self._description( value, already_described, indent+1 ) ) for ( key, value ) in self ], ',' ) + " }"
 
 	def _description( self, value, already_described, indent ):
 		if isinstance( value, Object ):
@@ -116,7 +118,7 @@ def tag( obj ):
 		if is_symbol( obj ):
 			result = 'SYMBOL'
 		elif is_int( obj ):
-			result = "INT"
+			result = 'INT'
 		else: # All other Sheppard objects are represented by instances of Object
 			result = obj._tag
 	assert( result.isupper() )
@@ -129,6 +131,8 @@ def is_a( obj, t ):
 def sharp( arg ):
 	if isinstance( arg, str ): #if is_a( arg, 'SYMBOL' ):
 		return arg + '#'
+	elif is_a( arg, 'INT' ):
+		return Object( 'INT', value=arg )
 	else:
 		return arg
 
@@ -136,6 +140,9 @@ def flat( arg ):
 	if isinstance( arg, str ): #if is_a( arg, 'SYMBOL' ):
 		assert( arg[-1] == '#' )
 		return arg[:-1]
+	elif is_a( arg, 'INT' ):
+		#debug( "flat( %s ) = %s", arg, arg.value )
+		return arg.value
 	else:
 		return arg
 
@@ -238,12 +245,11 @@ def give( value_sharp, obj, key_sharp ):
 take_failed = 'TAKE_FAILED'
 
 def take( obj, key_sharp ):
-	#debug( "--    %s.take( %s, %s )", repr(obj), repr(key_sharp), repr(default) )
+	#debug( "--TAKE--    %s.take( %s )", repr(obj), repr(key_sharp) )
 	try:
 		return sharp( obj[ flat( key_sharp ) ] )
-	except (KeyError, TypeError):
-		pass
-	return take_failed
+	except KeyError:
+		return take_failed
 
 def make( tag_sharp ):
 	return Object( flat( tag_sharp ) )
@@ -353,7 +359,7 @@ def next_state2( state, obj_sharp, probe ):
 	if probe is take_failed: # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj_sharp] exists and state[ tag_edge_symbol(obj_sharp) ] does not, we can't evaluate the latter
 		try:
 			return state[ tag_edge_symbol(obj_sharp) ]
-		except (AttributeError, KeyError):
+		except KeyError:
 			error( Unexpected_token( state, obj_sharp ) )
 	else:
 		return probe
@@ -401,6 +407,7 @@ def perform_shift( act ):
 	#if act.operands != null and act.operands.head in action_words:
 	#	error( Missed_Action_Word( act.operands.head ) )
 	debug_shift( "  cursor: %s", repr( act.cursor ) )
+	debug_shift( "  state: %s", repr( act.history.head ) )
 	raw_token_sharp = get_token( take( act.cursor.tokens, 'head#' ) )
 	debug_shift( "  token: %s", repr( flat( raw_token_sharp ) ) )
 	debug_shift( "    environment: %s", act.cursor.environment )
@@ -680,6 +687,7 @@ def define_builtins( global_scope ):
 	bind_with_name( builtin_exec, 'exec', 'code', null )
 
 	def builtin_eval( th, code ):
+		# Hmm...  Shouldn't this sharp the result to protect the meta-interpreter?
 		digress( th, eval( code.strip(), globals(), th.activation.cursor.environment.digressor.bindings ) )
 	bind_with_name( builtin_eval, 'eval', 'code', null )
 
@@ -987,7 +995,7 @@ fib_text_with_dispatch = """
 def fib_procedure():
 	env = ENVIRONMENT( null )
 	define_builtins( env )
-	lib = parse_library( "fib", fib_text_with_compare, env )
+	lib = parse_library( "fib", fib_text_with_dispatch, env )
 	result = PROCEDURE( "fib", List([ 3, "fib", "print_result" ]), lib.dialect, env )
 	return result
 
@@ -1011,8 +1019,8 @@ def wrap_procedure( inner_procedure ):
 
 def test( depth, plt ):
 	global printing_level_threshold
-	procedure = go_world()
-	#procedure = fib_procedure()
+	#procedure = go_world()
+	procedure = fib_procedure()
 	printing_level_threshold = plt
 	for _ in range(depth):
 		procedure = wrap_procedure( procedure )
