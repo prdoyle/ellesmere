@@ -687,8 +687,10 @@ def define_builtins( global_scope ):
 	bind_with_name( builtin_exec, 'exec', 'code', null )
 
 	def builtin_eval( th, code ):
-		# Hmm...  Shouldn't this sharp the result to protect the meta-interpreter?
-		digress( th, eval( code.strip(), globals(), th.activation.cursor.environment.digressor.bindings ) )
+		result = eval( code.strip(), globals(), th.activation.cursor.environment.digressor.bindings )
+		# One day, we should sharp/flat all the args and results of eval I guess.  Good thing the meta-interpreter doesn't use ints yet.
+		#result = sharp( result )
+		digress( th, result )
 	bind_with_name( builtin_eval, 'eval', 'code', null )
 
 	def buildin_current_thread( th ):
@@ -1019,8 +1021,8 @@ def wrap_procedure( inner_procedure ):
 
 def test( depth, plt ):
 	global printing_level_threshold
-	#procedure = go_world()
-	procedure = fib_procedure()
+	procedure = go_world()
+	#procedure = fib_procedure()
 	printing_level_threshold = plt
 	for _ in range(depth):
 		procedure = wrap_procedure( procedure )
