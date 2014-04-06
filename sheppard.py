@@ -972,7 +972,6 @@ fib_text_with_compare = """
 [ :INT :SYMBOL ]
 """
 
-# This one doesn't work yet because we don't have a way to sharp an INT.
 fib_text_with_dispatch = """
 () nop
 ( a b ) +   { a+b } eval nop
