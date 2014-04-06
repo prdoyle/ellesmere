@@ -665,6 +665,13 @@ def polymorphic_postfix_automaton( scope, edge_symbols, dispatch_symbols ):
 	default_state[ ':EOF' ] = Accept()
 	return default_state
 
+def parse_procedure( name, library_text, script ):
+	env = ENVIRONMENT( null )
+	define_builtins( env )
+	lib = parse_library( name, library_text, env )
+	result = PROCEDURE( name, List( script ), lib.dialect, env )
+	return result
+
 # Sheppard builtins
 
 def define_builtins( global_scope ):
@@ -979,26 +986,19 @@ fib_text_with_dispatch = """
 
 ( n ) print_result { print "*** RESULT IS", n, "***" } exec nop
 
+( n ) fib/0  1
+( n ) fib/1  1
+
 ( n ) fib
 	n 1 - fib
 	n 2 - fib
 	+
 
-( n ) fib/0
-	1
-
-( n ) fib/1
-	1
-
 [ :INT :SYMBOL ]
 """
 
 def fib_procedure():
-	env = ENVIRONMENT( null )
-	define_builtins( env )
-	lib = parse_library( "fib", fib_text_with_dispatch, env )
-	result = PROCEDURE( "fib", List([ 3, "fib", "print_result" ]), lib.dialect, env )
-	return result
+	return parse_procedure( "fib", fib_text_with_dispatch, [ 3, 'fib', 'print_result' ] )
 
 sheppard_interpreter_library = None
 def wrap_procedure( inner_procedure ):
