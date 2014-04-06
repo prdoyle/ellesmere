@@ -669,10 +669,22 @@ def parse_procedure( name, library_text, script ):
 	env = ENVIRONMENT( null )
 	define_builtins( env )
 	lib = parse_library( name, library_text, env )
+	define_predefined_bindings( env )
 	result = PROCEDURE( name, List( script ), lib.dialect, env )
 	return result
 
 # Sheppard builtins
+
+def define_predefined_bindings( env ):
+	# Note: You usually want to add these after calling
+	# polymorphic_postfix_automaton, because that routine expects all bindings
+	# to be for actions only.
+	bindings = env.bindings
+	bindings[ 'null' ] = null
+	bindings[ 'eof' ] = eof
+	bindings[ 'false' ] = false
+	bindings[ 'true' ] = true
+	bindings[ 'nothing' ] = nothing
 
 def define_builtins( global_scope ):
 
@@ -711,6 +723,11 @@ def define_builtins( global_scope ):
 		digress( th, th.activation.cursor.environment.digressor )
 	bind_with_name( builtin_current_environment, 'current_environment', null )
 
+	def builtin_nop( th ):
+		# It's a pain defining this in every library just so I can use exec and eval
+		pass
+	bind_with_name( builtin_nop, 'nop', null )
+
 	# These are not really needed, but make a huge impact on performance.
 	# I'd like to keep the level-2 meta-interpreter under one minute right now,
 	# but one day I could eliminate these.
@@ -742,8 +759,6 @@ def define_builtins( global_scope ):
 #
 
 meta_interpreter_text = """
-() nop
-
 ( name script dialect environment )       Procedure   { PROCEDURE(**dict( locals() )) }   eval nop
 ( tokens environment resumption )         Digression  { DIGRESSION(**dict( locals() )) }  eval nop
 ( cursor operands history scope caller )  Activation  { ACTIVATION(**dict( locals() )) }  eval nop
@@ -937,7 +952,11 @@ meta_interpreter_text = """
 	:OBJECT :PRIMITIVE :PROCEDURE :PROGRAM :SHIFT :STATE
 	:SYMBOL :THREAD :TRUE ]
 
+[ :BINDINGS :ENVIRONMENT :HASH_TABLE :HASH_ENTRY :INT :PAIR :SYMBOL ]
 """
+# Super cheesy: note above that we need to include all the types of things ever
+# manipulated by programs executed by the meta-interpreter.  This makes a
+# really strong case for some kind of default edge or inheritance mechanism.
 
 # Implementing a primitive with eval/exec requires three additional shifts
 # (including the nop) compared with a builtin.  In some cases, that's enough to
@@ -956,7 +975,6 @@ not_used_because_they_are_too_slow = """
 #####################################
 
 fib_text_with_compare = """
-() nop
 ( a b ) +   { a+b } eval nop
 ( a b ) -   { a-b } eval nop
 ( a b ) <=  { a<=b and true or false } eval nop
@@ -980,7 +998,6 @@ fib_text_with_compare = """
 """
 
 fib_text_with_dispatch = """
-() nop
 ( a b ) +   { a+b } eval nop
 ( a b ) -   { a-b } eval nop
 
@@ -1000,6 +1017,134 @@ fib_text_with_dispatch = """
 def fib_procedure():
 	return parse_procedure( "fib", fib_text_with_dispatch, [ 3, 'fib', 'print_result' ] )
 
+hash_test_text = """
+( a b ) +        { int(a) +  int(b) } eval nop
+( a b ) -        { int(a) -  int(b) } eval nop
+( a b ) *        { int(a) *  int(b) } eval nop
+( a b ) ^        { int(a) ^  int(b) } eval nop
+( a b ) =/:INT   { int(a) == int(b) and true or false } eval nop
+
+( a b ) &&/:FALSE   false
+( a b ) &&/:TRUE    a
+( a b ) ||/:FALSE   a
+( a b ) ||/:TRUE    true
+
+( left right )           PAIR { Object( 'PAIR', **dict(locals()) ) } eval nop
+()                 HASH_TABLE { Object( 'HASH_TABLE', **dict(locals()) ) } eval nop
+( key value next ) HASH_ENTRY { Object( 'HASH_ENTRY', **dict(locals()) ) } eval nop
+
+( value ) sharp { sharp( value ) } eval nop
+
+( value symbol ) bind 
+		value
+		current_environment digressor bindings get2
+	symbol put
+
+( put_value table put_key hash_code candidate_entry key_matches ) hash_put3/:TRUE
+		put_value
+	candidate_entry value put
+
+( put_value table put_key hash_code candidate_entry key_matches ) hash_put3/:FALSE
+		put_value
+		table
+		put_key
+		hash_code
+		candidate_entry next get
+	hash_put2
+
+( put_value table put_key hash_code candidate_entry ) hash_put2/TAKE_FAILED
+		put_key put_value null HASH_ENTRY
+	table hash_code put
+
+( put_value table put_key hash_code candidate_entry ) hash_put2/:NULL
+		put_key put_value  table hash_code get  HASH_ENTRY
+	table hash_code put
+
+( put_value table put_key hash_code candidate_entry ) hash_put2/:HASH_ENTRY
+		put_value table put_key hash_code candidate_entry
+			candidate_entry key get
+			put_key
+		=
+	hash_put3
+
+( value table put_key ) hash_put
+		put_key hash_code
+	hc bind
+		value
+		table
+		put_key
+		hc
+		table hc sharp take
+	hash_put2
+
+( candidate_entry key_matches ) hash_get3/:TRUE
+	candidate_entry value get
+
+( candidate_entry key_matches ) hash_get3/:FALSE
+	candidate_entry next get hash_get2
+
+( get_key candidate_entry ) hash_get2/:HASH_ENTRY
+		candidate_entry
+			candidate_entry key get
+			get_key
+		=
+	hash_get3
+
+( get_key candidate_entry ) hash_get2/TAKE_FAILED
+	TAKE_FAILED
+
+( get_key candidate_entry ) hash_get2/:NULL
+	TAKE_FAILED
+
+( table key ) hash_get
+		key
+			table
+			key hash_code sharp
+		take
+	hash_get2
+
+( value ) hash_code/:INT
+	value
+
+( pair ) hash_code/:PAIR
+	pair left  get hash_code
+	pair right get hash_code
+	^
+
+( a b ) =/:PAIR
+			a left  get b left  get =
+			a right get b right get =
+		&&
+			a left  get b right get =
+			a right get b left  get =
+		&&
+	||
+
+( table left right_limit ) add_pairs/0
+( table left right_limit ) add_pairs
+		left right_limit PAIR
+	pair bind
+		pair
+		table
+		pair
+	hash_put
+		table
+		left
+		right_limit 1 -
+	add_pairs
+
+( table left_limit ) populate_table/0
+( table left_limit ) populate_table
+	table left_limit 2 add_pairs
+	table left_limit 1 - populate_table
+
+() main
+	HASH_TABLE table bind
+	table 2 populate_table
+	{ print "*** Table:", table.description(), "***" } exec nop
+
+[ :BINDINGS :ENVIRONMENT :HASH_TABLE :HASH_ENTRY :INT :PAIR :SYMBOL ]
+"""
 sheppard_interpreter_library = None
 def wrap_procedure( inner_procedure ):
 	global global_scope, sheppard_interpreter_library, action_words
@@ -1007,14 +1152,10 @@ def wrap_procedure( inner_procedure ):
 		global_scope = ENVIRONMENT( null )
 		define_builtins( global_scope )
 		sheppard_interpreter_library = parse_library( "sheppard_interpreter", meta_interpreter_text, global_scope )
+		define_predefined_bindings( global_scope )
 	action_words = [ s[7:] for s in global_scope.bindings._fields ]
 	nothing.environment = global_scope
 	bindings = global_scope.bindings
-	bindings[ 'null' ] = null
-	bindings[ 'eof' ] = eof
-	bindings[ 'false' ] = false
-	bindings[ 'true' ] = true
-	bindings[ 'nothing' ] = nothing
 	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment, 'execute' ]), sheppard_interpreter_library.dialect, global_scope )
 	return outer_procedure
 
@@ -1022,7 +1163,8 @@ def test( depth, plt ):
 	global printing_level_threshold
 	procedure = go_world()
 	#procedure = fib_procedure()
-	printing_level_threshold = plt
+	#procedure = parse_procedure( "hash_test", hash_test_text, ['main'] )
+	#printing_level_threshold = plt
 	for _ in range(depth):
 		procedure = wrap_procedure( procedure )
 	if printing_level_threshold < depth:
@@ -1047,6 +1189,7 @@ def main():
 		depth = int( argv[1] )
 	except IndexError:
 		depth = 0
+	global printing_level_threshold
 	try:
 		printing_level_threshold = int( argv[2] )
 	except IndexError:
