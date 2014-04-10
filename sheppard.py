@@ -1017,6 +1017,9 @@ fib_text_with_dispatch = """
 def fib_procedure():
 	return parse_procedure( "fib", fib_text_with_dispatch, [ 3, 'fib', 'print_result' ] )
 
+# Note: the explicit int() calls in hash_test are just for error detection.  We
+# don't want 'foo'*12345 buliding some immense string by accident.
+
 hash_test_text = """
 ( a b ) +        { int(a) +  int(b) } eval nop
 ( a b ) -        { int(a) -  int(b) } eval nop
