@@ -167,6 +167,17 @@ def list_length( arg ):
 	else:
 		return 1 + list_length( arg.tail )
 
+def INHERITANCE( **bindings ):
+	return Object( 'INHERITANCE', **bindings )
+
+def flat_inheritance( type_list ):
+	result = Object( ':FLAT_INHERITANCE' )
+	result[ ':FLAT_INHERITANCE' ] = ':INHERITANCE' # Ok, not quite flat
+	result[ ':INHERITANCE' ]      = ':ANY'
+	for t in type_list:
+		result[ t ] = ':ANY'
+	return result
+
 def ENVIRONMENT( outer, **bindings ): return Object( 'ENVIRONMENT', outer=outer, bindings=Object('BINDINGS', **bindings) )
 
 def DIGRESSION( tokens, environment, resumption ): return Object( 'DIGRESSION', tokens=tokens, environment=environment, resumption=resumption )
@@ -175,7 +186,7 @@ eof = Object( 'EOF' )
 
 def Nothing():
 	# An endless stack of digressions each returning an endless stream of EOFs
-	result = Object( 'NOTHING', environment=ENVIRONMENT(null) )
+	result = Object( 'NOTHING', environment=ENVIRONMENT( null ) )
 	endless_eof = LIST( eof, null )
 	endless_eof.tail = endless_eof
 	result.tokens = endless_eof
@@ -229,7 +240,7 @@ def meta_level( th ):
 		return 1 + meta_level( th.meta_thread )
 
 def tag_edge_symbol( obj ):
-	return ':' + tag( obj )
+	return ':' + tag( obj ) + '#'
 
 # These functions operate in sharp-land, so they're safe to call directly from
 # a Sheppard program without interfering with the automaton
@@ -355,14 +366,20 @@ def bound( obj_sharp, environment ):
 		#debug( "-- looking up %s in: %s", repr(obj_sharp), environment.bindings )
 		return bound2( obj_sharp, environment, take( environment.bindings, obj_sharp ) )
 
-def next_state2( state, obj_sharp, probe ):
-	if probe is take_failed: # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj_sharp] exists and state[ tag_edge_symbol(obj_sharp) ] does not, we can't evaluate the latter
+def next_state3( state, obj_sharp, probe ):
+	if probe is take_failed:
 		try:
-			return state[ tag_edge_symbol(obj_sharp) ]
+			return state[ ':ANY' ]
 		except KeyError:
-			error( Unexpected_token( state, obj_sharp ) )
+			raise Unexpected_token( state, obj_sharp )
 	else:
 		return probe
+
+def next_state2( state, obj_sharp, possible_match ):
+	if possible_match is take_failed: # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj_sharp] exists and state[ tag_edge_symbol(obj_sharp) ] does not, we can't evaluate the latter
+		return next_state3( state, obj_sharp, take( state, tag_edge_symbol(obj_sharp) ) )
+	else:
+		return possible_match
 
 def next_state( state, obj_sharp ):
 	# First we check of the object is itself a symbol that has an edge from this
@@ -402,22 +419,22 @@ shift_count = 0
 def perform_shift( act ):
 	global shift_count
 	shift_count += 1
-	debug_shift = silence
-	debug_shift( 'shift' )
+	#debug_shift = silence
+	#debug_shift( 'shift' )
 	#if act.operands != null and act.operands.head in action_words:
 	#	error( Missed_Action_Word( act.operands.head ) )
-	debug_shift( "  cursor: %s", repr( act.cursor ) )
-	debug_shift( "  state: %s", repr( act.history.head ) )
+	#debug_shift( "  cursor: %s", repr( act.cursor ) )
+	#debug_shift( "  state: %s", repr( act.history.head ) )
 	raw_token_sharp = get_token( take( act.cursor.tokens, 'head#' ) )
-	debug_shift( "  token: %s", repr( flat( raw_token_sharp ) ) )
-	debug_shift( "    environment: %s", act.cursor.environment )
+	#debug_shift( "  token: %s", repr( flat( raw_token_sharp ) ) )
+	#debug_shift( "    environment: %s", act.cursor.environment )
 	token_sharp = bound( raw_token_sharp, act.cursor.environment )
 	act.cursor.tokens = act.cursor.tokens.tail
 	finish_digression( act, act.cursor.tokens )
-	debug_shift( "    value: %s", repr( flat( token_sharp ) ) )
+	#debug_shift( "    value: %s", repr( flat( token_sharp ) ) )
 	act.operands = cons( token_sharp, act.operands )
 	new_state = next_state( act.history.head, token_sharp )
-	debug_shift( "  new_state: %s", repr( new_state ) )
+	#debug_shift( "  new_state: %s", repr( new_state ) )
 	act.history = cons( new_state, act.history )
 	if list_length( act.operands ) > 50:
 		error( RuntimeError( "Operand stack overflow" ) )
@@ -642,8 +659,11 @@ def polymorphic_postfix_automaton( scope, edge_symbols, dispatch_symbols ):
 	debug_ppa( "dispatch_states: %s", dispatch_states )
 	for state in dispatch_states.values() + [ default_state ]:
 		# The default shift action
-		for symbol in edge_symbols-dispatch_symbols:
-			state[ symbol ] = default_state
+		if True:
+			state[ ':ANY' ] = default_state
+		else:
+			for symbol in edge_symbols-dispatch_symbols:
+				state[ symbol ] = default_state
 		# Symbol-specific shift actions
 		for symbol in dispatch_symbols:
 			state[ symbol ] = dispatch_states[ symbol ]
@@ -765,7 +785,7 @@ meta_interpreter_text = """
 ( activation meta_thread )                Thread      { THREAD(**dict( locals() )) }      eval nop
 ( outer )                                 Environment { ENVIRONMENT(**dict( locals() )) } eval nop
 
-( obj )          tag_edge_symbol { ':' + tag( obj ) }           eval nop
+( obj )          tag_edge_symbol { ':' + tag( obj ) + '#' }     eval nop
 ( base f1 f2 f3 )           get3 { base[ f1 ][ f2 ][ f3 ] }     eval nop
 ( value base field )        give { give( value, base, field ) } exec nop
 
@@ -827,8 +847,19 @@ meta_interpreter_text = """
 		take
 	bound2
 
+( state obj_sharp probe ) next_state3/TAKE_FAILED
+	state :ANY get
+
+( state obj_sharp probe ) next_state3
+	probe
+
 ( state obj_sharp probe ) next_state2/TAKE_FAILED
-	state obj_sharp tag_edge_symbol get
+		state
+		obj_sharp
+			state
+			obj_sharp tag_edge_symbol
+		take
+	next_state3
 
 ( state obj_sharp probe ) next_state2
 	probe
