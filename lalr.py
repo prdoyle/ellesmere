@@ -91,6 +91,9 @@ class Production:
 
 	def __add__( self, other ): return self.make_grammar( other )
 
+	def __hash__( self ): return hash( self.lhs ) ^ hash(tuple( self.rhs ))
+	def __eq__( self, other ): return self.lhs == other.lhs and self.rhs == other.rhs
+
 class Symbol:
 
 	def __init__( self, name ):
@@ -105,6 +108,9 @@ class Symbol:
 
 	def __str__( self ): return self.name
 
+	def __hash__( self ): return hash( self.name )
+	def __eq__( self, other ): return self.name == other.name
+
 symbols_by_name = {}
 name_regex = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
 def define_symbols( x ):
@@ -113,27 +119,169 @@ def define_symbols( x ):
 		symbols_by_name[ name ] = symbol
 		globals()[ name ] = symbol
 
+class LR0_Item:
+
+	def __init__( self, production, dot ):
+		self.production = production
+		self.dot = dot
+
+	def dot_symbol( self ):
+		return self.production.rhs[ self.dot ]
+
+	def is_rightmost( self ):
+		return self.dot == len( self.production.rhs )
+
+	def __hash__( self ): return hash( self.production ) ^ hash( self.dot )
+	def __eq__( self, other ): return self.production == other.production and self.dot == other.dot
+
+	def __repr__( self ): return "LR0_Item( %s, %s )" % ( repr( self.production ), repr( self.dot ) )
+	def __str__( self ): return repr( self )
+
+class Action: pass
+
+class Shift( Action ):
+
+	def __init__( self, target_state ):
+		self.target_state = target_state
+
+class Reduce0( Action ):
+
+	def __init__( self, production ):
+		self.production = production
+
+class Accept( Action ):
+
+	def __init__( self ): pass
+
+class ConflictError: pass
+
+class State:
+
+	def __init__( self ):
+		self.actions = {}
+
+	def __getitem__( self, symbol ):
+		return self.actions[ symbol ]
+
+	def __setitem__( self, symbol, action ):
+		if symbol in self.actions:
+			raise ConflictError
+		else:
+			self.actions[ symbol ] = action
+
 class LR0_Automaton:
 
-	def __init__():
+	def __init__( self, grammar ):
+		"""Dragon 1st ed. p227 algorithm 4.8"""
+
+		self.grammar = grammar
+
+		epsilon = Symbol(" epsilon ")
+		nullable_nonterminals = grammar.nullable_nonterminals()
+
+		def FIRST_relation():
+			"""My own algorithm"""
+			terminals = set()
+			for p in grammar.productions:
+				for s in p.rhs:
+					if s not in grammar.nonterminals:
+						terminals.add( s )
+			debug( "terminals: %s", lstr( terminals ) )
+
+			EXPOSES = dict( ( n, set() ) for n in grammar.nonterminals | terminals)
+			for p in grammar.productions:
+				if not p.rhs:
+					continue
+				EXPOSES[ p.lhs ].add( p.rhs[0] )
+				for ( i, rhs_i ) in enumerate( p.rhs[:-1] ):
+					if rhs_i in nullable_nonterminals:
+						EXPOSES[ p.lhs ].add( p.rhs[ i+1 ] )
+					else:
+						break # rhs_i is not nullable, so it breaks the exposure chain
+			debug( "EXPOSES: %s", dstr( EXPOSES ) )
+
+			immediate_FIRST = dict( ( n, set() ) for n in grammar.nonterminals )
+			for t in terminals:
+				immediate_FIRST[ t ] = set([ t ])
+			for n in nullable_nonterminals:
+				immediate_FIRST[ n ].add( epsilon )
+			for p in grammar.productions:
+				if p.rhs and p.rhs[0] not in grammar.nonterminals:
+					immediate_FIRST[ p.lhs ].add( p.rhs[0] )
+			debug( "immediate_FIRST: %s", dstr( immediate_FIRST ) )
+
+			result = digraph( grammar.nonterminals | terminals, lambda x: EXPOSES[ x ], lambda x: immediate_FIRST[ x ] )
+			return result
+
+		debug( "FIRST: %s", dstr( FIRST_relation() ) )
+		return
+
+		def closure( items ):
+			"""Dragon 1st ed. p223 fig 4.33"""
+			result = set( items )
+			length_before = 0
+			while length_before != len( result ):
+				length_before = len(result)
+				for item in items:
+					try:
+						for production in grammar.productions_by_lhs[ item.dot_symbol() ]:
+							result.add( LR0_Item( production, 0 ) )
+					except IndexError:
+						# item is a reduce item, so there's no dot_symbol.  Ignore it.
+						pass
+			return frozenset( result )
+
+		def goto( items, symbol ):
+			"""Dragon 1st ed. p224"""
+			result = set( LR0_Item( i.production, i.dot + 1 ) for i in items if not i.is_rightmost() and i.dot_symbol() == symbol )
+			return closure( result )
+
+		def all_item_sets( goal_symbol ):
+			"""Dragon 1st ed. p224 fig 4.34"""
+			root_item = LR0_Item( ( Symbol(" accept ") <= [ goal_symbol ] ), 0 )
+			result = set([ closure( frozenset([ root_item ]) ) ])
+			length_before = 0
+			while length_before != len( result ):
+				length_before = len(result)
+				for items in frozenset( result ):
+					dot_symbols = frozenset( i.dot_symbol() for i in items if not i.is_rightmost() )
+					for symbol in dot_symbols:
+						result.add(frozenset( goto( items, symbol ) ))
+			result.discard( frozenset() )
+			return frozenset( result )
+
+		item_sets = list( all_item_sets( grammar.productions[0].lhs ) )
+		indexes_by_item_set = dict( ( item_set, index ) for ( index, item_set ) in enumerate( item_sets ) )
+		states = []
+		for ( index, items ) in enumerate( item_sets ):
+			state = dict()
+			states.append( state )
+			for item in items:
+				# TODO: Accept
+				if item.is_rightmost():
+					for a in follow( item.productions.lhs ):
+						state[ a ] = Reduce( item.production )
+				else:
+					state[ item.dot_symbol() ] = Shift( goto( items, item.dot_symbol() ) )
+		self.states = states # Hmm, initial state??
+
+	def DR( self, transition ):
 		todo()
 
-	def DR( transition ):
+	def reads_set( self, transition ):
 		todo()
 
-	def reads( transition1, transition2 ):
+	def includes_set( self, transition ):
 		todo()
 
-	def includes( transition1, transition2 ):
-		todo()
-
-	def lookback( state, production ):
+	def lookback_set( self, state ):
 		todo()
 
 def digraph( Xs, R, F_prime ):
 	"""
 	DeRemer & Penello p.625
-	R, F_prime are functions
+	R, F_prime are functions.
+	Values flow from Y to X for Y in R( X ); in other words, R needs to give a set of in edges for vertex X in the flow graph, which is counterintuitive.
 	"""
 	F = {}
 	S = []
@@ -143,13 +291,15 @@ def digraph( Xs, R, F_prime ):
 		S.append( X )
 		d = len( S )
 		N[X] = d
-		F[X] = F_prime( X )
-		for Y in Xs:
-			if R( X,Y ):
-				if N[Y] == 0:
-					traverse( Y )
-				N[X] = min( N[X], N[Y] )
-				F[X] |= F[Y]
+		F[X] = set( F_prime( X ) )
+		Ys = R( X )
+		debug( "%d: R( %s ) = %s", d, X, Ys )
+		for Y in Ys:
+			if N[Y] == 0:
+				traverse( Y )
+			N[X] = min( N[X], N[Y] )
+			F[X] = F[X] | F[Y]
+			debug( "%d: %s gets %s", d, X, Y )
 		if N[X] == d:
 			while True:
 				top = S.pop()
@@ -157,22 +307,29 @@ def digraph( Xs, R, F_prime ):
 				if top == X:
 					break
 				else:
-					F[ top ] = set( F[X] ) # Must make a copy
+					F[ top ] = set( F[X] )
+					debug( "%d: %s becomes %s", d, top, X )
 	for X in Xs:
 		if N[X] == 0:
 			traverse( X )
 	return F
 
-def test_nullable():
-	define_symbols("A,B,C,D,E,F,G")
+def test_grammar():
+	define_symbols("A,B,C,D,e,F,g,H")
 	gr = (
 		( A <= [ A, B, B ] )
+		+ ( A <= [ B, g ] )
 		+ ( A <= [] )
 		+ ( B <= [ A ] )
 		+ ( C <= [ A, B ] )
-		+ ( D <= [ E ] )
-		+ ( F <= [ A, G ] )
+		+ ( D <= [ e ] )
+		+ ( F <= [ A, g ] )
+		+ ( H <= [ D, g ] )
 		)
+	return gr
+
+def test_nullable():
+	gr = test_grammar()
 	print repr(gr)
 	print gr
 	nullable = gr.nullable_nonterminals()
@@ -190,9 +347,15 @@ def test_digraph():
 			return n << n/2
 		else:
 			return n/2
-	items = digraph( range(0,57), lambda x,y: y == loopy(x), lambda x:set([x]) ).items()
+	items = digraph( range(0,57), lambda x: set([ loopy(x) ]), lambda x:set([x]) ).items()
 	items.sort()
 	for i in items:
 		print i
 
-test_digraph()
+def test_lr0():
+	gr = test_grammar()
+	print repr(gr)
+	lr0 = LR0_Automaton( gr )
+	print lr0
+
+test_lr0()
