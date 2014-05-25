@@ -80,7 +80,7 @@ class Grammar:
 
 	def augmented( self, goal_symbol ):
 		result = Grammar( self.productions[:] )
-		result.accept_production = ( accept_symbol <= [ goal_symbol, eof_symbol ] )
+		result.accept_production = ( accept_symbol <= [ goal_symbol ] )
 		result.append( result.accept_production )
 		return result
 
@@ -90,6 +90,12 @@ class Grammar:
 			return True
 		except AttributeError:
 			return False
+
+	def goal_symbol( self ):
+		return self.accept_production.rhs[0]
+
+	def accept_symbol( self ):
+		return self.accept_symbol.lhs
 
 class Production:
 
@@ -139,8 +145,8 @@ class Symbol:
 	def __hash__( self ): return hash( self.name )
 	def __eq__( self, other ): return self.name == other.name
 
-accept_symbol = Symbol(" ACCEPT ")
-eof_symbol    = Symbol(" EOF ")
+accept_symbol = Symbol(" S' ")
+eof_symbol    = Symbol(" $ ")
 
 symbols_by_name = {}
 name_regex = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
@@ -166,7 +172,9 @@ class LR0_Item:
 	def __eq__( self, other ): return self.production == other.production and self.dot == other.dot
 
 	def __repr__( self ):
-		return "LR0_Item( %s, %s )" % ( repr( self.production ), repr( self.dot ) )
+		before = self.production.rhs[ :self.dot ]
+		after  = self.production.rhs[ self.dot: ]
+		return "%s <= %s . %s" % ( self.production.lhs, string.join( map(str,before), " " ), string.join( map(str,after), " " ) )
 
 class Action:
 
@@ -176,54 +184,81 @@ class Action:
 	def __repr__( self ):
 		return self.name()
 
+	def __eq__( self, other ):
+		return self.__class__ is other.__class__ and self.components() == other.components()
+
+	def __ne__( self, other ): return not self == other
+
+	def components( self, other ):
+		return None
+
 class Shift( Action ):
 
 	def __init__( self, target_state ):
 		self.target_state = target_state
 
+	def components( self ): return self.target_state
+
 	def __repr__( self ):
 		return "%s( %s )" % ( self.name(), self.target_state )
 
+	def terse( self ): return "s%d" % self.target_state._number
+
 class Reduce( Action ):
 
-	def __init__( self, production ):
+	def __init__( self, production, production_number ):
 		self.production = production
+		self.production_number = production_number
+
+	def components( self ): return self.production
 
 	def __repr__( self ):
 		return "%s( %s )" % ( self.name(), self.production )
+
+	def terse( self ):
+		return "r%d" % ( self.production_number+1 ) # +1 to match 1-based indexing from Dragon book
 
 class Accept( Action ):
 
 	def __init__( self ): pass
 
-class ConflictError:
+	def terse( self ): return "acc"
+
+class ConflictError( Exception ):
 
 	def __init__( self, *actions ):
 		self._actions = actions
 
-	def __repr__( self ):
-		return "ConflictError(%r)" % ( self._actions )
+	def __str__( self ):
+		return str( self._actions )
 
 class State:
 
-	def __init__( self ):
-		self.actions = {}
+	def __init__( self, number ):
+		self._number = number
+		self._actions = {}
 
 	def __getitem__( self, symbol ):
-		return self.actions[ symbol ]
+		return self._actions[ symbol ]
 
 	def __setitem__( self, symbol, action ):
-		if symbol in self.actions:
-			raise ConflictError
-		else:
-			self.actions[ symbol ] = action
+		try:
+			if action != self._actions[ symbol ]:
+				raise ConflictError( self._actions[ symbol ], action )
+		except KeyError:
+			self._actions[ symbol ] = action
+
+	def __repr__( self ):
+		return "s%d" % self._number
+
+def without_dupes( lst ):
+	seen = set()
+	return [ x for x in lst if ( not x in seen ) and ( not seen.add(x) ) ]
 
 class LR0_Automaton:
 
 	def __init__( self, grammar ):
 		"""Dragon 1st ed. p227 algorithm 4.8"""
-
-		goal_symbol   = grammar.productions[0].lhs
 
 		assert( grammar.is_augmented() )
 		self.grammar = grammar
@@ -237,20 +272,22 @@ class LR0_Automaton:
 				if s not in grammar.nonterminals:
 					terminals.add( s )
 		debug( "terminals: %s", lstr( terminals ) )
+		self.terminals = terminals
 
 		def FIRST_relation():
 			"""
 			My own linear-time algorithm using using DeRemer and Penello's "digraph" algorithm.
+			See also Dragon p.189
 			"""
 			debug( "-- FIRST_relation --" )
 			immediate_FIRST = dict( ( n, set() ) for n in grammar.nonterminals )
 			for t in terminals:
-				immediate_FIRST[ t ] = set([ t ])
+				immediate_FIRST[ t ] = set([ t ]) # FIRST rule 1
 			for n in nullable_nonterminals:
-				immediate_FIRST[ n ].add( epsilon )
+				immediate_FIRST[ n ].add( epsilon ) # FIRST rule 2
 			for p in grammar.productions:
 				if p.rhs and p.rhs[0] not in grammar.nonterminals:
-					immediate_FIRST[ p.lhs ].add( p.rhs[0] )
+					immediate_FIRST[ p.lhs ].add( p.rhs[0] ) # Part of FIRST rule 3: "everything in FIRST(Y1) is surely in FIRST(X)"
 			debug( "immediate_FIRST: %s", dstr( immediate_FIRST ) )
 
 			CAN_START_WITH = dict( ( n, set() ) for n in grammar.nonterminals | terminals )
@@ -265,101 +302,144 @@ class LR0_Automaton:
 						break # rhs_i is not nullable, so it breaks the CAN_START_WITH chain
 			debug( "CAN_START_WITH: %s", dstr( CAN_START_WITH ) )
 
+			# Am I actually getting any value out of digraph here?  Is it correct?  Is it nontrivial?
 			result = digraph( grammar.nonterminals | terminals, CAN_START_WITH, immediate_FIRST )
 			return result
 
-		#debug( "FIRST: %s", dstr( FIRST_relation() ) )
+		debug( "FIRST: %s", dstr( FIRST_relation() ) )
 
 		def FOLLOW_relation( FIRST ):
 			"""
 			My own linear-time algorithm using using DeRemer and Penello's "digraph" algorithm.
+			See also Dragon p.189
 			"""
 			debug( "-- FOLLOW_relation --" )
 			immediate_FOLLOW = dict( ( n, set() ) for n in grammar.nonterminals )
+			immediate_FOLLOW[ grammar.goal_symbol() ].add( eof_symbol ) # FOLLOW rule 1
 			for p in grammar.productions:
 				for ( i, s ) in enumerate( p.rhs[:-1] ):
 					if s in grammar.nonterminals:
-						immediate_FOLLOW[ s ] |= FIRST[ p.rhs[ i+1 ] ]
+						# FOLLOW rule 2, combined with definition of FIRST(beta) minus epsilon
+						for subsequent in p.rhs[ i+1: ]:
+							immediate_FOLLOW[ s ] |= FIRST[ subsequent ]
+							immediate_FOLLOW[ s ].discard( epsilon )
+							if subsequent not in nullable_nonterminals:
+								break
 
-			CAN_END_UP_BEFORE = dict( ( n, set() ) for n in grammar.nonterminals )
+			# CAN_END captures FOLLOW rule 3
+			CAN_END = dict( ( n, set() ) for n in grammar.nonterminals )
 			for p in grammar.productions:
-				for ( i, s ) in enumerate( p.rhs[1:-1] ):
-					neighbors = ( p.rhs[ i-1 ], p.rhs[ i+1 ] )
-					if s in nullable_nonterminals and set( neighbors ) <= grammar.nonterminals:
-						[ left, right ] = neighbors
-						CAN_END_UP_BEFORE[ left ].add( right )
-			result = digraph( grammar.nonterminals, CAN_END_UP_BEFORE, immediate_FOLLOW )
+				if p.rhs and p.rhs[-1] in grammar.nonterminals:
+					CAN_END[ p.rhs[-1] ].add( p.lhs )
+				for ( i, s ) in enumerate( p.rhs[:-1] ):
+					if s in grammar.nonterminals:
+						epilogue = p.rhs[ i+1: ]
+						debug( "Exploring %s epilogue %s because of production %s", s, epilogue, p )
+						if set(epilogue) <= nullable_nonterminals:
+							CAN_END[ s ].add( p.lhs )
+			debug( "-- i_FOLLOW: %s", immediate_FOLLOW )
+			debug( "--  CAN_END: %s", CAN_END )
+			result = digraph( grammar.nonterminals, CAN_END, immediate_FOLLOW )
 			return result
 
 		#debug( "FOLLOW: %s", dstr( FOLLOW_relation( FIRST_relation() ) ) )
 
 		def closure( items ):
 			"""Dragon 1st ed. p223 fig 4.33"""
-			result = set( items )
+			# Note: we use lists here instead of sets to preserve ordering so we can
+			# validate results against the Dragon book.  Sets would be more efficient.
+			#result = set( items )
+			result = list( items )
 			length_before = 0
 			while length_before != len( result ):
 				length_before = len(result)
-				for item in items:
+				for item in list(result):
 					try:
 						for production in grammar.productions_by_lhs[ item.dot_symbol() ]:
-							result.add( LR0_Item( production, 0 ) )
+							item = LR0_Item( production, 0 )
+							#result.add( item )
+							if not item in result:
+								result.append( item )
 					except IndexError:
 						# item is a reduce item, so there's no dot_symbol.  Ignore it.
 						pass
 					except KeyError:
 						# Dot symbol is a terminal.  Ignore it
 						pass
-			return frozenset( result )
+			#return frozenset( result )
+			return result
 
-		def goto( items, symbol ):
+		def goto_items( items, symbol ):
 			"""Dragon 1st ed. p224"""
 			result = set( LR0_Item( i.production, i.dot + 1 ) for i in items if not i.is_rightmost() and i.dot_symbol() == symbol )
 			return closure( result )
 
+		def goto_state( items, symbol ):
+			return states[ indexes_by_item_set[ frozenset(goto_items(items,symbol)) ] ]
+
+		#
+		# SLR table construction, Dragon 1st eg. p227 Algorithm 4.8
+		#
+
 		def all_item_sets():
 			"""Dragon 1st ed. p224 fig 4.34"""
 			root_item = LR0_Item( grammar.accept_production, 0 )
-			result = set([ closure( frozenset([ root_item ]) ) ])
+			I0 = closure([ root_item ])
+			debug( "I0: %s" % I0 )
+			result = [ I0 ]
+			already_added = set( frozenset( I0 ) )
 			length_before = 0
 			while length_before != len( result ):
 				length_before = len(result)
-				for items in frozenset( result ):
-					dot_symbols = frozenset( i.dot_symbol() for i in items if not i.is_rightmost() )
+				for items in result:
+					#dot_symbols = frozenset( i.dot_symbol() for i in items if not i.is_rightmost() )
+					dot_symbols = [ i.dot_symbol() for i in items if not i.is_rightmost() ]
+					dot_symbols = without_dupes( dot_symbols )
 					for symbol in dot_symbols:
-						result.add(frozenset( goto( items, symbol ) ))
-			result.discard( frozenset() )
-			return frozenset( result )
+						goto = goto_items( items, symbol )
+						goto_set = frozenset( goto )
+						if goto and goto_set not in already_added:
+							already_added.add( goto_set )
+							debug( "I%d: %s" % ( len(result), goto ) )
+							result.append( goto )
+			return result
 
-		def set_action( state, symbol, action ):
-			try:
-				if state[ symbol ] != action:
-					raise ConflictError( state[ symbol ], action )
-			except KeyError:
-				state[ symbol ] == action
+		item_sets = all_item_sets()
+		indexes_by_item_set = dict( ( frozenset(item_set), index ) for ( index, item_set ) in enumerate( item_sets ) )
+		states = [ State(i) for i in range( 0, len(item_sets) ) ]
 
 		FOLLOW = FOLLOW_relation( FIRST_relation() )
-		item_sets = list( all_item_sets() )
-		indexes_by_item_set = dict( ( item_set, index ) for ( index, item_set ) in enumerate( item_sets ) )
-		states = []
+		debug( "FOLLOW: %s", FOLLOW )
 		for ( index, items ) in enumerate( item_sets ):
-			state = dict()
-			states.append( state )
+			state = states[ index ]
 			for item in items:
 				if item.is_rightmost():
-					for a in FOLLOW[ item.production.lhs ]:
-						if item.production.lhs is goal_symbol:
-							# case 2c
-							state[ a ] = Accept()
-						else:
-							# case 2b
-							state[ a ] = Reduce( item.production )
+					if item.production is self.grammar.accept_production:
+						# case 2c
+						state[ eof_symbol ] = Accept()
+					else:
+						# case 2b
+						for a in FOLLOW[ item.production.lhs ]:
+							state[ a ] = Reduce( item.production, self.grammar.productions.index( item.production ) )
 				else:
 					# case 2a
-					state[ item.dot_symbol() ] = Shift( goto( items, item.dot_symbol() ) )
+					state[ item.dot_symbol() ] = Shift( goto_state( items, item.dot_symbol() ) )
 		self.states = states # Hmm, initial state??
 
 	def __repr__( self ):
 		return repr( self.__dict__ )
+
+	def print_table( self ):
+		def entry( state, symbol ):
+			try:
+				return state[symbol].terse()
+			except KeyError:
+				return ""
+		terminals = list( self.terminals )
+		nonterminals = self.grammar.nonterminals
+		print "STATE" + string.join( "\t%r" % t for t in terminals ) + string.join( "\t%r" % n for n in nonterminals )
+		for state in self.states:
+			print repr(state) + string.join( "\t%s" % entry( state,t ) for t in terminals ) + string.join( "\t%s" % entry( state,n ) for n in nonterminals )
 
 class LALR_Automaton( LR0_Automaton ):
 
@@ -449,6 +529,36 @@ def SLR_grammar():
 		+ ( E <= [ n ] )
 		)
 
+def grammar_411():
+	"""Dragon p.176"""
+	define_symbols("E,Ep,T,Tp,F,plus,splat,i,l,r")
+	return (
+		( E <= [ T,Ep ] )
+		+ ( Ep <= [ plus,T,Ep ] ) + ( Ep <= [] )
+		+ ( T <= [ F,Tp ] )
+		+ ( Tp <= [ splat,F,Tp] ) + ( Tp <= [] )
+		+ ( F <= [ l,E,r ] ) + ( F <= [ i ] )
+		)
+
+def grammar_419():
+	"""Dragon p.222"""
+	# Item sets in Fig 4.35 p.225
+	# Parsing table in Fig 4.31 p.219
+	define_symbols("E,T,F,plus,splat,i,l,r")
+	return (
+		( E <= [ E,plus,T ] ) + ( E <= [ T ] )
+		+ ( T <= [ T,splat,F ] ) + ( T <= [ F ] )
+		+ ( F <= [ l, E, r ] ) + ( F <= [ i ] )
+		)
+
+def grammar_421():
+	"""Dragon p.231"""
+	define_symbols("S,C,c,d")
+	return ( ( S <= [ C,C ] )
+		+ ( C <= [ c,C ] )
+		+ ( C <= [ d ] )
+		)
+
 def LALR_grammar():
 	"""Dragon p.229 -- not SLR"""
 	define_symbols("S,L,R,eq,splat,i")
@@ -507,11 +617,13 @@ def test_digraph():
 	for i in items:
 		print i
 
-def test_lr0():
-	gr = test_grammar()
+def test_SLR( gr ):
 	gr = gr.augmented( gr.productions[0].lhs )
 	print repr(gr)
 	lr0 = LR0_Automaton( gr )
-	print lr0
+	# Should look like fig 4.31 p 219
+	lr0.terminals = [ i, plus, splat, l, r, eof_symbol ]
+	lr0.grammar.nonterminals = [ E, T, F ]
+	lr0.print_table()
 
-test_lr0()
+test_SLR( grammar_419() )
