@@ -8,6 +8,9 @@ import string
 def debug( s, *v ):
 	print s % v
 
+def silence( s, *v ):
+	pass
+
 def lstr( vs ):
 	return "[%s]" % string.join([ str(v) for v in vs ], ', ')
 
@@ -45,6 +48,7 @@ class Grammar:
 		return string.join([ str(p) for p in self.productions ], ' + ')
 
 	def complicated_nullable_nonterminals( self ):
+		debug_cnn = silence
 		possibly_null_productions = set( p for p in self.productions if p.rhs_is_composed_of( self.nonterminals ) )
 		productions_with_rhs_nonterminal = {}
 		for s in set( p.lhs for p in possibly_null_productions ):
@@ -55,14 +59,14 @@ class Grammar:
 					productions_with_rhs_nonterminal[ s ].add( p )
 				except KeyError:
 					pass # s is not the lhs of any possible null production, so ignore it
-		debug( "productions_with_rhs_nonterminal:\n%s", dstr( productions_with_rhs_nonterminal ) )
+		debug_cnn( "productions_with_rhs_nonterminal:\n%s", dstr( productions_with_rhs_nonterminal ) )
 		known_null_productions = set( p for p in possibly_null_productions if not p.rhs )
 		todo = set( p.lhs for p in known_null_productions )
-		debug( "initial todo: %s", lstr(todo) )
+		debug_cnn( "initial todo: %s", lstr(todo) )
 		result = set()
 		while todo:
 			nullable = todo.pop()
-			debug( "pop: %s", str(nullable) )
+			debug_cnn( "pop: %s", str(nullable) )
 			result.add( nullable )
 			# Inefficient: rescans productions unnecessarily, and rescans each p.rhs repeatedly...
 			todo.update( p.lhs for p in productions_with_rhs_nonterminal[ nullable ] if p.lhs not in result and p.rhs_is_composed_of( result ) )
@@ -192,6 +196,8 @@ class Action:
 	def components( self, other ):
 		return None
 
+	def is_shift( self ): return False
+
 class Shift( Action ):
 
 	def __init__( self, target_state ):
@@ -203,6 +209,8 @@ class Shift( Action ):
 		return "%s( %s )" % ( self.name(), self.target_state )
 
 	def terse( self ): return "s%d" % self.target_state._number
+
+	def is_shift( self ): return True
 
 class Reduce( Action ):
 
@@ -234,9 +242,10 @@ class ConflictError( Exception ):
 
 class State:
 
-	def __init__( self, number ):
+	def __init__( self, number, items ):
 		self._number = number
 		self._actions = {}
+		self._items = items
 
 	def __getitem__( self, symbol ):
 		return self._actions[ symbol ]
@@ -251,44 +260,59 @@ class State:
 	def __repr__( self ):
 		return "s%d" % self._number
 
+	def out_edges( self ):
+		return self._actions.keys()
+
 def without_dupes( lst ):
 	seen = set()
 	return [ x for x in lst if ( not x in seen ) and ( not seen.add(x) ) ]
 
-class LR0_Automaton:
+class SLR_Automaton:
 
 	def __init__( self, grammar ):
 		"""Dragon 1st ed. p227 algorithm 4.8"""
+
+		debug_slr = silence
 
 		assert( grammar.is_augmented() )
 		self.grammar = grammar
 
 		epsilon = Symbol(" epsilon ")
 		nullable_nonterminals = grammar.nullable_nonterminals()
+		self.nullable_nonterminals = nullable_nonterminals
 
 		terminals = set()
 		for p in grammar.productions:
 			for s in p.rhs:
 				if s not in grammar.nonterminals:
 					terminals.add( s )
-		debug( "terminals: %s", lstr( terminals ) )
+		debug_slr( "terminals: %s", lstr( terminals ) )
 		self.terminals = terminals
 
 		def FIRST_relation():
 			"""
 			My own linear-time algorithm using using DeRemer and Penello's "digraph" algorithm.
+			Actually, it's linear-time in the CAN_START_WITH relation, which is O(mn) for m
+			production symbols and n nullable nonterminals.
 			See also Dragon p.189
 			"""
-			debug( "-- FIRST_relation --" )
+			debug_slr( "-- FIRST_relation --" )
 			immediate_FIRST = dict( ( n, set() ) for n in grammar.nonterminals )
 			for t in terminals:
-				immediate_FIRST[ t ] = set([ t ]) # FIRST rule 1
+				# FIRST rule 1
+				immediate_FIRST[ t ] = set([ t ])
 			for n in nullable_nonterminals:
-				immediate_FIRST[ n ].add( epsilon ) # FIRST rule 2
-			for p in grammar.productions:
-				if p.rhs and p.rhs[0] not in grammar.nonterminals:
-					immediate_FIRST[ p.lhs ].add( p.rhs[0] ) # Part of FIRST rule 3: "everything in FIRST(Y1) is surely in FIRST(X)"
-			debug( "immediate_FIRST: %s", dstr( immediate_FIRST ) )
+				# FIRST rule 2 kinda.
+				# It doesn't say nullable -- it says there must be a production
+				# n -> epsilon, but our version is ok because rule 3 ends up
+				# putting epsilon in the FIRST set for every nullable nonterminal anyway
+				immediate_FIRST[ n ].add( epsilon )
+			if False: # I don't think we need this.  The CAN_START_WITH captures it.
+				for p in grammar.productions:
+					# Part of FIRST rule 3: "everything in FIRST(Y1) is surely in FIRST(X)"
+					if p.rhs and p.rhs[0] not in grammar.nonterminals:
+						immediate_FIRST[ p.lhs ].add( p.rhs[0] )
+			debug_slr( "immediate_FIRST: %s", dstr( immediate_FIRST ) )
 
 			CAN_START_WITH = dict( ( n, set() ) for n in grammar.nonterminals | terminals )
 			for p in grammar.productions:
@@ -300,26 +324,26 @@ class LR0_Automaton:
 						CAN_START_WITH[ p.lhs ].add( p.rhs[ i+1 ] )
 					else:
 						break # rhs_i is not nullable, so it breaks the CAN_START_WITH chain
-			debug( "CAN_START_WITH: %s", dstr( CAN_START_WITH ) )
+			debug_slr( "CAN_START_WITH: %s", dstr( CAN_START_WITH ) )
 
-			# Am I actually getting any value out of digraph here?  Is it correct?  Is it nontrivial?
 			result = digraph( grammar.nonterminals | terminals, CAN_START_WITH, immediate_FIRST )
 			return result
 
-		debug( "FIRST: %s", dstr( FIRST_relation() ) )
+		debug_slr( "FIRST: %s", dstr( FIRST_relation() ) )
 
 		def FOLLOW_relation( FIRST ):
 			"""
 			My own linear-time algorithm using using DeRemer and Penello's "digraph" algorithm.
 			See also Dragon p.189
 			"""
-			debug( "-- FOLLOW_relation --" )
+			debug_slr( "-- FOLLOW_relation --" )
 			immediate_FOLLOW = dict( ( n, set() ) for n in grammar.nonterminals )
 			immediate_FOLLOW[ grammar.goal_symbol() ].add( eof_symbol ) # FOLLOW rule 1
 			for p in grammar.productions:
 				for ( i, s ) in enumerate( p.rhs[:-1] ):
 					if s in grammar.nonterminals:
 						# FOLLOW rule 2, combined with definition of FIRST(beta) minus epsilon
+						# TODO: This actually makes the algorithm n^2 so I kinda lied.
 						for subsequent in p.rhs[ i+1: ]:
 							immediate_FOLLOW[ s ] |= FIRST[ subsequent ]
 							immediate_FOLLOW[ s ].discard( epsilon )
@@ -333,16 +357,17 @@ class LR0_Automaton:
 					CAN_END[ p.rhs[-1] ].add( p.lhs )
 				for ( i, s ) in enumerate( p.rhs[:-1] ):
 					if s in grammar.nonterminals:
+						# TODO: This is n^2 but could be more efficient if we worked right-to-left
 						epilogue = p.rhs[ i+1: ]
-						debug( "Exploring %s epilogue %s because of production %s", s, epilogue, p )
+						debug_slr( "Exploring %s epilogue %s because of production %s", s, epilogue, p )
 						if set(epilogue) <= nullable_nonterminals:
 							CAN_END[ s ].add( p.lhs )
-			debug( "-- i_FOLLOW: %s", immediate_FOLLOW )
-			debug( "--  CAN_END: %s", CAN_END )
+			debug_slr( "-- i_FOLLOW: %s", immediate_FOLLOW )
+			debug_slr( "--  CAN_END: %s", CAN_END )
 			result = digraph( grammar.nonterminals, CAN_END, immediate_FOLLOW )
 			return result
 
-		#debug( "FOLLOW: %s", dstr( FOLLOW_relation( FIRST_relation() ) ) )
+		#debug_slr( "FOLLOW: %s", dstr( FOLLOW_relation( FIRST_relation() ) ) )
 
 		def closure( items ):
 			"""Dragon 1st ed. p223 fig 4.33"""
@@ -385,7 +410,7 @@ class LR0_Automaton:
 			"""Dragon 1st ed. p224 fig 4.34"""
 			root_item = LR0_Item( grammar.accept_production, 0 )
 			I0 = closure([ root_item ])
-			debug( "I0: %s" % I0 )
+			debug_slr( "I0: %s" % I0 )
 			result = [ I0 ]
 			already_added = set( frozenset( I0 ) )
 			length_before = 0
@@ -400,16 +425,16 @@ class LR0_Automaton:
 						goto_set = frozenset( goto )
 						if goto and goto_set not in already_added:
 							already_added.add( goto_set )
-							debug( "I%d: %s" % ( len(result), goto ) )
+							debug_slr( "I%d: %s" % ( len(result), goto ) )
 							result.append( goto )
 			return result
 
 		item_sets = all_item_sets()
 		indexes_by_item_set = dict( ( frozenset(item_set), index ) for ( index, item_set ) in enumerate( item_sets ) )
-		states = [ State(i) for i in range( 0, len(item_sets) ) ]
+		states = [ State( index, items ) for ( index, items ) in enumerate( item_sets ) ]
 
 		FOLLOW = FOLLOW_relation( FIRST_relation() )
-		debug( "FOLLOW: %s", FOLLOW )
+		debug_slr( "FOLLOW: %s", FOLLOW )
 		for ( index, items ) in enumerate( item_sets ):
 			state = states[ index ]
 			for item in items:
@@ -441,19 +466,53 @@ class LR0_Automaton:
 		for state in self.states:
 			print repr(state) + string.join( "\t%s" % entry( state,t ) for t in terminals ) + string.join( "\t%s" % entry( state,n ) for n in nonterminals )
 
-class LALR_Automaton( LR0_Automaton ):
+class LALR_Automaton( SLR_Automaton ):
 
 	def __init__( self, grammar ):
-		LR0_Automaton.__init__( self, grammar )
+		"""
+		DeRemer and Penello p.633
+		"""
+		SLR_Automaton.__init__( self, grammar )
+		self.print_table()
+		# A
+		nonterminal_transitions = [ ( state, n ) for state in self.states for n in state.out_edges() if n in self.grammar.nonterminals and state[n].is_shift() ]
+		debug( "nonterminal_transitions: %s", nonterminal_transitions )
+		# B
+		DR = dict( (nt, self.DR_set(nt)) for nt in nonterminal_transitions )
+		# C
+		reads = dict( (nt, self.reads_set(nt)) for nt in nonterminal_transitions )
+		# D
+		Read = digraph( nonterminal_transitions, reads, DR )
+		debug( "Read: %s", Read )
+		# E
+		includes = self.includes_relation()
+		# F
+		# G
+		# H
 
-	def DR( self, transition ):
-		todo()
+	def DR_set( self, transition ):
+		( state, symbol ) = transition
+		succ = state[ symbol ].target_state
+		return [ t for t in succ.out_edges() if t in self.terminals ]
 
 	def reads_set( self, transition ):
-		todo()
+		( state, symbol ) = transition
+		succ = state[ symbol ].target_state
+		return [ ( succ, n ) for n in succ.out_edges() if n in self.grammar.nonterminals ]
 
-	def includes_set( self, transition ):
-		todo()
+	def includes_relation( self ):
+		"As defined in DeRemer & Penello p.621"
+		result = dict( ( (p,A), [] ) for p in self.states for A in p.out_edges() if A in self.grammar.nonterminals )
+		for p_prime in self.states:
+			for production in [ item.production for item in p_prime._items if item.dot == 0 ]:
+				B = production.lhs
+				p = p_prime
+				for (i,A) in enumerate( production.rhs ):
+					r = p[A].target_state # TODO: For a conflict, go through all the shifts
+					if A in self.grammar.nonterminals and set( production.rhs[ i+1: ] ) <= self.nullable_nonterminals:
+						result[ (p,A) ].append( (p_prime,B) )
+					p = r
+		debug( "includes_relation: %s" % result )
 
 	def lookback_set( self, state ):
 		todo()
@@ -462,8 +521,10 @@ def digraph( Xs, R, F_prime ):
 	"""
 	DeRemer & Penello p.625
 	R, F_prime are dicts.
-	Values flow from Y to X for Y in R( X ); in other words, R needs to give a set of in edges for vertex X in the flow graph, which is counterintuitive.
+	Values flow from Y to X for Y in R( X ); in other words, R needs to give a
+	set of in-edges for vertex X in the flow graph, which is a bit counterintuitive.
 	"""
+	debug_digraph = silence
 	F = {}
 	S = []
 	N = dict( (X,0) for X in Xs )
@@ -473,14 +534,14 @@ def digraph( Xs, R, F_prime ):
 		d = len( S )
 		N[X] = d
 		F[X] = set( F_prime[ X ] )
-		debug( "%d: F[%s] initialized to %s", d, X, F[X] )
+		debug_digraph( "%d: F[%s] initialized to %s", d, X, F[X] )
 		for Y in R[ X ]:
 			if N[Y] == 0:
 				traverse( Y )
 			if X != Y:
 				N[X] = min( N[X], N[Y] )
 				F[X] = F[X] | F[Y]
-				debug( "%d: F[%s] includes F[%s]", d, X, Y )
+				debug_digraph( "%d: F[%s] includes F[%s]", d, X, Y )
 		if N[X] == d:
 			while True:
 				top = S.pop()
@@ -489,7 +550,7 @@ def digraph( Xs, R, F_prime ):
 					break
 				else:
 					F[ top ] = set( F[X] )
-					debug( "%d: F[%s] becomes F[%s]", d, top, X )
+					debug_digraph( "%d: F[%s] becomes F[%s]", d, top, X )
 	for X in Xs:
 		if N[X] == 0:
 			traverse( X )
@@ -509,13 +570,19 @@ def test_grammar():
 		)
 	return gr
 
+plus  = Symbol('+')
+splat = Symbol('*')
+i     = Symbol('id')
+l     = Symbol('(')
+r     = Symbol(')')
+
 def LR0_grammar():
 	"""https://en.wikipedia.org/w/index.php?title=LR_parser&oldid=597146215#Grammar_for_the_Example_A.2A2_.2B_1"""
-	define_symbols("Goal,Sums,Products,Value,plus,times,a,b")
+	define_symbols("Goal,Sums,Products,Value,a,b")
 	return (  ( Goal <= [ Sums, eof ] )
 		+ ( Sums <= [ Sums, plus, Products ] )
 		+ ( Sums <= [ Products ] )
-		+ ( Products <= [ Products, times, Value ] )
+		+ ( Products <= [ Products, splat, Value ] )
 		+ ( Products <= [ Value ] )
 		+ ( Value <= [ a ] )
 		+ ( Value <= [ b ] )
@@ -531,7 +598,7 @@ def SLR_grammar():
 
 def grammar_411():
 	"""Dragon p.176"""
-	define_symbols("E,Ep,T,Tp,F,plus,splat,i,l,r")
+	define_symbols("E,Ep,T,Tp,F")
 	return (
 		( E <= [ T,Ep ] )
 		+ ( Ep <= [ plus,T,Ep ] ) + ( Ep <= [] )
@@ -544,7 +611,7 @@ def grammar_419():
 	"""Dragon p.222"""
 	# Item sets in Fig 4.35 p.225
 	# Parsing table in Fig 4.31 p.219
-	define_symbols("E,T,F,plus,splat,i,l,r")
+	define_symbols("E,T,F")
 	return (
 		( E <= [ E,plus,T ] ) + ( E <= [ T ] )
 		+ ( T <= [ T,splat,F ] ) + ( T <= [ F ] )
@@ -578,6 +645,34 @@ def LR1_grammar():
 		+ ( S <= [ b, E, d ] )
 		+ ( E <= [ e ] )
 		+ ( F <= [ e ] )
+		)
+
+def bermudez_grammar():
+	"""Bermudez and Logothetis p.237 Fig. 5"""
+	# LALR, but neither SLR nor NQLALR
+	define_symbols("S,A,B,a,b,c,d,g")
+	return ( ( S <= [ a, g, d ] )
+		+ ( S <= [ a, A, c ] )
+		+ ( S <= [ b, A, d ] )
+		+ ( S <= [ b, g, c ] )
+		+ ( A <= [ B ] )
+		+ ( B <= [ g ] )
+		)
+
+def omega_buster_grammar():
+	"""Grammar for which an omega-transfer doesn't work"""
+	# Seems to be SLR?
+	define_symbols("S,H,h,I,i,J,j,K,k,L,l,M,m,N,n,p,q")
+	# inheritance p > h and q > i
+	return ( ( S <= [ h, J ] )
+		+ ( S <= [ i, J ] )
+		+ ( S <= [ i, K ] )
+		+ ( J <= [ j, L ] )
+		+ ( K <= [ k, L ] )
+		+ ( L <= [ l, m ] )
+		+ ( S <= [ p, j, l, n ] )
+		+ ( S <= [ q, k, N ] )
+		+ ( N <= [ l, n ] )
 		)
 
 def test_nullable():
@@ -620,10 +715,25 @@ def test_digraph():
 def test_SLR( gr ):
 	gr = gr.augmented( gr.productions[0].lhs )
 	print repr(gr)
-	lr0 = LR0_Automaton( gr )
-	# Should look like fig 4.31 p 219
-	lr0.terminals = [ i, plus, splat, l, r, eof_symbol ]
-	lr0.grammar.nonterminals = [ E, T, F ]
-	lr0.print_table()
+	automaton = SLR_Automaton( gr )
+	if True:
+		# This makes grammar_419 look like fig 4.31 p 219
+		automaton.terminals = [ i, plus, splat, l, r, eof_symbol ]
+		automaton.grammar.nonterminals = [ E, T, F ]
+	automaton.print_table()
 
+def test_LALR( gr ):
+	gr = gr.augmented( gr.productions[0].lhs )
+	automaton = LALR_Automaton( gr )
+
+#test_SLR( grammar_411() )
 test_SLR( grammar_419() )
+#test_SLR( omega_buster_grammar() )
+
+if False:
+	try:
+		test_SLR( LALR_grammar() )
+	except ConflictError:
+		print "LALR_grammar is not SLR"
+
+#test_LALR( LALR_grammar() )
