@@ -4,6 +4,20 @@ import string, re, time
 from itertools import islice
 from sys import argv
 
+def debug( message, *args ):
+	if args:
+		message = message % args
+	print message
+
+def silence( message, *args ):
+	pass
+
+def error( exception ):
+	debug( "!! ERROR: %s", exception )
+	print_backtrace( current_thread )
+	raise exception
+
+debug_object = silence
 object_counter = 0
 
 class Object:
@@ -27,10 +41,13 @@ class Object:
 		except AttributeError:
 			raise KeyError # When using dict syntax, we should raise the dict exception, so this can be used as bindings for python exec and eval
 		except TypeError:
+			debug_object( "getitem is checking %r._elements %s", self, self._elements )
 			return self._elements[ key ] # If _elements were implemented as a list, we should catch IndexError and raise KeyError
 
 	def __setitem__( self, key, value ):
+		debug_object( "%r[ %r ] = %r", self, key, value )
 		if isinstance( key, int ):
+			debug_object( "setitem is setting %r._elements[%r] = %s", self, key, value )
 			self._elements[ key ] = value
 		else:
 			setattr( self, key, value )
@@ -73,7 +90,7 @@ class Object:
 		if self is null:
 			return "null"
 		else:
-			return repr( self ) + "{ " + string.join([ "%s=%s" % ( field, repr( self[field] ) ) for field in self._fields ], ', ') + " }"
+			return repr( self ) + "{ " + string.join([ "%s=%r" % ( field, self[field] ) for field in self._fields ], ', ') + " }"
 
 	def description( self, already_described=None, indent=1 ):
 		if already_described is None:
@@ -203,19 +220,6 @@ def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activ
 
 # Main execute procedure
 
-def debug( message, *args ):
-	if args:
-		message = message % args
-	print message
-
-def silence( message, *args ):
-	pass
-
-def error( exception ):
-	debug( "!! ERROR: %s", exception )
-	print_backtrace( current_thread )
-	raise exception
-
 def python_list( sheppard_list, head='head', tail='tail' ):
 	if sheppard_list:
 		return [ sheppard_list[ head ] ] + python_list( sheppard_list[ tail ], head, tail )
@@ -256,7 +260,7 @@ def give( value_sharp, obj, key_sharp ):
 take_failed = 'TAKE_FAILED'
 
 def take( obj, key_sharp ):
-	#debug( "--TAKE--    %s.take( %s )", repr(obj), repr(key_sharp) )
+	#debug( "--TAKE--    %r.take( %r )", obj, flat( key_sharp ) )
 	try:
 		return sharp( obj[ flat( key_sharp ) ] )
 	except KeyError:
@@ -385,6 +389,7 @@ def next_state( state, obj_sharp ):
 	# First we check of the object is itself a symbol that has an edge from this
 	# state (ie. it's acting as a keyword).  Failing that, we check the object's
 	# "tag edge symbol" to see if the object is of a type that has an edge.
+	#debug( "-- looking up %r in: %s", obj_sharp, state )
 	return next_state2( state, obj_sharp, take( state, obj_sharp ) )
 
 debug_do = silence
@@ -419,22 +424,22 @@ shift_count = 0
 def perform_shift( act ):
 	global shift_count
 	shift_count += 1
-	#debug_shift = silence
-	#debug_shift( 'shift' )
+	debug_shift = silence
+	debug_shift( 'shift' )
 	#if act.operands != null and act.operands.head in action_words:
 	#	error( Missed_Action_Word( act.operands.head ) )
-	#debug_shift( "  cursor: %s", repr( act.cursor ) )
-	#debug_shift( "  state: %s", repr( act.history.head ) )
+	debug_shift( "  cursor: %s", repr( act.cursor ) )
+	debug_shift( "  state: %s", act.history.head )
 	raw_token_sharp = get_token( take( act.cursor.tokens, 'head#' ) )
-	#debug_shift( "  token: %s", repr( flat( raw_token_sharp ) ) )
-	#debug_shift( "    environment: %s", act.cursor.environment )
+	debug_shift( "  token: %r (%r)", flat( raw_token_sharp ), raw_token_sharp )
+	debug_shift( "    bindings: %s", act.cursor.environment.bindings )
 	token_sharp = bound( raw_token_sharp, act.cursor.environment )
 	act.cursor.tokens = act.cursor.tokens.tail
 	finish_digression( act, act.cursor.tokens )
-	#debug_shift( "    value: %s", repr( flat( token_sharp ) ) )
+	debug_shift( "    value: %s", repr( flat( token_sharp ) ) )
 	act.operands = cons( token_sharp, act.operands )
 	new_state = next_state( act.history.head, token_sharp )
-	#debug_shift( "  new_state: %s", repr( new_state ) )
+	debug_shift( "  new_state: %s", repr( new_state ) )
 	act.history = cons( new_state, act.history )
 	if list_length( act.operands ) > 50:
 		error( RuntimeError( "Operand stack overflow" ) )
@@ -443,20 +448,22 @@ def perform_shift( act ):
 def perform_reduce0( act ):
 	if meta_level( act.thread ) >= printing_level_threshold:
 		debug_reduce = debug
+		debug2_reduce = silence
 	else:
 		debug_reduce = silence
+		debug2_reduce = silence
 	print_stuff( act.thread )
-	#debug_reduce( ">-- reduce0 %s --", act.history.head.action )
+	debug2_reduce( ">-- reduce0 %s --", act.history.head.action )
 	action = bound( take( act.history.head, 'action#' ), act.scope ) # 'take' here just to get a sharp result
-	#debug_reduce( "  action: %s", repr( action ) )
+	debug2_reduce( "  action: %s", repr( action ) )
 	#if is_a( action, 'MACRO' ):
 	#	debug_reduce( "    %s", python_list( action.script ) )
 	reduce_env = ENVIRONMENT( action.environment )
 	reduce_env.digressor = act.cursor.environment  # Need this in order to make 'bind' a macro, or else I can't access the environment I'm trying to bind
 	bind_args( act, reduce_env.bindings, action.formal_args )
 	print_reduce_stuff( act.thread, action, reduce_env )
-	#debug_reduce( "  environment: %s", reduce_env )
-	#debug_reduce( "    based on: %s", act.cursor )
+	debug2_reduce( "  environment: %s", reduce_env )
+	debug2_reduce( "    based on: %s", act.cursor )
 	do_action[ tag( action ) ]( act, reduce_env, action )
 	print_program( act.thread )
 	return true
@@ -472,7 +479,7 @@ def execute2( act, probe ):
 	while probe == true: #is_a( probe, 'TRUE' ):
 		#print_stuff( act.thread )
 		command = tag( act.history.head )
-		#debug( "-__ execute2 __" )
+		#debug( "-__ execute2 __ %s", perform[ command ] )
 		# if Python had tail call elimination, we could do this:
 		# execute2( act, perform[ command ]( act ) )
 		probe = perform[ command ]( act )
@@ -597,7 +604,7 @@ def maybe_int( symbol ):
 	except( TypeError, ValueError ):
 		return symbol
 
-def parse_library( name, string, environment ):
+def parse_postfix_library( name, string, environment ):
 	debug_parse = silence
 	bindings = environment.bindings
 	edge_symbols = set()
@@ -685,10 +692,205 @@ def polymorphic_postfix_automaton( scope, edge_symbols, dispatch_symbols ):
 	default_state[ ':EOF' ] = Accept()
 	return default_state
 
-def parse_procedure( name, library_text, script ):
+class Macro_factory: # Eventually split off the stuff that's acting like a production
+
+	def __init__( self ):
+		self._name = None
+
+	def begin_args( self ):
+		check = self._name
+		if True:
+			# Dummy "argument" representing the name token
+			self._arg_names = [ null ]
+			self._arg_types = [ self._name ]
+		else:
+			self._arg_names = []
+			self._arg_types = []
+
+	def begin_script( self ):
+		check = self._arg_names
+		self._script = []
+
+	def process_word( self, word ):
+		debug_parse = silence
+		# Could be part of the script
+		try:
+			self._script.append( word )
+			debug_parse( '  script %r', word )
+			return
+		except AttributeError:
+			pass
+		# Could be an :ANY argument
+		try:
+			self._arg_names.append( word )
+			self._arg_types.append( ':ANY' )
+			debug_parse( '  arg %r', word )
+			return
+		except AttributeError:
+			pass
+		# Could be the name
+		assert( self._name == None )
+		self._name = word
+		debug_parse( '  name %r', word )
+		self.begin_args()
+
+	def process_arg( self, name, tp ):
+		debug_parse = silence
+		try:
+			x = self._script
+			assert( False ) # Shouldn't see an argument after having started a script!
+		except AttributeError:
+			pass
+		self._arg_names.append( name )
+		self._arg_types.append( tp )
+		debug_parse( '  arg %r %r', name, tp )
+
+	def create_macro( self, environment ):
+		return MACRO( self._name, List( self._script ), Stack( self._arg_names ), environment )
+
+def parse_postfix_procedure( name, library_text, script ):
 	env = ENVIRONMENT( null )
 	define_builtins( env )
-	lib = parse_library( name, library_text, env )
+	lib = parse_postfix_library( name, library_text, env )
+	define_predefined_bindings( env )
+	result = PROCEDURE( name, List( script ), lib.dialect, env )
+	return result
+
+def parse_prefix_library( name, string, environment ):
+	debug_parse = silence
+	bindings = environment.bindings
+	edge_symbols = set()
+	builtin_action_symbols = set([ k for (k,v) in bindings ])
+	macro_symbols = set()
+	factory = None
+	factories_by_action_symbol = {}
+	def done( factory, factories_by_action_symbol, edge_symbols ):
+		if factory and factory._name:
+			name = factory._name
+			edge_symbols.add( name )
+			macro = factory.create_macro( environment )
+			action_symbol = 'ACTION_%d' % macro._id
+			macro_symbols.add( action_symbol )
+			factories_by_action_symbol[ action_symbol ] = factory
+			bindings[ action_symbol ] = macro
+			debug_parse( "PARSED MACRO %r[ %s ]: %s %s %s", bindings, action_symbol, name, zip( factory._arg_names, factory._arg_types), factory._script )
+		else:
+			debug_parse( "(no macro)" )
+	for word in re.findall( r'\([^)]*\)|\{[^}]*\}|\[[^]]*\]|\S+(?:/:?\w+#*)?', string.strip() ):
+		debug_parse( "WORD: '%s'", word )
+		if word == "to":
+			done( factory, factories_by_action_symbol, edge_symbols )
+			factory = Macro_factory()
+		elif word == "do":
+			factory.begin_script()
+		elif word[0] == '[': # TODO
+			done( factory, factories_by_action_symbol, edge_symbols )
+			factory = Macro_factory()
+			object_types = word[1:-1].split()
+			debug_parse( "object_types: %s", object_types )
+			edge_symbols.update( object_types )
+		elif word[0] == '{': # Long symbol/string
+			factory.process_word( word[1:-1] )
+		elif ':' in word:
+			[ name, tp ] = word.split( ':' )
+			tp = maybe_int( tp )
+			factory.process_arg( name, tp )
+			edge_symbols.add( tp )
+		else: # Ordinary word; what it means depends on the state
+			factory.process_word( maybe_int( word ) )
+	done( factory, factories_by_action_symbol, edge_symbols )
+
+	automaton = polymorphic_prefix_automaton( factories_by_action_symbol, builtin_action_symbols, macro_symbols, edge_symbols, environment )
+	return LIBRARY( name, automaton, bindings )
+
+def polymorphic_prefix_automaton( factories_by_action_symbol, builtin_action_symbols, macro_symbols, edge_symbols, environment ):
+	# A little silly parser generator algorithm to deal with simple
+	# multi-dispatch languages using prefix notation.
+	# This will suffice until I write a proper parser generator.
+	action_bindings = environment.bindings
+	debug_ppa = silence
+	default_state = Shift()
+	shift_states = [ default_state ]
+	debug_ppa( "default_state: %s", default_state )
+	debug_ppa( "bindings: %s", environment.bindings )
+	debug_ppa( "builtin_action_symbols: %s", builtin_action_symbols )
+	debug_ppa( "actions: %s", [environment.bindings[a] for a in builtin_action_symbols] )
+	names = set([ f._name for f in factories_by_action_symbol.values() ]) | set([ environment.bindings[a].name for a in builtin_action_symbols ])
+	debug_ppa( "names: %s", names )
+	name_states = {}
+
+	# The parse graph here starts out as a forest: one tree for each name
+	debug_ppa( "Building parse forest" )
+	for action_symbol in builtin_action_symbols | macro_symbols:
+		action = action_bindings[ action_symbol ]
+		name = action.name
+		if action_symbol in builtin_action_symbols:
+			# Note that arg_names here is backward
+			arg_names = python_list( action.formal_args )
+			arg_types = [ name ] + [':ANY'] * ( len( arg_names ) -1 )
+		else:
+			f = factories_by_action_symbol[ action_symbol ]
+			arg_names = None
+			arg_types = f._arg_types
+		cur_state = default_state
+		debug_ppa( '  %r @ %r', name, cur_state )
+		debug_ppa( '    action: %s', action )
+		for tp in arg_types[:-1]:
+			try:
+				cur_state = cur_state[ tp ]
+				debug_ppa( '    %r => %r', tp, cur_state )
+			except KeyError:
+				next_state = Shift()
+				cur_state[ tp ] = next_state
+				shift_states.append( next_state )
+				cur_state = next_state
+				debug_ppa( '    %r >> %r', tp, cur_state )
+
+		reduce_state = Reduce0( action_symbol )
+		cur_state[ arg_types[-1] ] = reduce_state
+		debug_ppa( '    %r >> %r', arg_types[-1], reduce_state )
+		name_states[ name ] = default_state[ name ]
+
+	if 0:
+		debug_ppa( "Adding macros to parse forest" )
+		for f in factories:
+			# Shift until you get to the last arg
+			cur_state = default_state
+			debug_ppa( '  %r', cur_state )
+			for tp in f._arg_types[:-1]:
+				try:
+					cur_state = cur_state[ tp ]
+					debug_ppa( '    %s => %s', tp, cur_state )
+				except KeyError:
+					next_state = Shift()
+					cur_state[ tp ] = next_state
+					shift_states.append( next_state )
+					cur_state = next_state
+					debug_ppa( '    %s >> %s', tp, cur_state )
+			# Last arg causes a reduce
+			reduce_state = Reduce0( 'ACTION_' + f._name )
+			cur_state[ f._arg_types[-1] ] = reduce_state
+			debug_ppa( '    %s >> %s', f._arg_types[-1], reduce_state )
+
+	# Names are effectively keywords.  Any time we see one of those, whatever shift state we are in, we leap to that name_state
+	debug_ppa( "Implementing keywords" )
+	for name in names:
+		debug_ppa( '  %s:', name )
+		for s in shift_states:
+			s[ name ] = name_states[ name ]
+			debug_ppa( '    %r => %r', s, s[ name ] )
+
+	# The accept state
+	default_state[ ':EOF' ] = Accept()
+	debug_ppa( 'EOF => %s', default_state[ ':EOF' ] )
+
+	debug_ppa( 'Automaton:\n%s', default_state.description() )
+	return default_state
+
+def parse_prefix_procedure( name, library_text, script ):
+	env = ENVIRONMENT( null )
+	define_builtins( env, True )
+	lib = parse_prefix_library( name, library_text, env )
 	define_predefined_bindings( env )
 	result = PROCEDURE( name, List( script ), lib.dialect, env )
 	return result
@@ -706,15 +908,18 @@ def define_predefined_bindings( env ):
 	bindings[ 'true' ] = true
 	bindings[ 'nothing' ] = nothing
 
-def define_builtins( global_scope ):
-
+def define_builtins( global_scope, prefix=False ):
 	debug_builtins = silence
 	def digress( th, *values ):
 		finish_digression( th.activation, th.activation.cursor.tokens )
 		th.activation.cursor = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
 
 	def bind_with_name( func, name, *args ):
-		global_scope.bindings[ 'ACTION_' + name ] = PRIMITIVE( name, func, Stack( list( args ) ), global_scope )
+		if prefix:
+			arg_stack = Stack( [null] + list( args ) )
+		else:
+			arg_stack = LIST( null, Stack(list( args )) )
+		global_scope.bindings[ 'ACTION_' + name ] = PRIMITIVE( name, func, arg_stack, global_scope )
 		debug_builtins( "Binding primitive: %s %s", name, list(args) )
 
 	# Cython doesn't support func_name
@@ -723,30 +928,30 @@ def define_builtins( global_scope ):
 
 	def builtin_exec( th, code ):
 		exec code.strip() in globals(), th.activation.cursor.environment.digressor.bindings
-	bind_with_name( builtin_exec, 'exec', 'code', null )
+	bind_with_name( builtin_exec, 'exec', 'code' )
 
 	def builtin_eval( th, code ):
 		result = eval( code.strip(), globals(), th.activation.cursor.environment.digressor.bindings )
 		# One day, we should sharp/flat all the args and results of eval I guess.  Good thing the meta-interpreter doesn't use ints yet.
 		#result = sharp( result )
 		digress( th, result )
-	bind_with_name( builtin_eval, 'eval', 'code', null )
+	bind_with_name( builtin_eval, 'eval', 'code' )
 
 	def buildin_current_thread( th ):
 		digress( th, th )
-	bind_with_name( buildin_current_thread, 'current_thread', null )
+	bind_with_name( buildin_current_thread, 'current_thread' )
 
 	def builtin_current_environment( th ):
 		# I could probably implement this somehow using current_thread and exec,
 		# but it's awkward as long as "bind" uses this, because I have no easy
 		# way to bind "th" before calling this.
 		digress( th, th.activation.cursor.environment.digressor )
-	bind_with_name( builtin_current_environment, 'current_environment', null )
+	bind_with_name( builtin_current_environment, 'current_environment' )
 
 	def builtin_nop( th ):
 		# It's a pain defining this in every library just so I can use exec and eval
 		pass
-	bind_with_name( builtin_nop, 'nop', null )
+	bind_with_name( builtin_nop, 'nop' )
 
 	# These are not really needed, but make a huge impact on performance.
 	# I'd like to keep the level-2 meta-interpreter under one minute right now,
@@ -754,23 +959,23 @@ def define_builtins( global_scope ):
 
 	def builtin_get( th, base, field ): # Saves 163 shifts
 		digress( th, base[ field ] )
-	bind_with_name( builtin_get, 'get', 'base', 'field', null )
+	bind_with_name( builtin_get, 'get', 'base', 'field' )
 
 	def builtin_get2( th, base, field1, field2 ): # Saves 146 shifts
 		digress( th, base[ field1 ][ field2 ] )
-	bind_with_name( builtin_get2, 'get2', 'base', 'field1', 'field2', null )
+	bind_with_name( builtin_get2, 'get2', 'base', 'field1', 'field2' )
 
 	def builtin_take( th, base, field ): # Saves 107 shifts
 		digress( th, take( base, field ) )
-	bind_with_name( builtin_take, 'take', 'base', 'field', null )
+	bind_with_name( builtin_take, 'take', 'base', 'field' )
 
 	def builtin_put( th, value, base, field ): # Saves 147 shifts
 		base[ field ] = value
-	bind_with_name( builtin_put, 'put', 'value', 'base', 'field', null )
+	bind_with_name( builtin_put, 'put', 'value', 'base', 'field' )
 
 	def builtin_cons( th, **args ): # Saves 27 shifts
 		digress( th, cons(**args) )
-	bind_with_name( builtin_cons, 'cons', 'head_sharp', 'tail', null )
+	bind_with_name( builtin_cons, 'cons', 'head_sharp', 'tail' )
 
 
 #####################################
@@ -1045,8 +1250,25 @@ fib_text_with_dispatch = """
 [ :INT :SYMBOL ]
 """
 
+fib_text_prefix = """
+to + a b   do eval { a+b } nop
+to - a b   do eval { a-b } nop
+
+to print_result n do exec { print "*** RESULT IS", n, "***" } nop
+
+to fib n:0 do 1
+to fib n:1 do 1
+
+to fib n do
+	+
+	fib - n 1
+	fib - n 2
+
+"""
+
 def fib_procedure():
-	return parse_procedure( "fib", fib_text_with_dispatch, [ 3, 'fib', 'print_result' ] )
+	#return parse_postfix_procedure( "fib", fib_text_with_dispatch, [ 3, 'fib', 'print_result' ] )
+	return parse_prefix_procedure( "fib", fib_text_prefix, [ 'print_result', 'fib', 3 ] )
 
 # Note: the explicit int() calls in hash_test are just for error detection.  We
 # don't want 'foo'*12345 buliding some immense string by accident.
@@ -1185,7 +1407,7 @@ def wrap_procedure( inner_procedure ):
 	if sheppard_interpreter_library is None:
 		global_scope = ENVIRONMENT( null )
 		define_builtins( global_scope )
-		sheppard_interpreter_library = parse_library( "sheppard_interpreter", meta_interpreter_text, global_scope )
+		sheppard_interpreter_library = parse_postfix_library( "sheppard_interpreter", meta_interpreter_text, global_scope )
 		define_predefined_bindings( global_scope )
 	action_words = [ s[7:] for s in global_scope.bindings._fields ]
 	nothing.environment = global_scope
@@ -1195,9 +1417,9 @@ def wrap_procedure( inner_procedure ):
 
 def test( depth, plt ):
 	global printing_level_threshold
-	procedure = go_world()
-	#procedure = fib_procedure()
-	#procedure = parse_procedure( "hash_test", hash_test_text, ['main'] )
+	#procedure = go_world()
+	procedure = fib_procedure()
+	#procedure = parse_postfix_procedure( "hash_test", hash_test_text, ['main'] )
 	#printing_level_threshold = plt
 	for _ in range(depth):
 		procedure = wrap_procedure( procedure )
@@ -1219,6 +1441,7 @@ def pretty_time( t ):
 		return "%dh%dm%ds" % ( t/3600, (t%3600)/60, t%60 )
 
 def main():
+	print "# SHEPPARD OUTPUT"
 	try:
 		depth = int( argv[1] )
 	except IndexError:
