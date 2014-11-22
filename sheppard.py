@@ -424,22 +424,22 @@ shift_count = 0
 def perform_shift( act ):
 	global shift_count
 	shift_count += 1
-	debug_shift = silence
-	debug_shift( 'shift' )
+	#debug_shift = silence
+	#debug_shift( 'shift' )
 	#if act.operands != null and act.operands.head in action_words:
 	#	error( Missed_Action_Word( act.operands.head ) )
-	debug_shift( "  cursor: %s", repr( act.cursor ) )
-	debug_shift( "  state: %s", act.history.head )
+	#debug_shift( "  cursor: %s", repr( act.cursor ) )
+	#debug_shift( "  state: %s", act.history.head )
 	raw_token_sharp = get_token( take( act.cursor.tokens, 'head#' ) )
-	debug_shift( "  token: %r (%r)", flat( raw_token_sharp ), raw_token_sharp )
-	debug_shift( "    bindings: %s", act.cursor.environment.bindings )
+	#debug_shift( "  token: %r (%r)", flat( raw_token_sharp ), raw_token_sharp )
+	#debug_shift( "    bindings: %s", act.cursor.environment.bindings )
 	token_sharp = bound( raw_token_sharp, act.cursor.environment )
 	act.cursor.tokens = act.cursor.tokens.tail
 	finish_digression( act, act.cursor.tokens )
-	debug_shift( "    value: %s", repr( flat( token_sharp ) ) )
+	#debug_shift( "    value: %s", repr( flat( token_sharp ) ) )
 	act.operands = cons( token_sharp, act.operands )
 	new_state = next_state( act.history.head, token_sharp )
-	debug_shift( "  new_state: %s", repr( new_state ) )
+	#debug_shift( "  new_state: %s", repr( new_state ) )
 	act.history = cons( new_state, act.history )
 	if list_length( act.operands ) > 50:
 		error( RuntimeError( "Operand stack overflow" ) )
@@ -971,7 +971,10 @@ def define_builtins( global_scope, prefix=False ):
 
 	def builtin_put( th, value, base, field ): # Saves 147 shifts
 		base[ field ] = value
-	bind_with_name( builtin_put, 'put', 'value', 'base', 'field' )
+	if prefix:
+		bind_with_name( builtin_put, 'put', 'base', 'field', 'value' )
+	else:
+		bind_with_name( builtin_put, 'put', 'value', 'base', 'field' )
 
 	def builtin_cons( th, **args ): # Saves 27 shifts
 		digress( th, cons(**args) )
@@ -983,7 +986,7 @@ def define_builtins( global_scope, prefix=False ):
 # Meta-interpreter
 #
 
-meta_interpreter_text = """
+meta_interpreter_postfix_text = """
 ( name script dialect environment )       Procedure   { PROCEDURE(**dict( locals() )) }   eval nop
 ( tokens environment resumption )         Digression  { DIGRESSION(**dict( locals() )) }  eval nop
 ( cursor operands history scope caller )  Activation  { ACTIVATION(**dict( locals() )) }  eval nop
@@ -1206,6 +1209,288 @@ not_used_because_they_are_too_slow = """
 ( head_sharp tail )         cons { cons( head_sharp, tail ) }   eval nop
 """
 
+meta_interpreter_prefix_text = """
+to Procedure
+	name script dialect environment
+do eval
+	{ PROCEDURE(**dict( locals() )) } nop
+
+to Digression
+	tokens environment resumption
+do eval
+	{ DIGRESSION(**dict( locals() )) } nop
+
+to Activation
+	cursor operands history scope caller
+do eval
+	{ ACTIVATION(**dict( locals() )) } nop
+
+to Thread
+	activation meta_thread
+do eval
+	{ THREAD(**dict( locals() )) } nop
+
+to Environment
+	outer
+do eval
+	{ ENVIRONMENT(**dict( locals() )) } nop
+
+
+to tag_edge_symbol
+	obj
+do eval
+	{ ':' + tag( obj ) + '#' } nop
+
+to get3
+	f1 f2 f3 base
+do eval
+	{ base[ f1 ][ f2 ][ f3 ] } nop
+
+to give
+	field base value
+do eval
+	{ give( value, base, field ) } nop
+
+
+to bind 
+	symbol value
+do put
+	get2 current_environment digressor bindings
+	symbol
+	value
+
+to pop_list 
+	base field_symbol_sharp
+do
+	bind current
+		take field_symbol_sharp base
+	bind result
+		take head# current
+	give base field_symbol_sharp
+		take current tail#
+	result
+
+to finish_digression 
+	act remaining_tokens:NULL
+do
+	put act cursor
+		get2 act cursor resumption
+
+to finish_digression 
+	act remaining_tokens:LIST
+do
+
+to bind_arg 
+	arg_bindings arg_symbol_sharp:NULL arg_value_sharp
+do
+
+to bind_arg 
+	arg_bindings arg_symbol_sharp:SYMBOL arg_value_sharp
+do
+	give arg_bindings arg_symbol_sharp arg_value_sharp
+
+to bind_args 
+	act arg_bindings formal_args:NULL
+do
+
+to bind_args 
+	act arg_bindings formal_args:LIST
+do
+	put act history
+		get2 act history tail
+	bind_arg arg_bindings
+		pop_list act operands#
+		take formal_args head#
+	bind_args
+		act
+		arg_bindings
+		get formal_args tail
+
+to bound2 
+	obj_sharp environment probe
+do
+	probe
+
+to bound2 
+	obj_sharp environment probe:TAKE_FAILED
+do
+	bound obj_sharp
+		environment outer get
+
+to bound 
+	obj_sharp environment:NULL
+do
+	obj_sharp
+
+to bound 
+	obj_sharp environment:ENVIRONMENT
+do
+	bound2
+		obj_sharp
+		environment
+		take
+			get environment bindings
+			obj_sharp
+
+to next_state3 
+	state obj_sharp probe:TAKE_FAILED
+do
+	get state :ANY
+
+to next_state3 
+	state obj_sharp probe
+do
+	probe
+
+to next_state2 
+	state obj_sharp probe:TAKE_FAILED
+do
+	next_state3
+		state
+		obj_sharp
+		take state
+			tag_edge_symbol obj_sharp
+
+to next_state2 
+	state obj_sharp probe
+do
+	probe
+
+to next_state 
+	state obj_sharp
+do
+	next_state2
+		state
+		obj_sharp
+		take state obj_sharp
+
+to do_action 
+	act environment action:PRIMITIVE
+do
+	put act cursor
+		Digression null environment
+			get act cursor
+	exec { action.function( act.thread, **dict( environment.bindings ) ) }
+	finish_digression
+		act
+		get2 act cursor tokens
+
+to do_action 
+	act environment action:MACRO
+do
+	put act cursor
+		Digression
+			get action script
+			environment
+			get act cursor
+	finish_digression
+		act
+		get2 act cursor tokens
+
+to perform 
+	act state:ACCEPT
+do
+	false
+
+to get_token 
+	probe:TAKE_FAILED
+do
+	eof
+
+to get_token 
+	probe
+do
+	probe
+
+to perform 
+	act state:SHIFT
+do
+	bind raw_token_sharp get_token
+		take
+			get2 act cursor tokens
+			head#
+	bind token_sharp
+		bound
+			raw_token_sharp
+			act cursor environment get2
+	put
+		get2 act cursor tokens
+		get3 act cursor tokens tail
+	finish_digression
+		act
+		get2 act cursor tokens
+	put act operands
+		cons
+			token_sharp
+			get act operands
+	bind new_state
+		next_state
+			get2 act history head
+			token_sharp
+	put act history
+		cons new_state get act history
+	true
+
+to perform 
+	act state:REDUCE0
+do
+	TODO
+	{ print_stuff( act.thread ) } exec
+			act history head get2 action# take
+			act scope get
+		bound
+	action bind
+		action environment get Environment
+	reduce_env bind
+		act cursor environment get2
+	reduce_env digressor put
+		act
+		reduce_env bindings get
+		action formal_args get
+	bind_args
+	{ print_reduce_stuff( act.thread, action, reduce_env ) } exec
+		act
+		reduce_env
+		action
+	do_action
+	{ print_program( act.thread ) } exec
+	true
+
+to execute2 
+	act probe:FALSE
+do
+	false
+
+to execute2 
+	act probe:TRUE
+do
+	execute2
+		act
+		perform
+			act
+			get2 act history head
+
+to execute 
+	procedure environment scope
+do
+	bind act
+		Activation
+			Digression
+				get procedure script
+				environment
+				nothing
+			null
+			cons
+				get procedure dialect
+				null
+			scope
+			null
+	put act thread
+		Thread act current_thread
+	execute2 act true
+
+"""
+
 #
 #
 #####################################
@@ -1407,7 +1692,7 @@ def wrap_procedure( inner_procedure ):
 	if sheppard_interpreter_library is None:
 		global_scope = ENVIRONMENT( null )
 		define_builtins( global_scope )
-		sheppard_interpreter_library = parse_postfix_library( "sheppard_interpreter", meta_interpreter_text, global_scope )
+		sheppard_interpreter_library = parse_postfix_library( "sheppard_interpreter", meta_interpreter_postfix_text, global_scope )
 		define_predefined_bindings( global_scope )
 	action_words = [ s[7:] for s in global_scope.bindings._fields ]
 	nothing.environment = global_scope
