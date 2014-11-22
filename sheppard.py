@@ -251,7 +251,8 @@ def tag_edge_symbol( obj ):
 
 give_failed = 'GIVE_FAILED'
 
-def give( value_sharp, obj, key_sharp ):
+def give( obj, key_sharp, value_sharp ):
+	#debug( "--GIVE-- %r %r %r", value_sharp, obj, key_sharp )
 	if is_symbol( key_sharp ):
 		obj[ flat(key_sharp) ] = flat( value_sharp )
 	else:
@@ -321,9 +322,8 @@ def print_backtrace( th ):
 #
 # Some rules to make it look more like Sheppard code:
 #  - Procedures are only allowed one if statement sequence.  It must be at the
-#  top level, and must use is_a based on the last argument or compare the last 
-#  argument against a specific symbol.
-# This represents sheppard automaton-based dispatch.
+#  top level, and must use is_a based on the arguments or compare the argument
+#  against a specific symbol.  This represents sheppard automaton-based dispatch.
 #  - Loops will be replaced with tail digression.  There's only one loop anyway
 #  so that's no big deal.
 #
@@ -332,7 +332,7 @@ def pop_list( base, field_symbol_sharp ):
 	current = take( base, field_symbol_sharp )
 	result  = take( current, 'head#' )
 	#debug( "!!! pop_list( %s, %s ) = %s", base, field_symbol_sharp, result )
-	give( take( current, 'tail#' ), base, field_symbol_sharp )
+	give( base, field_symbol_sharp, take( current, 'tail#' ) )
 	return result
 
 def finish_digression( act, remaining_tokens ):
@@ -340,21 +340,21 @@ def finish_digression( act, remaining_tokens ):
 		#debug( "  (finished %s)", repr( act.cursor ) )
 		act.cursor = act.cursor.resumption
 
-def bind_arg( arg_value_sharp, arg_bindings, arg_symbol_sharp ):
+def bind_arg( arg_bindings, arg_symbol_sharp, arg_value_sharp ):
 	debug_bind = silence
 	if arg_symbol_sharp is null: # is_a( arg_symbol_sharp, 'NULL' )
-		debug_bind( "    pop %s", repr( arg_value_sharp ) )
+		debug_bind( "    pop %r", flat( arg_value_sharp ) )
 	else:
 		assert( is_a( arg_symbol_sharp, 'SYMBOL' ) )
-		give( arg_value_sharp, arg_bindings, arg_symbol_sharp )
-		debug_bind( "    %s=%s", arg_symbol_sharp, repr( arg_value_sharp ) )
+		give( arg_bindings, arg_symbol_sharp, arg_value_sharp )
+		debug_bind( "    %s=%r", flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
 
 def bind_args( act, arg_bindings, formal_args ):
 	if formal_args is null: #is_a( formal_args, 'NULL' ):
 		pass
 	else:
 		act.history = act.history.tail
-		bind_arg( pop_list( act, 'operands#' ), arg_bindings, take( formal_args, 'head#' ) )
+		bind_arg( arg_bindings, take( formal_args, 'head#' ), pop_list( act, 'operands#' ) )
 		bind_args( act, arg_bindings, formal_args.tail )
 
 def bound2( obj_sharp, environment, probe ):
@@ -995,7 +995,7 @@ meta_interpreter_postfix_text = """
 
 ( obj )          tag_edge_symbol { ':' + tag( obj ) + '#' }     eval nop
 ( base f1 f2 f3 )           get3 { base[ f1 ][ f2 ][ f3 ] }     eval nop
-( value base field )        give { give( value, base, field ) } exec nop
+( value base field )        give { give( base, field, value ) } exec nop
 
 ( value symbol ) bind 
 		value
@@ -1270,6 +1270,7 @@ do
 		take current tail#
 	result
 
+
 to finish_digression 
 	act remaining_tokens:NULL
 do
@@ -1277,8 +1278,9 @@ do
 		get2 act cursor resumption
 
 to finish_digression 
-	act remaining_tokens:LIST
+	act remaining_tokens
 do
+
 
 to bind_arg 
 	arg_bindings arg_symbol_sharp:NULL arg_value_sharp
@@ -1288,6 +1290,7 @@ to bind_arg
 	arg_bindings arg_symbol_sharp:SYMBOL arg_value_sharp
 do
 	give arg_bindings arg_symbol_sharp arg_value_sharp
+
 
 to bind_args 
 	act arg_bindings formal_args:NULL
@@ -1306,16 +1309,19 @@ do
 		arg_bindings
 		get formal_args tail
 
+
+to bound2 
+	obj_sharp environment probe:TAKE_FAILED
+do
+	bound
+		obj_sharp
+		get environment outer
+
 to bound2 
 	obj_sharp environment probe
 do
 	probe
 
-to bound2 
-	obj_sharp environment probe:TAKE_FAILED
-do
-	bound obj_sharp
-		environment outer get
 
 to bound 
 	obj_sharp environment:NULL
@@ -1332,6 +1338,7 @@ do
 			get environment bindings
 			obj_sharp
 
+
 to next_state3 
 	state obj_sharp probe:TAKE_FAILED
 do
@@ -1342,19 +1349,22 @@ to next_state3
 do
 	probe
 
+
 to next_state2 
 	state obj_sharp probe:TAKE_FAILED
 do
 	next_state3
 		state
 		obj_sharp
-		take state
+		take
+			state
 			tag_edge_symbol obj_sharp
 
 to next_state2 
 	state obj_sharp probe
 do
 	probe
+
 
 to next_state 
 	state obj_sharp
@@ -1364,11 +1374,14 @@ do
 		obj_sharp
 		take state obj_sharp
 
+
 to do_action 
 	act environment action:PRIMITIVE
 do
 	put act cursor
-		Digression null environment
+		Digression
+			null
+			environment
 			get act cursor
 	exec { action.function( act.thread, **dict( environment.bindings ) ) }
 	finish_digression
@@ -1387,10 +1400,6 @@ do
 		act
 		get2 act cursor tokens
 
-to perform 
-	act state:ACCEPT
-do
-	false
 
 to get_token 
 	probe:TAKE_FAILED
@@ -1402,19 +1411,26 @@ to get_token
 do
 	probe
 
+
+to perform 
+	act state:ACCEPT
+do
+	false
+
 to perform 
 	act state:SHIFT
 do
-	bind raw_token_sharp get_token
-		take
+	bind raw_token_sharp
+		get_token take
 			get2 act cursor tokens
 			head#
 	bind token_sharp
 		bound
 			raw_token_sharp
-			act cursor environment get2
+			get2 act cursor environment
 	put
-		get2 act cursor tokens
+		get act cursor
+		tokens
 		get3 act cursor tokens tail
 	finish_digression
 		act
@@ -1434,26 +1450,28 @@ do
 to perform 
 	act state:REDUCE0
 do
-	TODO
-	{ print_stuff( act.thread ) } exec
-			act history head get2 action# take
-			act scope get
+	exec { print_stuff( act.thread ) }
+	bind action
 		bound
-	action bind
-		action environment get Environment
-	reduce_env bind
-		act cursor environment get2
-	reduce_env digressor put
-		act
-		reduce_env bindings get
-		action formal_args get
+			take
+				get2 act history head
+				action#
+			get act scope
+	bind reduce_env
+		Environment
+			action environment get
+	put reduce_env digressor
+		get2 act cursor environment
 	bind_args
-	{ print_reduce_stuff( act.thread, action, reduce_env ) } exec
+		act
+		get reduce_env bindings
+		get action formal_args
+	exec { print_reduce_stuff( act.thread, action, reduce_env ) }
+	do_action
 		act
 		reduce_env
 		action
-	do_action
-	{ print_program( act.thread ) } exec
+	exec { print_program( act.thread ) }
 	true
 
 to execute2 
