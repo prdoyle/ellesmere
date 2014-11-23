@@ -24,6 +24,7 @@ def error( exception ):
 object_counter = 0
 
 class Object:
+	"""Warps Python's object model to make it more Sheppard-like"""
 
 	def __init__( self, tag, **edges ):
 		global object_counter
@@ -32,7 +33,7 @@ class Object:
 		self._elements = {}
 		self._fields = sorted([ k for k in edges ]) # _fields can be adjusted if we want a particular field ordering
 		self._id = object_counter
-		object_counter = object_counter+1
+		object_counter += 1
 		for ( name, value ) in edges.iteritems():
 			setattr( self, name, value )
 
@@ -119,16 +120,22 @@ class Object:
 class Null( Object ): # Just to make debugging messages more informative
 
 	def __init__( self ):
-		Object.__init__( self, "NULL" )
+		Object.__init__( self, 'NULL' )
 
-null = Null()
+null = Null()  # The very first object!  It gets _id=0
 
-# Generally, these can't be methods, because some Python objects like symbols are
-# represented by plain old Python objects like strings that have no such methods.
+# These need to be disembodied functions.  They can't be methods, because some
+# Python objects like symbols are represented by plain old Python objects like
+# strings that have no such methods.
 # Also, methods of Object can confuse __getattr__ and end up trying to call Sheppard objects.
 
 def is_int( obj ):    return isinstance( obj, int ) # Sheppard integers are represented by Python ints
 def is_symbol( obj ): return isinstance( obj, str ) # Sheppard symbols are represented by Python strs
+
+# I've adopted a convention that strings used as Sheppard symbols (or parts
+# thereof) have single-quotes, and ordinary Python strings have double-quotes.
+# Since Python sees no difference between these, there's no way to enforce this
+# rule, so you may find some unintentional inconsistencies.
 
 def tag( obj ):
 	try:
@@ -149,6 +156,16 @@ def is_a( obj, t ):
 
 def sharp( arg ):
 	if isinstance( arg, str ): #if is_a( arg, 'SYMBOL' ):
+		# I like putting the sharp at the end, because it reads nicely, like
+		# 'foo#' as "foo sharp".  However, the ordering becomes ambiguous when we
+		# add other symbol prefixes like ':'.  A symbol like ':INT#' might mean
+		# ":INT sharp" or it might mean "an object of type INT#".  If both were
+		# prefixes, these would be '#:INT' and ':#INT' respectively.  Putting the
+		# colon at the end would solve the problem too, but 'INT:' looks weird
+		# when the variable was declared as "n:INT".  I've gotten away with this
+		# ambiguity for now by considering colons to bind more tightly than
+		# sharps, so ':INT#' is '#:INT' in prefix notation; seems we haven't had
+		# a use for ':#INT' yet.  Maybe we never will?
 		return arg + '#'
 	elif is_a( arg, 'INT' ):
 		return Object( 'INT', value=arg ) # Wrap arg (which may be a python int) in an Object of type INT
@@ -174,6 +191,7 @@ def List( items ):
 		return LIST( items[0], List( items[1:] ) )
 	else:
 		return null
+
 def Stack( items ):
 	if items:
 		return LIST( items[-1], Stack( items[:-1] ) )
@@ -207,9 +225,9 @@ def Nothing():
 	# An endless stack of digressions each returning an endless stream of EOFs
 	result = Object( 'NOTHING', environment=ENVIRONMENT( null ) )
 	endless_eof = LIST( eof, null )
-	endless_eof.tail = endless_eof
+	endless_eof.tail = endless_eof # oooo, tricky
 	result.tokens = endless_eof
-	result.resumption   = result
+	result.resumption = result
 	return result
 
 nothing = Nothing()
@@ -217,10 +235,22 @@ false = Object( 'FALSE' )
 true  = Object( 'TRUE' )
 
 def ACTIVATION( cursor, operands, history, scope, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, scope=scope, caller=caller )
-
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
-
-# Main execute procedure
+def MACRO( name, script, formal_args, environment ): return Object( 'MACRO', name=name, script=script, formal_args=formal_args, environment=environment )
+def PROCEDURE( name, script, dialect, environment ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, environment=environment )
+def PRIMITIVE( name, function, formal_args, environment ): return Object( 'PRIMITIVE', name=name, function=function, formal_args=formal_args, environment=environment )
+def Reduce0( action ): return Object( 'REDUCE0', action=action )
+def Accept(): return Object( 'ACCEPT' )
+def Shift( **edges ):
+	# For convenience, we stick a colon on the front of each uppercase field name because that's probably what you want
+	result = Object( 'SHIFT' )
+	for ( name, value ) in edges.iteritems():
+		if name.isupper():
+			result[ ':'+name ] = value
+		else:
+			result[     name ] = value
+	return result
+def LIBRARY( name, dialect, environment ): return Object( 'LIBRARY', name=name, dialect=dialect, environment=environment )
 
 def python_list( sheppard_list, head='head', tail='tail' ):
 	if sheppard_list:
@@ -286,35 +316,115 @@ def cursor_description( cursor ):
 
 def print_program( th ):
 	if meta_level( th ) >= printing_level_threshold:
-		act = th.activation
-		debug( "# PROGRAM%d: %s ^ %s", meta_level(th), list_str( act.operands, "  ", debug_ellision_limit ), cursor_description( act.cursor ) )
+		frame = th.activation
+		debug( "# PROGRAM%d: %s ^ %s", meta_level(th), list_str( frame.operands, "  ", debug_ellision_limit ), cursor_description( frame.cursor ) )
 
 def print_stuff( th ):
 	if meta_level( th ) >= printing_level_threshold:
-		act = th.activation
-		#debug( "stack: %s", zip( python_list( act.history ), python_list( act.operands ) ) )
+		frame = th.activation
+		#debug( "stack: %s", zip( python_list( frame.history ), python_list( frame.operands ) ) )
 		print_program( th )
-		debug( "|  history: %s", list_str( act.history, ':', debug_ellision_limit ) )
-		debug( "|   cursor: %s", act.cursor )
-		debug( "| bindings: %s", act.cursor.environment.bindings )
+		debug( "|  history: %s", list_str( frame.history, ':', debug_ellision_limit ) )
+		debug( "|   cursor: %s", frame.cursor )
+		debug( "| bindings: %s", frame.cursor.environment.bindings )
 
 def print_reduce_stuff( th, action, environment ):
 	if meta_level( th ) >= printing_level_threshold:
-		act = th.activation
+		frame = th.activation
 		debug( ">+  ACTION: %r: %s  (%r)", action.name, list_str( action.formal_args ), action )
 		#debug( ">+  ACTION: %s %s", action.name, action )
 		debug( " |    with: %r %s", environment, environment.bindings )
 
 def print_backtrace( th ):
 	print_stuff( th )
-	act = th.activation
+	frame = th.activation
 	debug( "| backtrace:" )
-	history  = python_list( act.history )
-	operands = python_list( act.operands )
+	history  = python_list( frame.history )
+	operands = python_list( frame.operands )
 	for ( state, obj ) in zip( history, operands ):
 		debug( "|   |      %s", state )
 		debug( "|   | %s",      obj )
 	debug( "|   |      %s", history[-1] )
+
+# Sheppard builtins
+
+def define_predefined_bindings( env ):
+	# Note: You usually want to add these after calling
+	# polymorphic_automaton, because that routine expects all bindings
+	# to be for actions only.
+	bindings = env.bindings
+	bindings[ 'null' ] = null
+	bindings[ 'eof' ] = eof
+	bindings[ 'false' ] = false
+	bindings[ 'true' ] = true
+	bindings[ 'nothing' ] = nothing
+
+def define_builtins( global_scope ):
+	debug_builtins = silence
+	def digress( th, *values ):
+		finish_digression( th.activation, th.activation.cursor.tokens )
+		th.activation.cursor = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
+		#debug_digressions( "    new builtin digression: %r = %s", th.activation.cursor, list_str( th.activation.cursor.tokens ) )
+
+	def bind_with_name( func, name, *args ):
+		arg_stack = Stack( [null] + list( args ) )
+		global_scope.bindings[ 'ACTION_' + name ] = PRIMITIVE( name, func, arg_stack, global_scope )
+		debug_builtins( "Binding primitive: %s %s", name, list(args) )
+
+	# Cython doesn't support func_name
+	#def bind( func, *args ):
+	#	bind_with_name( func, func.func_name, *args )
+
+	def builtin_exec( th, environment, code ):
+		exec code.strip() in globals(), environment.bindings
+	bind_with_name( builtin_exec, 'exec', 'environment', 'code' )
+
+	def builtin_eval( th, environment, code ):
+		result = eval( code.strip(), globals(), environment.bindings )
+		# One day, we should sharp/flat all the args and results of eval I guess.  Good thing the meta-interpreter doesn't use ints yet.
+		#result = sharp( result )
+		digress( th, result )
+	bind_with_name( builtin_eval, 'eval', 'environment', 'code' )
+
+	def buildin_current_thread( th ):
+		digress( th, th )
+	bind_with_name( buildin_current_thread, 'current_thread' )
+
+	def builtin_current_environment( th ):
+		# I could probably implement this somehow using current_thread and exec,
+		# but it's awkward as long as "set" uses this, because I have no easy
+		# way to set "th" before calling this.
+		digress( th, th.activation.cursor.environment.digressor )
+	bind_with_name( builtin_current_environment, 'current_environment' )
+
+	def builtin_nop( th ):
+		# It's a pain defining this in every library just so I can use exec and eval
+		pass
+	bind_with_name( builtin_nop, 'nop' )
+
+	# These are not really needed, but make a huge impact on performance.
+	# I'd like to keep the level-2 meta-interpreter under one minute right now,
+	# but one day I could eliminate these.
+
+	def builtin_get( th, base, field ): # Saves 163 shifts
+		digress( th, base[ field ] )
+	bind_with_name( builtin_get, 'get', 'base', 'field' )
+
+	def builtin_get2( th, base, field1, field2 ): # Saves 146 shifts
+		digress( th, base[ field1 ][ field2 ] )
+	bind_with_name( builtin_get2, 'get2', 'base', 'field1', 'field2' )
+
+	def builtin_take( th, base, field ): # Saves 107 shifts
+		digress( th, take( base, field ) )
+	bind_with_name( builtin_take, 'take', 'base', 'field' )
+
+	def builtin_put( th, value, base, field ): # Saves 147 shifts
+		base[ field ] = value
+	bind_with_name( builtin_put, 'put', 'base', 'field', 'value' )
+
+	def builtin_cons( th, **args ): # Saves 27 shifts
+		digress( th, cons(**args) )
+	bind_with_name( builtin_cons, 'cons', 'head_sharp', 'tail' )
 
 
 #####################################
@@ -322,12 +432,18 @@ def print_backtrace( th ):
 # The interpreter.
 #
 #
+# This is written in a slightly odd style to make it look as much as possible
+# like Sheppard meta-interpreter.  There's some inevitable dual-maintenance
+# there, so we want them to look as similar as possible to make them easy to
+# compare.
+#
 # Some rules to make it look more like Sheppard code:
 #  - Procedures are only allowed one if statement sequence.  It must be at the
-#  top level, and must use is_a based on the arguments or compare the argument
-#  against a specific symbol.  This represents sheppard automaton-based dispatch.
+#    top level, and must use is_a based on the arguments or compare the
+#    argument against a specific symbol.  This represents sheppard
+#    automaton-based dispatch.
 #  - Loops will be replaced with tail digression.  There's only one loop anyway
-#  so that's no big deal.
+#    so that's no big deal.
 #
 
 def pop_list( base, field_symbol_sharp ):
@@ -337,10 +453,10 @@ def pop_list( base, field_symbol_sharp ):
 	give( base, field_symbol_sharp, take( current, 'tail#' ) )
 	return result
 
-def finish_digression( act, remaining_tokens ):
+def finish_digression( frame, remaining_tokens ):
 	if remaining_tokens is null: #is_a( remaining_tokens, 'NULL' ):
-		#debug_digressions( "  (finished %r %r %s)", act.cursor, act.cursor.environment, act.cursor.environment.bindings  )
-		act.cursor = act.cursor.resumption
+		#debug_digressions( "  (finished %r %r %s)", frame.cursor, frame.cursor.environment, frame.cursor.environment.bindings  )
+		frame.cursor = frame.cursor.resumption
 
 def bind_arg( arg_bindings, arg_symbol_sharp, arg_value_sharp ):
 	debug_bind = silence
@@ -352,13 +468,13 @@ def bind_arg( arg_bindings, arg_symbol_sharp, arg_value_sharp ):
 		give( arg_bindings, arg_symbol_sharp, arg_value_sharp )
 		#debug_bind( "    %s=%r", flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
 
-def bind_args( act, arg_bindings, formal_args ):
+def bind_args( frame, arg_bindings, formal_args ):
 	if formal_args is null: #is_a( formal_args, 'NULL' ):
 		pass
 	else:
-		act.history = act.history.tail
-		bind_arg( arg_bindings, take( formal_args, 'head#' ), pop_list( act, 'operands#' ) )
-		bind_args( act, arg_bindings, formal_args.tail )
+		frame.history = frame.history.tail
+		bind_arg( arg_bindings, take( formal_args, 'head#' ), pop_list( frame, 'operands#' ) )
+		bind_args( frame, arg_bindings, formal_args.tail )
 
 def bound2( obj_sharp, environment, probe ):
 	if probe is take_failed:
@@ -396,18 +512,18 @@ def next_state( state, obj_sharp ):
 	return next_state2( state, obj_sharp, take( state, obj_sharp ) )
 
 
-def do_action_primitive( act, environment, action ):
+def do_action_primitive( frame, environment, action ):
 	debug_do = silence
 	#debug_do( "  Primitive bindings: %s", dict( environment.bindings ) )
-	act.cursor = DIGRESSION( null, environment, act.cursor )
-	#debug_digressions( "    new primitive digression: %r", act.cursor )
-	action.function( act.thread, **dict( environment.bindings ) )
-	finish_digression( act, act.cursor.tokens ) # Just in case the macro is totally empty
+	frame.cursor = DIGRESSION( null, environment, frame.cursor )
+	#debug_digressions( "    new primitive digression: %r", frame.cursor )
+	action.function( frame.thread, **dict( environment.bindings ) )
+	finish_digression( frame, frame.cursor.tokens ) # Just in case the macro is totally empty
 
-def do_action_macro( act, environment, action ):
-	act.cursor = DIGRESSION( action.script, environment, act.cursor )
-	#debug_digressions( "    new macro digression: %r", act.cursor )
-	finish_digression( act, act.cursor.tokens ) # Just in case the macro is totally empty
+def do_action_macro( frame, environment, action ):
+	frame.cursor = DIGRESSION( action.script, environment, frame.cursor )
+	#debug_digressions( "    new macro digression: %r", frame.cursor )
+	finish_digression( frame, frame.cursor.tokens ) # Just in case the macro is totally empty
 
 do_action = {
 	'PRIMITIVE': do_action_primitive,
@@ -420,56 +536,56 @@ def get_token( probe ):
 	else:
 		return probe
 
-def perform_accept( act ):
+def perform_accept( frame ):
 	debug( 'accept' )
 	return false
 
 shift_count = 0
-def perform_shift( act ):
+def perform_shift( frame ):
 	global shift_count
 	shift_count += 1
 	#debug_shift = silence
 	#debug_shift( 'shift' )
-	#if act.operands != null and act.operands.head in action_words:
-	#	error( Missed_Action_Word( act.operands.head ) )
-	#debug_shift( "  cursor: %r", act.cursor )
-	#debug_shift( "  state: %s", act.history.head )
-	raw_token_sharp = get_token( take( act.cursor.tokens, 'head#' ) )
+	#if frame.operands != null and frame.operands.head in action_words:
+	#	error( Missed_Action_Word( frame.operands.head ) )
+	#debug_shift( "  cursor: %r", frame.cursor )
+	#debug_shift( "  state: %s", frame.history.head )
+	raw_token_sharp = get_token( take( frame.cursor.tokens, 'head#' ) )
 	#debug_shift( "  token: %r (%r)", flat( raw_token_sharp ), raw_token_sharp )
-	#debug_shift( "    bindings: %s", act.cursor.environment.bindings )
-	token_sharp = bound( raw_token_sharp, act.cursor.environment )
-	act.cursor.tokens = act.cursor.tokens.tail
-	finish_digression( act, act.cursor.tokens )
+	#debug_shift( "    bindings: %s", frame.cursor.environment.bindings )
+	token_sharp = bound( raw_token_sharp, frame.cursor.environment )
+	frame.cursor.tokens = frame.cursor.tokens.tail
+	finish_digression( frame, frame.cursor.tokens )
 	#debug_shift( "    value: %r", flat( token_sharp ) )
-	act.operands = cons( token_sharp, act.operands )
-	new_state = next_state( act.history.head, token_sharp )
+	frame.operands = cons( token_sharp, frame.operands )
+	new_state = next_state( frame.history.head, token_sharp )
 	#debug_shift( "  new_state: %r", new_state )
-	act.history = cons( new_state, act.history )
-	if list_length( act.operands ) > 50:
+	frame.history = cons( new_state, frame.history )
+	if list_length( frame.operands ) > 50:
 		error( RuntimeError( "Operand stack overflow" ) )
 	return true
 
-def perform_reduce0( act ):
-	if meta_level( act.thread ) >= printing_level_threshold:
+def perform_reduce0( frame ):
+	if meta_level( frame.thread ) >= printing_level_threshold:
 		debug_reduce = debug
 		debug2_reduce = silence
 	else:
 		debug_reduce = silence
 		debug2_reduce = silence
-	print_stuff( act.thread )
-	#debug2_reduce( ">-- reduce0 %s --", act.history.head.action )
-	action = bound( take( act.history.head, 'action#' ), act.scope ) # 'take' here just to get a sharp result
+	print_stuff( frame.thread )
+	#debug2_reduce( ">-- reduce0 %s --", frame.history.head.action )
+	action = bound( take( frame.history.head, 'action#' ), frame.scope ) # 'take' here just to get a sharp result
 	#debug2_reduce( "  action: %r", action )
 	#if is_a( action, 'MACRO' ):
 	#	debug_reduce( "    %s", python_list( action.script ) )
 	reduce_env = ENVIRONMENT( action.environment )
-	reduce_env.digressor = act.cursor.environment  # Need this in order to make 'bind' a macro, or else I can't access the environment I'm trying to bind
-	bind_args( act, reduce_env.bindings, action.formal_args )
-	print_reduce_stuff( act.thread, action, reduce_env )
+	reduce_env.digressor = frame.cursor.environment  # Need this in order to make 'bind' a macro, or else I can't access the environment I'm trying to bind
+	bind_args( frame, reduce_env.bindings, action.formal_args )
+	print_reduce_stuff( frame.thread, action, reduce_env )
 	#debug2_reduce( "  environment: %s", reduce_env )
-	#debug2_reduce( "    based on: %s", act.cursor )
-	do_action[ tag( action ) ]( act, reduce_env, action )
-	print_program( act.thread )
+	#debug2_reduce( "    based on: %s", frame.cursor )
+	do_action[ tag( action ) ]( frame, reduce_env, action )
+	print_program( frame.thread )
 	return true
 
 perform = {
@@ -478,129 +594,29 @@ perform = {
 	'REDUCE0': perform_reduce0,
 	}
 
-def execute2( act, probe ):
+def execute2( frame, probe ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
 	while probe == true: #is_a( probe, 'TRUE' ):
-		#print_stuff( act.thread )
-		command = tag( act.history.head )
+		#print_stuff( frame.thread )
+		command = tag( frame.history.head )
 		#debug( "-__ execute2 __ %s", perform[ command ] )
 		# if Python had tail call elimination, we could do this:
-		# execute2( act, perform[ command ]( act ) )
-		probe = perform[ command ]( act )
+		# execute2( frame, perform[ command ]( frame ) )
+		probe = perform[ command ]( frame )
 
 def execute( procedure, environment, scope ):
-	act = ACTIVATION( DIGRESSION( procedure.script, environment, nothing ), null, LIST( procedure.dialect, null ), scope, null )
+	frame = ACTIVATION( DIGRESSION( procedure.script, environment, nothing ), null, LIST( procedure.dialect, null ), scope, null )
 	global current_thread # Allow us to print debug info without passing this all over the place
-	current_thread = THREAD( act, null )
-	act.thread = current_thread # I don't love this back link, but it's really handy and efficient
-	debug( "starting thread: %r with digression:\n\t%s", current_thread, act.cursor )
-	execute2( act, true )
-
-#
-#
-#####################################
-
-
-def MACRO( name, script, formal_args, environment ): return Object( 'MACRO', name=name, script=script, formal_args=formal_args, environment=environment )
-def PROCEDURE( name, script, dialect, environment ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, environment=environment )
-def PRIMITIVE( name, function, formal_args, environment ): return Object( 'PRIMITIVE', name=name, function=function, formal_args=formal_args, environment=environment )
-def Reduce0( action ): return Object( 'REDUCE0', action=action )
-def Accept(): return Object( 'ACCEPT' )
-def Shift( **edges ):
-	# For convenience, we stick a colon on the front of each uppercase field name because that's probably what you want
-	result = Object( 'SHIFT' )
-	for ( name, value ) in edges.iteritems():
-		if name.isupper():
-			result[ ':'+name ] = value
-		else:
-			result[     name ] = value
-	return result
-def LIBRARY( name, dialect, environment ): return Object( 'LIBRARY', name=name, dialect=dialect, environment=environment )
+	current_thread = THREAD( frame, null )
+	frame.thread = current_thread # I don't love this back link, but it's really handy and efficient
+	debug( "starting thread: %r with digression:\n\t%s", current_thread, frame.cursor )
+	execute2( frame, true )
 
 
 #####################################
 #
-# Testing
+# Parsing
 #
-
-class Missed_Action_Word( BaseException ):
-
-	def __init__( self, word ):
-		self._word = word
-
-	def __str__( self ):
-		return "Missed action word: " + repr( self._word )
-
-class Unexpected_token( BaseException ):
-
-	def __init__( self, state, token ):
-		self._state = state
-		self._token = token
-
-	def __str__( self ):
-		return "Unexpected token %r in state %s" % ( self._token, self._state )
-
-class Start_script:
-
-	""" This just permits me to write some Sheppard code without enclosing every word in quotes
-	"""
-
-	def __init__( self ):
-		self._tokens = []
-
-	def __getattr__( self, key ):
-		if key == '_tokens':
-			return getattr( self, '_tokens' )
-		else:
-			self._tokens.append( key )
-			return self
-
-	def __getitem__( self, key ):
-		return self.__getattr__( key )
-
-	def End_script( self ):
-		return List( self._tokens )
-
-	def __call__( self, key ):
-		# Without this syntactic sugar, programs are unbearably verbose
-		return self["*"][key]
-
-	def __str__( self ):
-		return str( self._tokens )
-
-	def __repr__( self ):
-		return "Script_builder()" + string.join([ '.' + str(t) for t in self._tokens ])
-
-def go_world():
-	def primitive_hello( th, where ):
-		print "!! Called primitive_hello( %s )" % where
-
-	global_scope = ENVIRONMENT( null )
-	bindings = global_scope.bindings
-	bindings[ "A1" ] = MACRO( "A1",
-		formal_args = Stack([ null, 'arg' ]),
-		script = List([ 'hello', 'arg' ]),
-		environment = global_scope
-		)
-	bindings[ "A2" ] = PRIMITIVE( "A2",
-		formal_args= Stack([ null, 'where' ]), # ignore the 'go' keyword
-		function = primitive_hello,
-		environment = global_scope
-		)
-	dialect = Shift(
-		go = Shift( SYMBOL = Reduce0( "A1" )),
-		hello = Shift( SYMBOL = Reduce0( "A2" )),
-		EOF = Accept())
-
-	#debug( "Global scope: %s", global_scope )
-	#debug( "  bindings: %s", global_scope.bindings )
-	#debug( "  dialect: %s", dialect.description() )
-
-	return PROCEDURE( 'go_world',
-		Start_script().
-			go.world.
-		End_script(),
-		dialect, global_scope )
 
 def maybe_int( symbol ):
 	try:
@@ -805,86 +821,6 @@ def parse_procedure( name, library_text, script ):
 	result = PROCEDURE( name, List( script ), lib.dialect, env )
 	return result
 
-# Sheppard builtins
-
-def define_predefined_bindings( env ):
-	# Note: You usually want to add these after calling
-	# polymorphic_automaton, because that routine expects all bindings
-	# to be for actions only.
-	bindings = env.bindings
-	bindings[ 'null' ] = null
-	bindings[ 'eof' ] = eof
-	bindings[ 'false' ] = false
-	bindings[ 'true' ] = true
-	bindings[ 'nothing' ] = nothing
-
-def define_builtins( global_scope ):
-	debug_builtins = silence
-	def digress( th, *values ):
-		finish_digression( th.activation, th.activation.cursor.tokens )
-		th.activation.cursor = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
-		#debug_digressions( "    new builtin digression: %r = %s", th.activation.cursor, list_str( th.activation.cursor.tokens ) )
-
-	def bind_with_name( func, name, *args ):
-		arg_stack = Stack( [null] + list( args ) )
-		global_scope.bindings[ 'ACTION_' + name ] = PRIMITIVE( name, func, arg_stack, global_scope )
-		debug_builtins( "Binding primitive: %s %s", name, list(args) )
-
-	# Cython doesn't support func_name
-	#def bind( func, *args ):
-	#	bind_with_name( func, func.func_name, *args )
-
-	def builtin_exec( th, environment, code ):
-		exec code.strip() in globals(), environment.bindings
-	bind_with_name( builtin_exec, 'exec', 'environment', 'code' )
-
-	def builtin_eval( th, environment, code ):
-		result = eval( code.strip(), globals(), environment.bindings )
-		# One day, we should sharp/flat all the args and results of eval I guess.  Good thing the meta-interpreter doesn't use ints yet.
-		#result = sharp( result )
-		digress( th, result )
-	bind_with_name( builtin_eval, 'eval', 'environment', 'code' )
-
-	def buildin_current_thread( th ):
-		digress( th, th )
-	bind_with_name( buildin_current_thread, 'current_thread' )
-
-	def builtin_current_environment( th ):
-		# I could probably implement this somehow using current_thread and exec,
-		# but it's awkward as long as "set" uses this, because I have no easy
-		# way to set "th" before calling this.
-		digress( th, th.activation.cursor.environment.digressor )
-	bind_with_name( builtin_current_environment, 'current_environment' )
-
-	def builtin_nop( th ):
-		# It's a pain defining this in every library just so I can use exec and eval
-		pass
-	bind_with_name( builtin_nop, 'nop' )
-
-	# These are not really needed, but make a huge impact on performance.
-	# I'd like to keep the level-2 meta-interpreter under one minute right now,
-	# but one day I could eliminate these.
-
-	def builtin_get( th, base, field ): # Saves 163 shifts
-		digress( th, base[ field ] )
-	bind_with_name( builtin_get, 'get', 'base', 'field' )
-
-	def builtin_get2( th, base, field1, field2 ): # Saves 146 shifts
-		digress( th, base[ field1 ][ field2 ] )
-	bind_with_name( builtin_get2, 'get2', 'base', 'field1', 'field2' )
-
-	def builtin_take( th, base, field ): # Saves 107 shifts
-		digress( th, take( base, field ) )
-	bind_with_name( builtin_take, 'take', 'base', 'field' )
-
-	def builtin_put( th, value, base, field ): # Saves 147 shifts
-		base[ field ] = value
-	bind_with_name( builtin_put, 'put', 'base', 'field', 'value' )
-
-	def builtin_cons( th, **args ): # Saves 27 shifts
-		digress( th, cons(**args) )
-	bind_with_name( builtin_cons, 'cons', 'head_sharp', 'tail' )
-
 
 #####################################
 #
@@ -948,13 +884,13 @@ do
 
 
 to finish_digression 
-	act remaining_tokens:NULL
+	frame remaining_tokens:NULL
 do
-	put act cursor
-		get2 act cursor resumption
+	put frame cursor
+		get2 frame cursor resumption
 
 to finish_digression 
-	act remaining_tokens
+	frame remaining_tokens
 do
 
 
@@ -969,20 +905,20 @@ do
 
 
 to bind_args 
-	act arg_bindings formal_args:NULL
+	frame arg_bindings formal_args:NULL
 do
 
 to bind_args 
-	act arg_bindings formal_args:LIST
+	frame arg_bindings formal_args:LIST
 do
-	put act history
-		get2 act history tail
+	put frame history
+		get2 frame history tail
 	bind_arg
 		arg_bindings
 		take formal_args head#
-		pop_list act operands#
+		pop_list frame operands#
 	bind_args
-		act
+		frame
 		arg_bindings
 		get formal_args tail
 
@@ -1053,30 +989,30 @@ do
 
 
 to do_action 
-	act environment action:PRIMITIVE
+	frame environment action:PRIMITIVE
 do
-	put act cursor
+	put frame cursor
 		Digression
 			null
 			environment
-			get act cursor
+			get frame cursor
 	exec current_environment
-		{ action.function( act.thread, **dict( environment.bindings ) ) }
+		{ action.function( frame.thread, **dict( environment.bindings ) ) }
 	finish_digression
-		act
-		get2 act cursor tokens
+		frame
+		get2 frame cursor tokens
 
 to do_action 
-	act environment action:MACRO
+	frame environment action:MACRO
 do
-	put act cursor
+	put frame cursor
 		Digression
 			get action script
 			environment
-			get act cursor
+			get frame cursor
 	finish_digression
-		act
-		get2 act cursor tokens
+		frame
+		get2 frame cursor tokens
 
 
 to get_token 
@@ -1091,87 +1027,87 @@ do
 
 
 to perform 
-	act state:ACCEPT
+	frame state:ACCEPT
 do
 	false
 
 to perform 
-	act state:SHIFT
+	frame state:SHIFT
 do
 	set raw_token_sharp
 		get_token take
-			get2 act cursor tokens
+			get2 frame cursor tokens
 			head#
 	set token_sharp
 		bound
 			raw_token_sharp
-			get2 act cursor environment
+			get2 frame cursor environment
 	put
-		get act cursor
+		get frame cursor
 		tokens
-		get3 act cursor tokens tail
+		get3 frame cursor tokens tail
 	finish_digression
-		act
-		get2 act cursor tokens
-	put act operands
+		frame
+		get2 frame cursor tokens
+	put frame operands
 		cons
 			token_sharp
-			get act operands
+			get frame operands
 	set new_state
 		next_state
-			get2 act history head
+			get2 frame history head
 			token_sharp
-	put act history
-		cons new_state get act history
+	put frame history
+		cons new_state get frame history
 	true
 
 to perform 
-	act state:REDUCE0
+	frame state:REDUCE0
 do
 	exec current_environment
-		{ print_stuff( act.thread ) }
+		{ print_stuff( frame.thread ) }
 	set action
 		bound
 			take
-				get2 act history head
+				get2 frame history head
 				action#
-			get act scope
+			get frame scope
 	set reduce_env
 		Environment
 			get action environment
 	put reduce_env digressor
-		get2 act cursor environment
+		get2 frame cursor environment
 	bind_args
-		act
+		frame
 		get reduce_env bindings
 		get action formal_args
 	exec current_environment
-		{ print_reduce_stuff( act.thread, action, reduce_env ) }
+		{ print_reduce_stuff( frame.thread, action, reduce_env ) }
 	do_action
-		act
+		frame
 		reduce_env
 		action
 	exec current_environment
-		{ print_program( act.thread ) }
+		{ print_program( frame.thread ) }
 	true
 
 to execute2 
-	act probe:FALSE
+	frame probe:FALSE
 do
 
 to execute2 
-	act probe:TRUE
+	frame probe:TRUE
 do
 	execute2
-		act
+		frame
 		perform
-			act
-			get2 act history head
+			frame
+			get2 frame history head
 
 to execute 
 	procedure environment scope
 do
-	set act
+	set frame
 		Activation
 			Digression
 				get procedure script
@@ -1183,9 +1119,9 @@ do
 				null
 			scope
 			null
-	put act thread
-		Thread act current_thread
-	execute2 act true
+	put frame thread
+		Thread frame current_thread
+	execute2 frame true
 
 """
 
@@ -1201,9 +1137,56 @@ to put value base field       do    exec current_environment { base[ field ] = v
 to cons head_sharp tail       do    eval current_environment { cons( head_sharp, tail ) }
 """
 
-#
-#
+
 #####################################
+#
+# Testing
+#
+
+class Missed_Action_Word( BaseException ):
+
+	def __init__( self, word ):
+		self._word = word
+
+	def __str__( self ):
+		return "Missed action word: " + repr( self._word )
+
+class Unexpected_token( BaseException ):
+
+	def __init__( self, state, token ):
+		self._state = state
+		self._token = token
+
+	def __str__( self ):
+		return "Unexpected token %r in state %s" % ( self._token, self._state )
+
+def go_world():
+	def primitive_hello( th, where ):
+		print "!! Called primitive_hello( %s )" % where
+
+	global_scope = ENVIRONMENT( null )
+	bindings = global_scope.bindings
+	bindings[ "A1" ] = MACRO( "A1",
+		formal_args = Stack([ null, 'arg' ]),
+		script = List([ 'hello', 'arg' ]),
+		environment = global_scope
+		)
+	bindings[ "A2" ] = PRIMITIVE( "A2",
+		formal_args= Stack([ null, 'where' ]), # ignore the 'go' keyword
+		function = primitive_hello,
+		environment = global_scope
+		)
+	dialect = Shift(
+		go = Shift( SYMBOL = Reduce0( "A1" )),
+		hello = Shift( SYMBOL = Reduce0( "A2" )),
+		EOF = Accept())
+
+	#debug( "Global scope: %s", global_scope )
+	#debug( "  bindings: %s", global_scope.bindings )
+	#debug( "  dialect: %s", dialect.description() )
+
+	return PROCEDURE( 'go_world', List([ 'go', 'world' ]), dialect, global_scope )
+
 
 fib_text = """
 to + a b   do eval current_environment { a+b }
