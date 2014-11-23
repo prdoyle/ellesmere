@@ -49,13 +49,14 @@ class Object:
 
 	def __setitem__( self, key, value ):
 		#debug_object( "%r[ %r ] = %r", self, key, value )
-		if isinstance( key, int ):
-			#debug_object( "setitem is setting %r._elements[%r] = %s", self, key, value )
-			self._elements[ key ] = value
-		else:
+		try:
 			setattr( self, key, value )
 			if not key in self._fields:
 				self._fields.append( key )
+		except TypeError:
+			assert(isinstance( key, int ))
+			#debug_object( "setitem is setting %r._elements[%r] = %s", self, key, value )
+			self._elements[ key ] = value
 
 	def __contains__( self, key ):
 		try:
@@ -135,9 +136,9 @@ def tag( obj ):
 	try:
 		return obj._tag
 	except AttributeError:
-		if is_symbol( obj ):
+		if isinstance( obj, str ): #is_symbol( obj ):
 			result = 'SYMBOL'
-		elif is_int( obj ):
+		elif isinstance( obj, int ): #is_int( obj ):
 			result = 'INT'
 		else: # All other Sheppard objects are represented by instances of Object
 			result = obj._tag
@@ -152,7 +153,7 @@ def sharp( arg ):
 	if isinstance( arg, str ): #if is_a( arg, 'SYMBOL' ):
 		return arg + '#'
 	elif is_a( arg, 'INT' ):
-		return Object( 'INT', value=arg )
+		return Object( 'INT', value=arg ) # Wrap arg (which may be a python int) in an Object of type INT
 	else:
 		return arg
 
@@ -1717,20 +1718,22 @@ hash_test_text = """
 sheppard_interpreter_library = None
 def wrap_procedure( inner_procedure ):
 	global global_scope, sheppard_interpreter_library, action_words
+	prefix = True
 	if sheppard_interpreter_library is None:
 		global_scope = ENVIRONMENT( null )
-		prefix = True
 		define_builtins( global_scope, prefix )
 		if prefix:
 			sheppard_interpreter_library = parse_prefix_library( "sheppard_interpreter", meta_interpreter_prefix_text, global_scope )
-			script = List([ 'execute', inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment ])
 		else:
 			sheppard_interpreter_library = parse_postfix_library( "sheppard_interpreter", meta_interpreter_postfix_text, global_scope )
-			script = List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment, 'execute' ])
 		define_predefined_bindings( global_scope )
 	action_words = [ s[7:] for s in global_scope.bindings._fields ]
 	nothing.environment = global_scope
 	bindings = global_scope.bindings
+	if prefix:
+		script = List([ 'execute', inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment ])
+	else:
+		script = List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment, 'execute' ])
 	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, script, sheppard_interpreter_library.dialect, global_scope )
 	return outer_procedure
 
@@ -1776,3 +1779,6 @@ def main():
 	print shift_count, "shifts in", pretty_time( elapsed_time ), "with", object_counter, "objects"
 
 main()
+#import cProfile
+#cProfile.run( "main()", None, "time" )
+
