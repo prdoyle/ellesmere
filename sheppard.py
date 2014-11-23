@@ -446,8 +446,15 @@ def define_builtins( global_scope ):
 #  - Loops will be replaced with tail digression.  There's only one loop anyway
 #    so that's no big deal.
 #
+# Because no general if-statements are allowed (Sheppard has none), we adopt an
+# unusual style in which all conditionals are turned into dispatches.
+# A routine foo compute some value whose type determines what to do next, and
+# passes that to a polymorphic routine foo2, using the dispatch mechanism to
+# pick the right variant.
+#
 
 def pop_list( base, field_symbol_sharp ):
+	"""Odd little routine that's just super handy for dealing with object fields that are stacks"""
 	current = take( base, field_symbol_sharp )
 	result  = take( current, 'head#' )
 	#debug( "!!! pop_list( %s, %s ) = %s", base, field_symbol_sharp, result )
@@ -470,7 +477,7 @@ def bind_arg( arg_bindings, arg_symbol_sharp, arg_value_sharp ):
 		#debug_bind( "    %s=%r", flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
 
 def bind_args( frame, arg_bindings, formal_args ):
-	if formal_args is null: #is_a( formal_args, 'NULL' ):
+	if formal_args is null:
 		pass
 	else:
 		frame.history = frame.history.tail
@@ -478,10 +485,9 @@ def bind_args( frame, arg_bindings, formal_args ):
 		bind_args( frame, arg_bindings, formal_args.tail )
 
 def bound( obj_sharp, environment ):
-	if environment is null: #is_a( environment, 'NULL' ):
+	if environment is null:
 		return obj_sharp
 	else:
-		#debug( "-- looking up %r in: %s", obj_sharp, environment.bindings )
 		return bound2( obj_sharp, environment, take( environment.bindings, obj_sharp ) )
 
 def bound2( obj_sharp, environment, possible_match ):
@@ -493,12 +499,15 @@ def bound2( obj_sharp, environment, possible_match ):
 def next_state( state, obj_sharp ):
 	# First we check of the object is itself a symbol that has an edge from this
 	# state (ie. it's acting as a keyword).  Failing that, we check the object's
-	# "tag edge symbol" to see if the object is of a type that has an edge.
-	#debug( "-- looking up %r in: %s", obj_sharp, state )
+	# "tag edge symbol" to see if the object is of a type that has an edge.  If
+	# that also fails, we default to the ":ANY" edge.  (This is where we should
+	# be doing something smart for inheritance.)  These successive checks
+	# necessitate not just one next_state2 routine, but another next_state3
+	# routine too.
 	return next_state2( state, obj_sharp, take( state, obj_sharp ) )
 
 def next_state2( state, obj_sharp, possible_match ):
-	if possible_match is take_failed: # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj_sharp] exists and state[ tag_edge_symbol(obj_sharp) ] does not, we can't evaluate the latter
+	if possible_match is take_failed:
 		return next_state3( state, obj_sharp, take( state, tag_edge_symbol(obj_sharp) ) )
 	else:
 		return possible_match
@@ -508,6 +517,7 @@ def next_state3( state, obj_sharp, possible_match ):
 		try:
 			return state[ ':ANY' ]
 		except KeyError:
+			# Raise a more descriptive Sheppard error
 			raise Unexpected_token( state, obj_sharp )
 	else:
 		return possible_match
@@ -532,8 +542,9 @@ do_action = {
 	}
 
 def get_token( possible_token ):
+	"""Transmute TAKE_FAILED into eof to make all token lists appear to end with an infinite stream of eofs"""
 	if possible_token is take_failed:
-		return eof
+		return sharp( eof )
 	else:
 		return possible_token
 
@@ -551,11 +562,10 @@ def perform_shift( frame ):
 	#	error( Missed_Action_Word( frame.operands.head ) )
 	#debug_shift( "  cursor: %r", frame.cursor )
 	#debug_shift( "  state: %s", frame.history.head )
-	raw_token_sharp = get_token( take( frame.cursor.tokens, 'head#' ) )
+	raw_token_sharp = get_token( pop_list( frame.cursor, "tokens#" ) ) # This may break the illusion of an infinite sequence of EOFs?
 	#debug_shift( "  token: %r (%r)", flat( raw_token_sharp ), raw_token_sharp )
 	#debug_shift( "    bindings: %s", frame.cursor.environment.bindings )
 	token_sharp = bound( raw_token_sharp, frame.cursor.environment )
-	frame.cursor.tokens = frame.cursor.tokens.tail
 	finish_digression( frame, frame.cursor.tokens )
 	#debug_shift( "    value: %r", flat( token_sharp ) )
 	frame.operands = cons( token_sharp, frame.operands )
@@ -876,14 +886,8 @@ do put
 
 to pop_list 
 	base field_symbol_sharp
-do
-	set current
-		take base field_symbol_sharp
-	set result
-		take current head#
-	give base field_symbol_sharp
-		take current tail#
-	result
+do eval current_environment
+	{ pop_list( base, field_symbol_sharp ) }
 
 
 to finish_digression 
@@ -1038,17 +1042,14 @@ to perform
 	frame state:SHIFT
 do
 	set raw_token_sharp
-		get_token take
-			get2 frame cursor tokens
-			head#
+		get_token
+			pop_list
+				get frame cursor
+				tokens#
 	set token_sharp
 		bound
 			raw_token_sharp
 			get2 frame cursor environment
-	put
-		get frame cursor
-		tokens
-		get3 frame cursor tokens tail
 	finish_digression
 		frame
 		get2 frame cursor tokens
@@ -1140,6 +1141,17 @@ to get base field             do    eval current_environment { base[ field ] }
 to get2 base f1 f2            do    eval current_environment { base[ f1 ][ f2 ] }
 to put value base field       do    exec current_environment { base[ field ] = value }
 to cons head_sharp tail       do    eval current_environment { cons( head_sharp, tail ) }
+
+to pop_list 
+	base field_symbol_sharp
+do
+	set current
+		take base field_symbol_sharp
+	set result
+		take current head#
+	give base field_symbol_sharp
+		take current tail#
+	result
 """
 
 
