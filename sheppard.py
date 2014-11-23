@@ -851,8 +851,8 @@ def define_builtins( global_scope ):
 
 	def builtin_current_environment( th ):
 		# I could probably implement this somehow using current_thread and exec,
-		# but it's awkward as long as "bind" uses this, because I have no easy
-		# way to bind "th" before calling this.
+		# but it's awkward as long as "set" uses this, because I have no easy
+		# way to set "th" before calling this.
 		digress( th, th.activation.cursor.environment.digressor )
 	bind_with_name( builtin_current_environment, 'current_environment' )
 
@@ -894,28 +894,23 @@ def define_builtins( global_scope ):
 meta_interpreter_text = """
 to Procedure
 	name script dialect environment
-do eval current_environment
-	{ PROCEDURE(**dict( locals() )) }
+do eval current_environment { PROCEDURE(**dict( locals() )) }
 
 to Digression
 	tokens environment resumption
-do eval current_environment
-	{ DIGRESSION(**dict( locals() )) }
+do eval current_environment { DIGRESSION(**dict( locals() )) }
 
 to Activation
 	cursor operands history scope caller
-do eval current_environment
-	{ ACTIVATION(**dict( locals() )) }
+do eval current_environment { ACTIVATION(**dict( locals() )) }
 
 to Thread
 	activation meta_thread
-do eval current_environment
-	{ THREAD(**dict( locals() )) }
+do eval current_environment { THREAD(**dict( locals() )) }
 
 to Environment
 	outer
-do eval current_environment
-	{ ENVIRONMENT(**dict( locals() )) }
+do eval current_environment { ENVIRONMENT(**dict( locals() )) }
 
 
 to tag_edge_symbol
@@ -933,24 +928,24 @@ to give
 do exec current_environment
 	{ give( base, key_sharp, value_sharp ) }
 
-to bind 
+to set 
 	symbol value
 do put
 	get2 current_environment digressor bindings
 	symbol
 	value
 
-
 to pop_list 
 	base field_symbol_sharp
 do
-	bind current
+	set current
 		take base field_symbol_sharp
-	bind result
+	set result
 		take current head#
 	give base field_symbol_sharp
 		take current tail#
 	result
+
 
 to finish_digression 
 	act remaining_tokens:NULL
@@ -1103,11 +1098,11 @@ do
 to perform 
 	act state:SHIFT
 do
-	bind raw_token_sharp
+	set raw_token_sharp
 		get_token take
 			get2 act cursor tokens
 			head#
-	bind token_sharp
+	set token_sharp
 		bound
 			raw_token_sharp
 			get2 act cursor environment
@@ -1122,7 +1117,7 @@ do
 		cons
 			token_sharp
 			get act operands
-	bind new_state
+	set new_state
 		next_state
 			get2 act history head
 			token_sharp
@@ -1135,13 +1130,13 @@ to perform
 do
 	exec current_environment
 		{ print_stuff( act.thread ) }
-	bind action
+	set action
 		bound
 			take
 				get2 act history head
 				action#
 			get act scope
-	bind reduce_env
+	set reduce_env
 		Environment
 			get action environment
 	put reduce_env digressor
@@ -1176,7 +1171,7 @@ do
 to execute 
 	procedure environment scope
 do
-	bind act
+	set act
 		Activation
 			Digression
 				get procedure script
