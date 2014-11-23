@@ -441,7 +441,8 @@ def define_builtins( global_scope ):
 #  - Procedures are only allowed one if statement sequence.  It must be at the
 #    top level, and must use is_a based on the arguments or compare the
 #    argument against a specific symbol.  This represents sheppard
-#    automaton-based dispatch.
+#    automaton-based dispatch.  (For singletons like null and take_failed, we
+#    can compare against object identity for performance reasons.
 #  - Loops will be replaced with tail digression.  There's only one loop anyway
 #    so that's no big deal.
 #
@@ -476,12 +477,6 @@ def bind_args( frame, arg_bindings, formal_args ):
 		bind_arg( arg_bindings, take( formal_args, 'head#' ), pop_list( frame, 'operands#' ) )
 		bind_args( frame, arg_bindings, formal_args.tail )
 
-def bound2( obj_sharp, environment, probe ):
-	if probe is take_failed:
-		return bound( obj_sharp, environment.outer )
-	else:
-		return probe
-
 def bound( obj_sharp, environment ):
 	if environment is null: #is_a( environment, 'NULL' ):
 		return obj_sharp
@@ -489,18 +484,9 @@ def bound( obj_sharp, environment ):
 		#debug( "-- looking up %r in: %s", obj_sharp, environment.bindings )
 		return bound2( obj_sharp, environment, take( environment.bindings, obj_sharp ) )
 
-def next_state3( state, obj_sharp, probe ):
-	if probe is take_failed:
-		try:
-			return state[ ':ANY' ]
-		except KeyError:
-			raise Unexpected_token( state, obj_sharp )
-	else:
-		return probe
-
-def next_state2( state, obj_sharp, possible_match ):
-	if possible_match is take_failed: # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj_sharp] exists and state[ tag_edge_symbol(obj_sharp) ] does not, we can't evaluate the latter
-		return next_state3( state, obj_sharp, take( state, tag_edge_symbol(obj_sharp) ) )
+def bound2( obj_sharp, environment, possible_match ):
+	if possible_match is take_failed:
+		return bound( obj_sharp, environment.outer )
 	else:
 		return possible_match
 
@@ -510,6 +496,21 @@ def next_state( state, obj_sharp ):
 	# "tag edge symbol" to see if the object is of a type that has an edge.
 	#debug( "-- looking up %r in: %s", obj_sharp, state )
 	return next_state2( state, obj_sharp, take( state, obj_sharp ) )
+
+def next_state2( state, obj_sharp, possible_match ):
+	if possible_match is take_failed: # Need to use TAKE_FAILED to get a short-circuit version of take.  If state[obj_sharp] exists and state[ tag_edge_symbol(obj_sharp) ] does not, we can't evaluate the latter
+		return next_state3( state, obj_sharp, take( state, tag_edge_symbol(obj_sharp) ) )
+	else:
+		return possible_match
+
+def next_state3( state, obj_sharp, possible_match ):
+	if possible_match is take_failed:
+		try:
+			return state[ ':ANY' ]
+		except KeyError:
+			raise Unexpected_token( state, obj_sharp )
+	else:
+		return possible_match
 
 
 def do_action_primitive( frame, environment, action ):
@@ -530,11 +531,11 @@ do_action = {
 	'MACRO':     do_action_macro,
 	}
 
-def get_token( probe ):
-	if probe is take_failed:
+def get_token( possible_token ):
+	if possible_token is take_failed:
 		return eof
 	else:
-		return probe
+		return possible_token
 
 def perform_accept( frame ):
 	debug( 'accept' )
@@ -594,16 +595,6 @@ perform = {
 	'REDUCE0': perform_reduce0,
 	}
 
-def execute2( frame, probe ):
-	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
-	while probe == true: #is_a( probe, 'TRUE' ):
-		#print_stuff( frame.thread )
-		command = tag( frame.history.head )
-		#debug( "-__ execute2 __ %s", perform[ command ] )
-		# if Python had tail call elimination, we could do this:
-		# execute2( frame, perform[ command ]( frame ) )
-		probe = perform[ command ]( frame )
-
 def execute( procedure, environment, scope ):
 	frame = ACTIVATION( DIGRESSION( procedure.script, environment, nothing ), null, LIST( procedure.dialect, null ), scope, null )
 	global current_thread # Allow us to print debug info without passing this all over the place
@@ -611,6 +602,17 @@ def execute( procedure, environment, scope ):
 	frame.thread = current_thread # I don't love this back link, but it's really handy and efficient
 	debug( "starting thread: %r with digression:\n\t%s", current_thread, frame.cursor )
 	execute2( frame, true )
+
+def execute2( frame, keep_going ):
+	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
+	while keep_going == true: #is_a( keep_going, 'TRUE' ):
+		#print_stuff( frame.thread )
+		command = tag( frame.history.head )
+		#debug( "-__ execute2 __ %s", perform[ command ] )
+		# if Python had tail call elimination, we could do this:
+		#   execute2( frame, perform[ command ]( frame ) )
+		# but instead, we loop
+		keep_going = perform[ command ]( frame )
 
 
 #####################################
@@ -871,6 +873,7 @@ do put
 	symbol
 	value
 
+
 to pop_list 
 	base field_symbol_sharp
 do
@@ -923,19 +926,6 @@ do
 		get formal_args tail
 
 
-to bound2 
-	obj_sharp environment TAKE_FAILED@probe
-do
-	bound
-		obj_sharp
-		get environment outer
-
-to bound2 
-	obj_sharp environment probe
-do
-	probe
-
-
 to bound 
 	obj_sharp environment:NULL
 do
@@ -952,31 +942,17 @@ do
 			obj_sharp
 
 
-to next_state3 
-	state obj_sharp TAKE_FAILED@probe
-do
-	get state :ANY
-
-to next_state3 
-	state obj_sharp probe
-do
-	probe
-
-
-to next_state2 
-	state obj_sharp TAKE_FAILED@possible_match
-do
-	next_state3
-		state
-		obj_sharp
-		take
-			state
-			tag_edge_symbol obj_sharp
-
-to next_state2 
-	state obj_sharp possible_match
+to bound2 
+	obj_sharp environment possible_match
 do
 	possible_match
+
+to bound2 
+	obj_sharp environment TAKE_FAILED@
+do
+	bound
+		obj_sharp
+		get environment outer
 
 
 to next_state 
@@ -986,6 +962,33 @@ do
 		state
 		obj_sharp
 		take state obj_sharp
+
+
+to next_state2 
+	state obj_sharp possible_match
+do
+	possible_match
+
+to next_state2 
+	state obj_sharp TAKE_FAILED@
+do
+	next_state3
+		state
+		obj_sharp
+		take
+			state
+			tag_edge_symbol obj_sharp
+
+
+to next_state3 
+	state obj_sharp possible_match
+do
+	possible_match
+
+to next_state3 
+	state obj_sharp TAKE_FAILED@
+do
+	get state :ANY
 
 
 to do_action 
@@ -1016,14 +1019,14 @@ do
 
 
 to get_token 
-	TAKE_FAILED@probe
+	possible_token
 do
-	eof
+	possible_token
 
 to get_token 
-	probe
+	TAKE_FAILED@
 do
-	probe
+	eof
 
 
 to perform 
@@ -1091,18 +1094,6 @@ do
 		{ print_program( frame.thread ) }
 	true
 
-to execute2 
-	frame probe:FALSE
-do
-
-to execute2 
-	frame probe:TRUE
-do
-	execute2
-		frame
-		perform
-			frame
-			get2 frame history head
 
 to execute 
 	procedure environment scope
@@ -1122,6 +1113,20 @@ do
 	put frame thread
 		Thread frame current_thread
 	execute2 frame true
+
+
+to execute2 
+	frame keep_going:FALSE
+do
+
+to execute2 
+	frame keep_going:TRUE
+do
+	execute2
+		frame
+		perform
+			frame
+			get2 frame history head
 
 """
 
