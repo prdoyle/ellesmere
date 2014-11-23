@@ -715,7 +715,7 @@ class Macro_factory: # Eventually split off the stuff that's acting like a produ
 		self._script = []
 
 	def process_word( self, word ):
-		debug_parse = debug
+		debug_parse = silence
 		# Could be part of the script
 		try:
 			self._script.append( word )
@@ -769,7 +769,7 @@ def parse_postfix_procedure( name, library_text, script ):
 	return result
 
 def parse_prefix_library( name, string, environment ):
-	debug_parse = debug
+	debug_parse = silence
 	bindings = environment.bindings
 	builtin_action_symbols = set([ k for (k,v) in bindings ])
 	macro_symbols = set()
@@ -812,7 +812,7 @@ def polymorphic_prefix_automaton( factories_by_action_symbol, builtin_action_sym
 	# multi-dispatch languages using prefix notation.
 	# This will suffice until I write a proper parser generator.
 	action_bindings = environment.bindings
-	debug_ppa = debug
+	debug_ppa = silence
 	default_state = Shift()
 	shift_states = [ default_state ]
 	debug_ppa( "default_state: %s", default_state )
@@ -1486,7 +1486,6 @@ do
 to execute2 
 	act probe:FALSE
 do
-	false
 
 to execute2 
 	act probe:TRUE
