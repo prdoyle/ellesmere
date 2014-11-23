@@ -562,16 +562,12 @@ def perform_shift( frame ):
 	#	error( Missed_Action_Word( frame.operands.head ) )
 	#debug_shift( "  cursor: %r", frame.cursor )
 	#debug_shift( "  state: %s", frame.history.head )
-	raw_token_sharp = get_token( pop_list( frame.cursor, "tokens#" ) ) # This may break the illusion of an infinite sequence of EOFs?
-	#debug_shift( "  token: %r (%r)", flat( raw_token_sharp ), raw_token_sharp )
-	#debug_shift( "    bindings: %s", frame.cursor.environment.bindings )
-	token_sharp = bound( raw_token_sharp, frame.cursor.environment )
+	token_sharp = bound( get_token( pop_list( frame.cursor, "tokens#" ) ), frame.cursor.environment )
 	finish_digression( frame, frame.cursor.tokens )
 	#debug_shift( "    value: %r", flat( token_sharp ) )
 	frame.operands = cons( token_sharp, frame.operands )
-	new_state = next_state( frame.history.head, token_sharp )
-	#debug_shift( "  new_state: %r", new_state )
-	frame.history = cons( new_state, frame.history )
+	frame.history = cons( next_state( frame.history.head, token_sharp ), frame.history )
+	#debug_shift( "  new_state: %r", frame.history.head )
 	if list_length( frame.operands ) > 50:
 		error( RuntimeError( "Operand stack overflow" ) )
 	return true
@@ -1041,14 +1037,12 @@ do
 to perform 
 	frame state:SHIFT
 do
-	set raw_token_sharp
-		get_token
-			pop_list
-				get frame cursor
-				tokens#
 	set token_sharp
 		bound
-			raw_token_sharp
+			get_token
+				pop_list
+					get frame cursor
+					tokens#
 			get2 frame cursor environment
 	finish_digression
 		frame
@@ -1057,12 +1051,12 @@ do
 		cons
 			token_sharp
 			get frame operands
-	set new_state
-		next_state
-			get2 frame history head
-			token_sharp
 	put frame history
-		cons new_state get frame history
+		cons
+			next_state
+				get2 frame history head
+				token_sharp
+			get frame history
 	true
 
 to perform 
