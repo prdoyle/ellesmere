@@ -17,9 +17,10 @@ def error( exception ):
 	print_backtrace( current_thread )
 	raise exception
 
-debug_digressions = silence
+# Calls to these are often commented out below to improve performance.  "Enabling" these here may not be enough.
+#debug_digressions = silence
+#debug_object = silence
 
-debug_object = silence
 object_counter = 0
 
 class Object:
@@ -43,13 +44,13 @@ class Object:
 		except AttributeError:
 			raise KeyError # When using dict syntax, we should raise the dict exception, so this can be used as bindings for python exec and eval
 		except TypeError:
-			debug_object( "getitem is checking %r._elements %s", self, self._elements )
+			#debug_object( "getitem is checking %r._elements %s", self, self._elements )
 			return self._elements[ key ] # If _elements were implemented as a list, we should catch IndexError and raise KeyError
 
 	def __setitem__( self, key, value ):
-		debug_object( "%r[ %r ] = %r", self, key, value )
+		#debug_object( "%r[ %r ] = %r", self, key, value )
 		if isinstance( key, int ):
-			debug_object( "setitem is setting %r._elements[%r] = %s", self, key, value )
+			#debug_object( "setitem is setting %r._elements[%r] = %s", self, key, value )
 			self._elements[ key ] = value
 		else:
 			setattr( self, key, value )
@@ -339,17 +340,18 @@ def pop_list( base, field_symbol_sharp ):
 
 def finish_digression( act, remaining_tokens ):
 	if remaining_tokens is null: #is_a( remaining_tokens, 'NULL' ):
-		debug_digressions( "  (finished %r %r %s)", act.cursor, act.cursor.environment, act.cursor.environment.bindings  )
+		#debug_digressions( "  (finished %r %r %s)", act.cursor, act.cursor.environment, act.cursor.environment.bindings  )
 		act.cursor = act.cursor.resumption
 
 def bind_arg( arg_bindings, arg_symbol_sharp, arg_value_sharp ):
 	debug_bind = silence
 	if arg_symbol_sharp is null: # is_a( arg_symbol_sharp, 'NULL' )
-		debug_bind( "    pop %r", flat( arg_value_sharp ) )
+		#debug_bind( "    pop %r", flat( arg_value_sharp ) )
+		pass
 	else:
 		assert( is_a( arg_symbol_sharp, 'SYMBOL' ) )
 		give( arg_bindings, arg_symbol_sharp, arg_value_sharp )
-		debug_bind( "    %s=%r", flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
+		#debug_bind( "    %s=%r", flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
 
 def bind_args( act, arg_bindings, formal_args ):
 	if formal_args is null: #is_a( formal_args, 'NULL' ):
@@ -394,18 +396,18 @@ def next_state( state, obj_sharp ):
 	#debug( "-- looking up %r in: %s", obj_sharp, state )
 	return next_state2( state, obj_sharp, take( state, obj_sharp ) )
 
-debug_do = silence
 
 def do_action_primitive( act, environment, action ):
-	debug_do( "  Primitive bindings: %s", dict( environment.bindings ) )
+	debug_do = silence
+	#debug_do( "  Primitive bindings: %s", dict( environment.bindings ) )
 	act.cursor = DIGRESSION( null, environment, act.cursor )
-	debug_digressions( "    new primitive digression: %r", act.cursor )
+	#debug_digressions( "    new primitive digression: %r", act.cursor )
 	action.function( act.thread, **dict( environment.bindings ) )
 	finish_digression( act, act.cursor.tokens ) # Just in case the macro is totally empty
 
 def do_action_macro( act, environment, action ):
 	act.cursor = DIGRESSION( action.script, environment, act.cursor )
-	debug_digressions( "    new macro digression: %r", act.cursor )
+	#debug_digressions( "    new macro digression: %r", act.cursor )
 	finish_digression( act, act.cursor.tokens ) # Just in case the macro is totally empty
 
 do_action = {
@@ -456,17 +458,17 @@ def perform_reduce0( act ):
 		debug_reduce = silence
 		debug2_reduce = silence
 	print_stuff( act.thread )
-	debug2_reduce( ">-- reduce0 %s --", act.history.head.action )
+	#debug2_reduce( ">-- reduce0 %s --", act.history.head.action )
 	action = bound( take( act.history.head, 'action#' ), act.scope ) # 'take' here just to get a sharp result
-	debug2_reduce( "  action: %s", repr( action ) )
+	#debug2_reduce( "  action: %s", repr( action ) )
 	#if is_a( action, 'MACRO' ):
 	#	debug_reduce( "    %s", python_list( action.script ) )
 	reduce_env = ENVIRONMENT( action.environment )
 	reduce_env.digressor = act.cursor.environment  # Need this in order to make 'bind' a macro, or else I can't access the environment I'm trying to bind
 	bind_args( act, reduce_env.bindings, action.formal_args )
 	print_reduce_stuff( act.thread, action, reduce_env )
-	debug2_reduce( "  environment: %s", reduce_env )
-	debug2_reduce( "    based on: %s", act.cursor )
+	#debug2_reduce( "  environment: %s", reduce_env )
+	#debug2_reduce( "    based on: %s", act.cursor )
 	do_action[ tag( action ) ]( act, reduce_env, action )
 	print_program( act.thread )
 	return true
@@ -917,7 +919,7 @@ def define_builtins( global_scope, prefix ):
 	def digress( th, *values ):
 		finish_digression( th.activation, th.activation.cursor.tokens )
 		th.activation.cursor = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
-		debug_digressions( "    new builtin digression: %r = %s", th.activation.cursor, list_str( th.activation.cursor.tokens ) )
+		#debug_digressions( "    new builtin digression: %r = %s", th.activation.cursor, list_str( th.activation.cursor.tokens ) )
 
 	def bind_with_name( func, name, *args ):
 		if prefix:
