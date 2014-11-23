@@ -17,6 +17,8 @@ def error( exception ):
 	print_backtrace( current_thread )
 	raise exception
 
+debug_digressions = silence
+
 debug_object = silence
 object_counter = 0
 
@@ -293,15 +295,15 @@ def print_stuff( th ):
 		#debug( "stack: %s", zip( python_list( act.history ), python_list( act.operands ) ) )
 		print_program( th )
 		debug( "|  history: %s", list_str( act.history, ':', debug_ellision_limit ) )
-		debug( "|   cursor: %s", repr( act.cursor ) )
-		debug( "|      env: %s %s", repr( act.cursor.environment ), act.cursor.environment.bindings )
+		debug( "|   cursor: %s", act.cursor )
+		debug( "| bindings: %s", act.cursor.environment.bindings )
 
 def print_reduce_stuff( th, action, environment ):
 	if meta_level( th ) >= printing_level_threshold:
 		act = th.activation
-		#debug( ">+  ACTION: ( %s ) %s %s", list_str( action.formal_args ), action.name, action )
-		debug( ">+  ACTION: %s %s", action.name, action )
-		debug( " |    with: %s %s", repr( environment ), environment.bindings )
+		debug( ">+  ACTION: %r: %s  (%r)", action.name, list_str( action.formal_args ), action )
+		#debug( ">+  ACTION: %s %s", action.name, action )
+		debug( " |    with: %r %s", environment, environment.bindings )
 
 def print_backtrace( th ):
 	print_stuff( th )
@@ -337,7 +339,7 @@ def pop_list( base, field_symbol_sharp ):
 
 def finish_digression( act, remaining_tokens ):
 	if remaining_tokens is null: #is_a( remaining_tokens, 'NULL' ):
-		#debug( "  (finished %s)", repr( act.cursor ) )
+		debug_digressions( "  (finished %r %r %s)", act.cursor, act.cursor.environment, act.cursor.environment.bindings  )
 		act.cursor = act.cursor.resumption
 
 def bind_arg( arg_bindings, arg_symbol_sharp, arg_value_sharp ):
@@ -397,12 +399,13 @@ debug_do = silence
 def do_action_primitive( act, environment, action ):
 	debug_do( "  Primitive bindings: %s", dict( environment.bindings ) )
 	act.cursor = DIGRESSION( null, environment, act.cursor )
+	debug_digressions( "    new primitive digression: %r", act.cursor )
 	action.function( act.thread, **dict( environment.bindings ) )
 	finish_digression( act, act.cursor.tokens ) # Just in case the macro is totally empty
 
 def do_action_macro( act, environment, action ):
 	act.cursor = DIGRESSION( action.script, environment, act.cursor )
-	debug_do( "    new_digression: %s", repr( act.cursor ) )
+	debug_digressions( "    new macro digression: %r", act.cursor )
 	finish_digression( act, act.cursor.tokens ) # Just in case the macro is totally empty
 
 do_action = {
@@ -534,7 +537,7 @@ class Unexpected_token( BaseException ):
 		self._token = token
 
 	def __str__( self ):
-		return "Unexpected token %s in state %s" % ( self._token, self._state )
+		return "Unexpected token %r in state %s" % ( self._token, self._state )
 
 class Start_script:
 
@@ -712,7 +715,7 @@ class Macro_factory: # Eventually split off the stuff that's acting like a produ
 		self._script = []
 
 	def process_word( self, word ):
-		debug_parse = silence
+		debug_parse = debug
 		# Could be part of the script
 		try:
 			self._script.append( word )
@@ -720,11 +723,20 @@ class Macro_factory: # Eventually split off the stuff that's acting like a produ
 			return
 		except AttributeError:
 			pass
-		# Could be an :ANY argument
+		# Could be an argument
 		try:
-			self._arg_names.append( word )
-			self._arg_types.append( ':ANY' )
-			debug_parse( '  arg %r', word )
+			if ':' in word:
+				[ name, tp ] = word.split( ':' )
+				tp = ':' + tp
+			elif '@' in word:
+				[ tp, name ] = word.split( '@' )
+				tp = maybe_int( tp )
+			else:
+				name = word
+				tp = ':ANY'
+			self._arg_names.append( name )
+			self._arg_types.append( tp )
+			debug_parse( '  arg %s %r', name, tp )
 			return
 		except AttributeError:
 			pass
@@ -757,17 +769,15 @@ def parse_postfix_procedure( name, library_text, script ):
 	return result
 
 def parse_prefix_library( name, string, environment ):
-	debug_parse = silence
+	debug_parse = debug
 	bindings = environment.bindings
-	edge_symbols = set()
 	builtin_action_symbols = set([ k for (k,v) in bindings ])
 	macro_symbols = set()
 	factory = None
 	factories_by_action_symbol = {}
-	def done( factory, factories_by_action_symbol, edge_symbols ):
+	def done( factory, factories_by_action_symbol ):
 		if factory and factory._name:
 			name = factory._name
-			edge_symbols.add( name )
 			macro = factory.create_macro( environment )
 			action_symbol = 'ACTION_%d' % macro._id
 			macro_symbols.add( action_symbol )
@@ -779,36 +789,30 @@ def parse_prefix_library( name, string, environment ):
 	for word in re.findall( r'\([^)]*\)|\{[^}]*\}|\[[^]]*\]|\S+(?:/:?\w+#*)?', string.strip() ):
 		debug_parse( "WORD: '%s'", word )
 		if word == "to":
-			done( factory, factories_by_action_symbol, edge_symbols )
+			done( factory, factories_by_action_symbol )
 			factory = Macro_factory()
 		elif word == "do":
 			factory.begin_script()
 		elif word[0] == '[': # TODO
-			done( factory, factories_by_action_symbol, edge_symbols )
+			done( factory, factories_by_action_symbol )
 			factory = Macro_factory()
 			object_types = word[1:-1].split()
 			debug_parse( "object_types: %s", object_types )
-			edge_symbols.update( object_types )
 		elif word[0] == '{': # Long symbol/string
 			factory.process_word( word[1:-1] )
-		elif ':' in word:
-			[ name, tp ] = word.split( ':' )
-			tp = maybe_int( tp )
-			factory.process_arg( name, tp )
-			edge_symbols.add( tp )
 		else: # Ordinary word; what it means depends on the state
 			factory.process_word( maybe_int( word ) )
-	done( factory, factories_by_action_symbol, edge_symbols )
+	done( factory, factories_by_action_symbol )
 
-	automaton = polymorphic_prefix_automaton( factories_by_action_symbol, builtin_action_symbols, macro_symbols, edge_symbols, environment )
+	automaton = polymorphic_prefix_automaton( factories_by_action_symbol, builtin_action_symbols, macro_symbols, environment )
 	return LIBRARY( name, automaton, bindings )
 
-def polymorphic_prefix_automaton( factories_by_action_symbol, builtin_action_symbols, macro_symbols, edge_symbols, environment ):
+def polymorphic_prefix_automaton( factories_by_action_symbol, builtin_action_symbols, macro_symbols, environment ):
 	# A little silly parser generator algorithm to deal with simple
 	# multi-dispatch languages using prefix notation.
 	# This will suffice until I write a proper parser generator.
 	action_bindings = environment.bindings
-	debug_ppa = silence
+	debug_ppa = debug
 	default_state = Shift()
 	shift_states = [ default_state ]
 	debug_ppa( "default_state: %s", default_state )
@@ -908,11 +912,12 @@ def define_predefined_bindings( env ):
 	bindings[ 'true' ] = true
 	bindings[ 'nothing' ] = nothing
 
-def define_builtins( global_scope, prefix=False ):
+def define_builtins( global_scope, prefix ):
 	debug_builtins = silence
 	def digress( th, *values ):
 		finish_digression( th.activation, th.activation.cursor.tokens )
 		th.activation.cursor = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
+		debug_digressions( "    new builtin digression: %r = %s", th.activation.cursor, list_str( th.activation.cursor.tokens ) )
 
 	def bind_with_name( func, name, *args ):
 		if prefix:
@@ -926,16 +931,16 @@ def define_builtins( global_scope, prefix=False ):
 	#def bind( func, *args ):
 	#	bind_with_name( func, func.func_name, *args )
 
-	def builtin_exec( th, code ):
-		exec code.strip() in globals(), th.activation.cursor.environment.digressor.bindings
-	bind_with_name( builtin_exec, 'exec', 'code' )
+	def builtin_exec( th, environment, code ):
+		exec code.strip() in globals(), environment.bindings
+	bind_with_name( builtin_exec, 'exec', 'environment', 'code' )
 
-	def builtin_eval( th, code ):
-		result = eval( code.strip(), globals(), th.activation.cursor.environment.digressor.bindings )
+	def builtin_eval( th, environment, code ):
+		result = eval( code.strip(), globals(), environment.bindings )
 		# One day, we should sharp/flat all the args and results of eval I guess.  Good thing the meta-interpreter doesn't use ints yet.
 		#result = sharp( result )
 		digress( th, result )
-	bind_with_name( builtin_eval, 'eval', 'code' )
+	bind_with_name( builtin_eval, 'eval', 'environment', 'code' )
 
 	def buildin_current_thread( th ):
 		digress( th, th )
@@ -987,15 +992,15 @@ def define_builtins( global_scope, prefix=False ):
 #
 
 meta_interpreter_postfix_text = """
-( name script dialect environment )       Procedure   { PROCEDURE(**dict( locals() )) }   eval nop
-( tokens environment resumption )         Digression  { DIGRESSION(**dict( locals() )) }  eval nop
-( cursor operands history scope caller )  Activation  { ACTIVATION(**dict( locals() )) }  eval nop
-( activation meta_thread )                Thread      { THREAD(**dict( locals() )) }      eval nop
-( outer )                                 Environment { ENVIRONMENT(**dict( locals() )) } eval nop
+( name script dialect environment )       Procedure   current_environment { PROCEDURE(**dict( locals() )) }   eval
+( tokens environment resumption )         Digression  current_environment { DIGRESSION(**dict( locals() )) }  eval
+( cursor operands history scope caller )  Activation  current_environment { ACTIVATION(**dict( locals() )) }  eval
+( activation meta_thread )                Thread      current_environment { THREAD(**dict( locals() )) }      eval
+( outer )                                 Environment current_environment { ENVIRONMENT(**dict( locals() )) } eval
 
-( obj )          tag_edge_symbol { ':' + tag( obj ) + '#' }     eval nop
-( base f1 f2 f3 )           get3 { base[ f1 ][ f2 ][ f3 ] }     eval nop
-( value base field )        give { give( base, field, value ) } exec nop
+( obj )          tag_edge_symbol current_environment { ':' + tag( obj ) + '#' }     eval
+( base f1 f2 f3 )           get3 current_environment { base[ f1 ][ f2 ][ f3 ] }     eval
+( value base field )        give current_environment { give( base, field, value ) } exec
 
 ( value symbol ) bind 
 		value
@@ -1086,7 +1091,7 @@ meta_interpreter_postfix_text = """
 			act cursor get
 		Digression
 	act cursor put
-	{ action.function( act.thread, **dict( environment.bindings ) ) } exec
+	current_environment { action.function( act.thread, **dict( environment.bindings ) ) } exec
 		act
 		act cursor tokens get2
 	finish_digression
@@ -1139,7 +1144,7 @@ meta_interpreter_postfix_text = """
 	true
 
 ( act state ) perform/:REDUCE0
-	{ print_stuff( act.thread ) } exec
+	current_environment { print_stuff( act.thread ) } exec
 			act history head get2 action# take
 			act scope get
 		bound
@@ -1152,12 +1157,12 @@ meta_interpreter_postfix_text = """
 		reduce_env bindings get
 		action formal_args get
 	bind_args
-	{ print_reduce_stuff( act.thread, action, reduce_env ) } exec
+	current_environment { print_reduce_stuff( act.thread, action, reduce_env ) } exec
 		act
 		reduce_env
 		action
 	do_action
-	{ print_program( act.thread ) } exec
+	current_environment { print_program( act.thread ) } exec
 	true
 
 ( act probe ) execute2/:FALSE
@@ -1202,55 +1207,54 @@ meta_interpreter_postfix_text = """
 # make the interpreter much slower, so we just leave them as builtins for now.
 #
 not_used_because_they_are_too_slow = """
-( base field )              take { take( base, field ) }        eval nop
-( base field )               get { base[ field ] }              eval nop
-( base f1 f2 )              get2 { base[ f1 ][ f2 ] }           eval nop
-( value base field )         put { base[ field ] = value }      exec nop
-( head_sharp tail )         cons { cons( head_sharp, tail ) }   eval nop
+( base field )              take current_environment { take( base, field ) }        eval
+( base field )               get current_environment { base[ field ] }              eval
+( base f1 f2 )              get2 current_environment { base[ f1 ][ f2 ] }           eval
+( value base field )         put current_environment { base[ field ] = value }      exec
+( head_sharp tail )         cons current_environment { cons( head_sharp, tail ) }   eval
 """
 
 meta_interpreter_prefix_text = """
 to Procedure
 	name script dialect environment
-do eval
-	{ PROCEDURE(**dict( locals() )) } nop
+do eval current_environment
+	{ PROCEDURE(**dict( locals() )) }
 
 to Digression
 	tokens environment resumption
-do eval
-	{ DIGRESSION(**dict( locals() )) } nop
+do eval current_environment
+	{ DIGRESSION(**dict( locals() )) }
 
 to Activation
 	cursor operands history scope caller
-do eval
-	{ ACTIVATION(**dict( locals() )) } nop
+do eval current_environment
+	{ ACTIVATION(**dict( locals() )) }
 
 to Thread
 	activation meta_thread
-do eval
-	{ THREAD(**dict( locals() )) } nop
+do eval current_environment
+	{ THREAD(**dict( locals() )) }
 
 to Environment
 	outer
-do eval
-	{ ENVIRONMENT(**dict( locals() )) } nop
+do eval current_environment
+	{ ENVIRONMENT(**dict( locals() )) }
 
 
 to tag_edge_symbol
 	obj
-do eval
-	{ ':' + tag( obj ) + '#' } nop
+do eval current_environment
+	{ ':' + tag( obj ) + '#' }
 
 to get3
-	f1 f2 f3 base
-do eval
-	{ base[ f1 ][ f2 ][ f3 ] } nop
+	base f1 f2 f3
+do eval current_environment
+	{ base[ f1 ][ f2 ][ f3 ] }
 
 to give
-	field base value
-do eval
-	{ give( value, base, field ) } nop
-
+	base key_sharp value_sharp
+do exec current_environment
+	{ give( base, key_sharp, value_sharp ) }
 
 to bind 
 	symbol value
@@ -1259,17 +1263,17 @@ do put
 	symbol
 	value
 
+
 to pop_list 
 	base field_symbol_sharp
 do
 	bind current
-		take field_symbol_sharp base
+		take base field_symbol_sharp
 	bind result
-		take head# current
+		take current head#
 	give base field_symbol_sharp
 		take current tail#
 	result
-
 
 to finish_digression 
 	act remaining_tokens:NULL
@@ -1301,9 +1305,10 @@ to bind_args
 do
 	put act history
 		get2 act history tail
-	bind_arg arg_bindings
-		pop_list act operands#
+	bind_arg
+		arg_bindings
 		take formal_args head#
+		pop_list act operands#
 	bind_args
 		act
 		arg_bindings
@@ -1311,7 +1316,7 @@ do
 
 
 to bound2 
-	obj_sharp environment probe:TAKE_FAILED
+	obj_sharp environment TAKE_FAILED@probe
 do
 	bound
 		obj_sharp
@@ -1340,7 +1345,7 @@ do
 
 
 to next_state3 
-	state obj_sharp probe:TAKE_FAILED
+	state obj_sharp TAKE_FAILED@probe
 do
 	get state :ANY
 
@@ -1351,7 +1356,7 @@ do
 
 
 to next_state2 
-	state obj_sharp probe:TAKE_FAILED
+	state obj_sharp TAKE_FAILED@possible_match
 do
 	next_state3
 		state
@@ -1361,9 +1366,9 @@ do
 			tag_edge_symbol obj_sharp
 
 to next_state2 
-	state obj_sharp probe
+	state obj_sharp possible_match
 do
-	probe
+	possible_match
 
 
 to next_state 
@@ -1383,7 +1388,8 @@ do
 			null
 			environment
 			get act cursor
-	exec { action.function( act.thread, **dict( environment.bindings ) ) }
+	exec current_environment
+		{ action.function( act.thread, **dict( environment.bindings ) ) }
 	finish_digression
 		act
 		get2 act cursor tokens
@@ -1402,7 +1408,7 @@ do
 
 
 to get_token 
-	probe:TAKE_FAILED
+	TAKE_FAILED@probe
 do
 	eof
 
@@ -1450,7 +1456,8 @@ do
 to perform 
 	act state:REDUCE0
 do
-	exec { print_stuff( act.thread ) }
+	exec current_environment
+		{ print_stuff( act.thread ) }
 	bind action
 		bound
 			take
@@ -1459,19 +1466,21 @@ do
 			get act scope
 	bind reduce_env
 		Environment
-			action environment get
+			get action environment
 	put reduce_env digressor
 		get2 act cursor environment
 	bind_args
 		act
 		get reduce_env bindings
 		get action formal_args
-	exec { print_reduce_stuff( act.thread, action, reduce_env ) }
+	exec current_environment
+		{ print_reduce_stuff( act.thread, action, reduce_env ) }
 	do_action
 		act
 		reduce_env
 		action
-	exec { print_program( act.thread ) }
+	exec current_environment
+		{ print_program( act.thread ) }
 	true
 
 to execute2 
@@ -1514,11 +1523,11 @@ do
 #####################################
 
 fib_text_with_compare = """
-( a b ) +   { a+b } eval nop
-( a b ) -   { a-b } eval nop
-( a b ) <=  { a<=b and true or false } eval nop
+( a b ) +   { a+b } current_environment eval
+( a b ) -   { a-b } current_environment eval
+( a b ) <=  { a<=b and true or false } current_environment eval
 
-( n ) print_result { print "*** RESULT IS", n, "***" } exec nop
+( n ) print_result current_environment { print "*** RESULT IS", n, "***" } exec
 
 ( n is_base_case ) fib2/:TRUE
 	1
@@ -1537,10 +1546,10 @@ fib_text_with_compare = """
 """
 
 fib_text_with_dispatch = """
-( a b ) +   { a+b } eval nop
-( a b ) -   { a-b } eval nop
+( a b ) +   { a+b } current_environment eval
+( a b ) -   { a-b } current_environment eval
 
-( n ) print_result { print "*** RESULT IS", n, "***" } exec nop
+( n ) print_result current_environment { print "*** RESULT IS", n, "***" } exec
 
 ( n ) fib/0  1
 ( n ) fib/1  1
@@ -1554,13 +1563,13 @@ fib_text_with_dispatch = """
 """
 
 fib_text_prefix = """
-to + a b   do eval { a+b } nop
-to - a b   do eval { a-b } nop
+to + a b   do eval current_environment { a+b }
+to - a b   do eval current_environment { a-b }
 
-to print_result n do exec { print "*** RESULT IS", n, "***" } nop
+to print_result n do exec current_environment { print "*** RESULT IS", n, "***" }
 
-to fib n:0 do 1
-to fib n:1 do 1
+to fib 0@ do 1
+to fib 1@ do 1
 
 to fib n do
 	+
@@ -1577,22 +1586,22 @@ def fib_procedure():
 # don't want 'foo'*12345 buliding some immense string by accident.
 
 hash_test_text = """
-( a b ) +        { int(a) +  int(b) } eval nop
-( a b ) -        { int(a) -  int(b) } eval nop
-( a b ) *        { int(a) *  int(b) } eval nop
-( a b ) ^        { int(a) ^  int(b) } eval nop
-( a b ) =/:INT   { int(a) == int(b) and true or false } eval nop
+( a b ) +        { int(a) +  int(b) } current_environment eval
+( a b ) -        { int(a) -  int(b) } current_environment eval
+( a b ) *        { int(a) *  int(b) } current_environment eval
+( a b ) ^        { int(a) ^  int(b) } current_environment eval
+( a b ) =/:INT   { int(a) == int(b) and true or false } current_environment eval
 
 ( a b ) &&/:FALSE   false
 ( a b ) &&/:TRUE    a
 ( a b ) ||/:FALSE   a
 ( a b ) ||/:TRUE    true
 
-( left right )           PAIR { Object( 'PAIR', **dict(locals()) ) } eval nop
-()                 HASH_TABLE { Object( 'HASH_TABLE', **dict(locals()) ) } eval nop
-( key value next ) HASH_ENTRY { Object( 'HASH_ENTRY', **dict(locals()) ) } eval nop
+( left right )           PAIR { Object( 'PAIR', **dict(locals()) ) } current_environment eval
+()                 HASH_TABLE { Object( 'HASH_TABLE', **dict(locals()) ) } current_environment eval
+( key value next ) HASH_ENTRY { Object( 'HASH_ENTRY', **dict(locals()) ) } current_environment eval
 
-( value ) sharp { sharp( value ) } eval nop
+( value ) sharp { sharp( value ) } current_environment eval
 
 ( value symbol ) bind 
 		value
@@ -1700,7 +1709,7 @@ hash_test_text = """
 () main
 	HASH_TABLE table bind
 	table 2 populate_table
-	{ print "*** Table:", table.description(), "***" } exec nop
+	current_environment { print "*** Table:", table.description(), "***" } exec
 
 [ :BINDINGS :ENVIRONMENT :HASH_TABLE :HASH_ENTRY :INT :PAIR :SYMBOL ]
 """
@@ -1709,13 +1718,19 @@ def wrap_procedure( inner_procedure ):
 	global global_scope, sheppard_interpreter_library, action_words
 	if sheppard_interpreter_library is None:
 		global_scope = ENVIRONMENT( null )
-		define_builtins( global_scope )
-		sheppard_interpreter_library = parse_postfix_library( "sheppard_interpreter", meta_interpreter_postfix_text, global_scope )
+		prefix = True
+		define_builtins( global_scope, prefix )
+		if prefix:
+			sheppard_interpreter_library = parse_prefix_library( "sheppard_interpreter", meta_interpreter_prefix_text, global_scope )
+			script = List([ 'execute', inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment ])
+		else:
+			sheppard_interpreter_library = parse_postfix_library( "sheppard_interpreter", meta_interpreter_postfix_text, global_scope )
+			script = List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment, 'execute' ])
 		define_predefined_bindings( global_scope )
 	action_words = [ s[7:] for s in global_scope.bindings._fields ]
 	nothing.environment = global_scope
 	bindings = global_scope.bindings
-	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, List([ inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment, 'execute' ]), sheppard_interpreter_library.dialect, global_scope )
+	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, script, sheppard_interpreter_library.dialect, global_scope )
 	return outer_procedure
 
 def test( depth, plt ):
@@ -1730,7 +1745,7 @@ def test( depth, plt ):
 		debug( "procedure: %s", str( procedure ) )
 		debug( "   script: %s", str( procedure.script ) )
 		debug( " bindings: %s", str( procedure.environment.bindings ) )
-		debug( "  dialect: %s", procedure.dialect.description() )
+		#debug( "  dialect: %s", procedure.dialect.description() )
 	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
 
 def pretty_time( t ):
