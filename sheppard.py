@@ -743,8 +743,8 @@ def parse_library( name, string, environment ):
 
 def polymorphic_automaton( factories_by_action_symbol, builtin_action_symbols, macro_symbols, environment ):
 	# A little silly parser generator algorithm to deal with simple
-	# multi-dispatch LL(1) languages using prefix notation and offering little
-	# error detection.
+	# multi-dispatch LR(0) languages using prefix notation and offering very
+	# little error detection.
 	# This will suffice until I write a proper parser generator.
 	action_bindings = environment.bindings
 	debug_ppa = silence
