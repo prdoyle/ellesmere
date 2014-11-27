@@ -155,6 +155,11 @@ def is_a( obj, t ):
 	return tag( obj ) == t # TODO: inheritance
 
 def sharp( arg ):
+	"""
+	This is a way of quoting a symbol to protect it from being interpreted.
+
+	Invariant: flat(sharp( X )) is x
+	"""
 	if isinstance( arg, str ): #if is_a( arg, 'SYMBOL' ):
 		# I like putting the sharp at the end, because it reads nicely, like
 		# 'foo#' as "foo sharp".  However, the ordering becomes ambiguous when we
@@ -662,12 +667,12 @@ class Macro_factory: # Eventually split off the stuff that's acting like a produ
 			pass
 		# Could be an argument
 		try:
-			if ':' in word:
+			if '=' in word:
+				[ name, tp ] = word.split( '=' )
+				tp = maybe_int( tp )
+			elif ':' in word:
 				[ name, tp ] = word.split( ':' )
 				tp = ':' + tp
-			elif '@' in word:
-				[ tp, name ] = word.split( '@' )
-				tp = maybe_int( tp )
 			else:
 				name = word
 				tp = ':ANY'
@@ -948,7 +953,7 @@ do
 	possible_match
 
 to bound2 
-	obj_sharp environment TAKE_FAILED@
+	obj_sharp environment x=TAKE_FAILED
 do
 	bound
 		obj_sharp
@@ -970,7 +975,7 @@ do
 	possible_match
 
 to next_state2 
-	state obj_sharp TAKE_FAILED@
+	state obj_sharp x=TAKE_FAILED
 do
 	next_state3
 		state
@@ -986,7 +991,7 @@ do
 	possible_match
 
 to next_state3 
-	state obj_sharp TAKE_FAILED@
+	state obj_sharp x=TAKE_FAILED
 do
 	get state :ANY
 
@@ -1024,7 +1029,7 @@ do
 	possible_token
 
 to get_token 
-	TAKE_FAILED@
+	x=TAKE_FAILED
 do
 	eof
 
@@ -1205,13 +1210,13 @@ to - a b   do eval current_environment { a-b }
 
 to print_result n do exec current_environment { print "*** RESULT IS", n, "***" }
 
-to fib 0@ do 1
-to fib 1@ do 1
+to fib n=0 do 1
+to fib n=1 do 1
 
 to fib n do
 	+
-	fib - n 1
-	fib - n 2
+		fib - n 1
+		fib - n 2
 
 """
 
