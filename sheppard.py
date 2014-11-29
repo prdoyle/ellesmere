@@ -367,7 +367,7 @@ def define_predefined_bindings( env ):
 def define_builtins( global_scope ):
 	debug_builtins = silence
 	def digress( th, *values ):
-		finish_digression( th.activation, th.activation.cursor.tokens )
+		end_digression_if_finished( th.activation, th.activation.cursor.tokens )
 		th.activation.cursor = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
 		#debug_digressions( "    new builtin digression: %r = %s", th.activation.cursor, list_str( th.activation.cursor.tokens ) )
 
@@ -466,7 +466,7 @@ def pop_list( base, field_symbol_sharp ):
 	give( base, field_symbol_sharp, take( current, 'tail#' ) )
 	return result
 
-def finish_digression( frame, remaining_tokens ):
+def end_digression_if_finished( frame, remaining_tokens ):
 	if remaining_tokens is null: #is_a( remaining_tokens, 'NULL' ):
 		#debug_digressions( "  (finished %r %r %s)", frame.cursor, frame.cursor.environment, frame.cursor.environment.bindings  )
 		frame.cursor = frame.cursor.resumption
@@ -528,13 +528,13 @@ def next_state3( state, obj_sharp, possible_match ):
 		return possible_match
 
 
-def do_action( frame, environment, action ):
+def begin_digression( frame, reduce_environment, action ):
 	if is_a( action, 'PRIMITIVE' ):
-		frame.cursor = DIGRESSION( null, environment, frame.cursor )
+		frame.cursor = DIGRESSION( null, reduce_environment, frame.cursor )
 		#debug_digressions( "    new primitive digression: %r", frame.cursor )
-		action.function( frame.thread, **dict( environment.bindings ) )
+		action.function( frame.thread, **dict( reduce_environment.bindings ) )
 	else:
-		frame.cursor = DIGRESSION( action.script, environment, frame.cursor )
+		frame.cursor = DIGRESSION( action.script, reduce_environment, frame.cursor )
 		#debug_digressions( "    new macro digression: %r", frame.cursor )
 
 def get_token( possible_token ):
@@ -557,7 +557,7 @@ def perform_shift( frame ):
 	#debug_shift( "  cursor: %r", frame.cursor )
 	#debug_shift( "  state: %s", frame.history.head )
 	token_sharp = bound( get_token( pop_list( frame.cursor, "tokens#" ) ), frame.cursor.environment )
-	finish_digression( frame, frame.cursor.tokens )
+	end_digression_if_finished( frame, frame.cursor.tokens )
 	#debug_shift( "    value: %r", flat( token_sharp ) )
 	frame.operands = cons( token_sharp, frame.operands )
 	frame.history = cons( next_state( frame.history.head, token_sharp ), frame.history )
@@ -579,14 +579,14 @@ def perform_reduce0( frame ):
 	#debug2_reduce( "  action: %r", action )
 	#if is_a( action, 'MACRO' ):
 	#	debug_reduce( "    %s", python_list( action.script ) )
-	reduce_env = ENVIRONMENT( action.environment )
-	reduce_env.digressor = frame.cursor.environment  # Need this in order to make 'bind' a macro, or else I can't access the environment I'm trying to bind
-	bind_args( frame, reduce_env.bindings, action.formal_args )
-	print_reduce_stuff( frame.thread, action, reduce_env )
-	#debug2_reduce( "  environment: %s", reduce_env )
+	reduce_environment = ENVIRONMENT( action.environment )
+	reduce_environment.digressor = frame.cursor.environment  # Need this in order to make 'bind' a macro, or else I can't access the environment I'm trying to bind
+	bind_args( frame, reduce_environment.bindings, action.formal_args )
+	print_reduce_stuff( frame.thread, action, reduce_environment )
+	#debug2_reduce( "  environment: %s", reduce_environment )
 	#debug2_reduce( "    based on: %s", frame.cursor )
-	do_action( frame, reduce_env, action )
-	finish_digression( frame, frame.cursor.tokens )
+	begin_digression( frame, reduce_environment, action )
+	end_digression_if_finished( frame, frame.cursor.tokens )
 	print_program( frame.thread )
 	return true
 
@@ -872,13 +872,13 @@ do eval current_environment
 	{ pop_list( base, field_symbol_sharp ) }
 
 
-to finish_digression 
+to end_digression_if_finished 
 	frame remaining_tokens:NULL
 do
 	put frame cursor
 		get2 frame cursor resumption
 
-to finish_digression 
+to end_digression_if_finished 
 	frame remaining_tokens
 do
 
@@ -977,24 +977,24 @@ do
 	get state :ANY
 
 
-to do_action 
-	frame environment action:PRIMITIVE
+to begin_digression 
+	frame reduce_environment action:PRIMITIVE
 do
 	put frame cursor
 		Digression
 			null  /* Primitive has no script */
-			environment
+			reduce_environment
 			get frame cursor
 	exec current_environment
-		{ action.function( frame.thread, **dict( environment.bindings ) ) }
+		{ action.function( frame.thread, **dict( reduce_environment.bindings ) ) }
 
-to do_action 
-	frame environment action:MACRO
+to begin_digression 
+	frame reduce_environment action:MACRO
 do
 	put frame cursor
 		Digression
 			get action script
-			environment
+			reduce_environment
 			get frame cursor
 
 
@@ -1018,7 +1018,7 @@ do
 					get frame cursor
 					tokens#
 			get2 frame cursor environment
-	finish_digression
+	end_digression_if_finished
 		frame
 		get2 frame cursor tokens
 	put frame operands
@@ -1044,22 +1044,22 @@ do
 				get2 frame history head
 				action#
 			get frame scope
-	set reduce_env
+	set reduce_environment
 		Environment
 			get action environment
-	put reduce_env digressor
+	put reduce_environment digressor
 		get2 frame cursor environment
 	bind_args
 		frame
-		get reduce_env bindings
+		get reduce_environment bindings
 		get action formal_args
 	exec current_environment
-		{ print_reduce_stuff( frame.thread, action, reduce_env ) }
-	do_action
+		{ print_reduce_stuff( frame.thread, action, reduce_environment ) }
+	begin_digression
 		frame
-		reduce_env
+		reduce_environment
 		action
-	finish_digression
+	end_digression_if_finished
 		frame
 		get2 frame cursor tokens
 	exec current_environment
