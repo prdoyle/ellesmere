@@ -528,23 +528,14 @@ def next_state3( state, obj_sharp, possible_match ):
 		return possible_match
 
 
-def do_action_primitive( frame, environment, action ):
-	debug_do = silence
-	#debug_do( "  Primitive bindings: %s", dict( environment.bindings ) )
-	frame.cursor = DIGRESSION( null, environment, frame.cursor )
-	#debug_digressions( "    new primitive digression: %r", frame.cursor )
-	action.function( frame.thread, **dict( environment.bindings ) )
-	finish_digression( frame, frame.cursor.tokens ) # Just in case the macro is totally empty
-
-def do_action_macro( frame, environment, action ):
-	frame.cursor = DIGRESSION( action.script, environment, frame.cursor )
-	#debug_digressions( "    new macro digression: %r", frame.cursor )
-	finish_digression( frame, frame.cursor.tokens ) # Just in case the macro is totally empty
-
-do_action = {
-	'PRIMITIVE': do_action_primitive,
-	'MACRO':     do_action_macro,
-	}
+def do_action( frame, environment, action ):
+	if is_a( action, 'PRIMITIVE' ):
+		frame.cursor = DIGRESSION( null, environment, frame.cursor )
+		#debug_digressions( "    new primitive digression: %r", frame.cursor )
+		action.function( frame.thread, **dict( environment.bindings ) )
+	else:
+		frame.cursor = DIGRESSION( action.script, environment, frame.cursor )
+		#debug_digressions( "    new macro digression: %r", frame.cursor )
 
 def get_token( possible_token ):
 	"""Transmute TAKE_FAILED into eof to make all token lists appear to end with an infinite stream of eofs"""
@@ -594,7 +585,8 @@ def perform_reduce0( frame ):
 	print_reduce_stuff( frame.thread, action, reduce_env )
 	#debug2_reduce( "  environment: %s", reduce_env )
 	#debug2_reduce( "    based on: %s", frame.cursor )
-	do_action[ tag( action ) ]( frame, reduce_env, action )
+	do_action( frame, reduce_env, action )
+	finish_digression( frame, frame.cursor.tokens )
 	print_program( frame.thread )
 	return true
 
@@ -995,9 +987,6 @@ do
 			get frame cursor
 	exec current_environment
 		{ action.function( frame.thread, **dict( environment.bindings ) ) }
-	finish_digression
-		frame
-		get2 frame cursor tokens
 
 to do_action 
 	frame environment action:MACRO
@@ -1007,9 +996,6 @@ do
 			get action script
 			environment
 			get frame cursor
-	finish_digression
-		frame
-		get2 frame cursor tokens
 
 
 /* Behave as though every token list ends with an infinite sequence of eofs */
@@ -1073,6 +1059,9 @@ do
 		frame
 		reduce_env
 		action
+	finish_digression
+		frame
+		get2 frame cursor tokens
 	exec current_environment
 		{ print_program( frame.thread ) }
 	true
