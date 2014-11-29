@@ -243,7 +243,7 @@ def ACTIVATION( cursor, operands, history, scope, caller ): return Object( 'ACTI
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
 def MACRO( name, script, formal_args, environment ): return Object( 'MACRO', name=name, script=script, formal_args=formal_args, environment=environment )
 def PROCEDURE( name, script, dialect, environment ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, environment=environment )
-def PRIMITIVE( name, function, formal_args, environment ): return Object( 'PRIMITIVE', name=name, script=null, function=function, formal_args=formal_args, environment=environment )
+def PRIMITIVE( name, function, formal_args, environment ): return Object( 'PRIMITIVE', name=name, function=function, formal_args=formal_args, environment=environment )
 def Reduce0( action ): return Object( 'REDUCE0', action=action )
 def Accept(): return Object( 'ACCEPT' )
 def Shift( **edges ):
@@ -380,16 +380,56 @@ def define_builtins( global_scope ):
 	#def bind( func, *args ):
 	#	bind_with_name( func, func.func_name, *args )
 
-	def buildin_current_thread( th, args ):
+	def builtin_exec( th, environment, code ):
+		exec code.strip() in globals(), environment.bindings
+	bind_with_name( builtin_exec, 'exec', 'environment', 'code' )
+
+	def builtin_eval( th, environment, code ):
+		result = eval( code.strip(), globals(), environment.bindings )
+		# One day, we should sharp/flat all the args and results of eval I guess.  Good thing the meta-interpreter doesn't use ints yet.
+		#result = sharp( result )
+		digress( th, result )
+	bind_with_name( builtin_eval, 'eval', 'environment', 'code' )
+
+	def buildin_current_thread( th ):
 		digress( th, th )
 	bind_with_name( buildin_current_thread, 'current_thread' )
 
-	def builtin_current_environment( th, args ):
+	def builtin_current_environment( th ):
 		# I could probably implement this somehow using current_thread and exec,
 		# but it's awkward as long as "set" uses this, because I have no easy
 		# way to set "th" before calling this.
 		digress( th, th.activation.cursor.environment.digressor )
 	bind_with_name( builtin_current_environment, 'current_environment' )
+
+	def builtin_nop( th ):
+		# It's a pain defining this in every library just so I can use exec and eval
+		pass
+	bind_with_name( builtin_nop, 'nop' )
+
+	# These are not really needed, but make a huge impact on performance.
+	# I'd like to keep the level-2 meta-interpreter under one minute right now,
+	# but one day I could eliminate these.
+
+	def builtin_get( th, base, field ): # Saves 163 shifts
+		digress( th, base[ field ] )
+	bind_with_name( builtin_get, 'get', 'base', 'field' )
+
+	def builtin_get2( th, base, field1, field2 ): # Saves 146 shifts
+		digress( th, base[ field1 ][ field2 ] )
+	bind_with_name( builtin_get2, 'get2', 'base', 'field1', 'field2' )
+
+	def builtin_take( th, base, field ): # Saves 107 shifts
+		digress( th, take( base, field ) )
+	bind_with_name( builtin_take, 'take', 'base', 'field' )
+
+	def builtin_put( th, value, base, field ): # Saves 147 shifts
+		base[ field ] = value
+	bind_with_name( builtin_put, 'put', 'base', 'field', 'value' )
+
+	def builtin_cons( th, **args ): # Saves 27 shifts
+		digress( th, cons(**args) )
+	bind_with_name( builtin_cons, 'cons', 'head_sharp', 'tail' )
 
 
 #####################################
@@ -488,11 +528,14 @@ def next_state3( state, obj_sharp, possible_match ):
 		return possible_match
 
 
-def call_function( frame, action ):
+def begin_digression( frame, reduce_environment, action ):
 	if is_a( action, 'PRIMITIVE' ):
-		action.function( frame.thread, dict( frame.cursor.environment.bindings ) )
+		frame.cursor = DIGRESSION( null, reduce_environment, frame.cursor )
+		#debug_digressions( "    new primitive digression: %r", frame.cursor )
+		action.function( frame.thread, **dict( reduce_environment.bindings ) )
 	else:
-		pass
+		frame.cursor = DIGRESSION( action.script, reduce_environment, frame.cursor )
+		#debug_digressions( "    new macro digression: %r", frame.cursor )
 
 def get_token( possible_token ):
 	"""Transmute TAKE_FAILED into eof to make all token lists appear to end with an infinite stream of eofs"""
@@ -542,8 +585,7 @@ def perform_reduce0( frame ):
 	print_reduce_stuff( frame.thread, action, reduce_environment )
 	#debug2_reduce( "  environment: %s", reduce_environment )
 	#debug2_reduce( "    based on: %s", frame.cursor )
-	frame.cursor = DIGRESSION( action.script, reduce_environment, frame.cursor )
-	call_function( frame, action )
+	begin_digression( frame, reduce_environment, action )
 	end_digression_if_finished( frame, frame.cursor.tokens )
 	print_program( frame.thread )
 	return true
@@ -587,7 +629,7 @@ def maybe_int( symbol ):
 	except( TypeError, ValueError ):
 		return symbol
 
-class Action_factory: # Eventually split off the stuff that's acting like a production
+class Macro_factory: # Eventually split off the stuff that's acting like a production
 
 	def __init__( self ):
 		self._name = None
@@ -605,24 +647,6 @@ class Action_factory: # Eventually split off the stuff that's acting like a prod
 	def begin_script( self ):
 		check = self._arg_names
 		self._script = []
-
-	def begin_exec( self ):
-		self.begin_script()
-		def builtin_exec( th, args ):
-			#debug( "builtin_exec running: %r", self._script[0] )
-			exec self._script[0].strip() in globals(), args
-		self._function = builtin_exec
-
-	def begin_eval( self ):
-		self.begin_script()
-		def builtin_eval( th, args ):
-			#debug( "builtin_eval running: %r", self._script[0] )
-			result = eval( self._script[0], globals(), args )
-			# One day, we should sharp/flat all the args and results of eval I guess.  Good thing the meta-interpreter doesn't use ints yet.
-			#result = sharp( result )
-			end_digression_if_finished( th.activation, th.activation.cursor.tokens )
-			th.activation.cursor = DIGRESSION( List([ result ]), th.activation.cursor.environment, th.activation.cursor )
-		self._function = builtin_eval
 
 	def process_word( self, word ):
 		# Could be part of the script
@@ -665,27 +689,8 @@ class Action_factory: # Eventually split off the stuff that's acting like a prod
 		self._arg_types.append( tp )
 		debug_parse( '  arg %r %r', name, tp )
 
-	def create_action( self, environment ):
-		try:
-			return PRIMITIVE( self._name, self._function, Stack( self._arg_names ), environment )
-		except AttributeError: # No _function
-			return MACRO( self._name, List( self._script ), Stack( self._arg_names ), environment )
-
-prologue_text = """
-to take   base field                   do_eval { take( base, field ) }
-to give   base key_sharp value_sharp   do_exec { give( base, key_sharp, value_sharp ) }
-to get    base field                   do_eval { base[ field ] }
-to get2   base f1 f2                   do_eval { base[ f1 ][ f2 ] }
-to put    base field value             do_exec { base[ field ] = value }
-to cons   head_sharp tail              do_eval { cons( head_sharp, tail ) }
-
-to set 
-	symbol value
-do put
-	get2 current_environment digressor bindings
-	symbol
-	value
-"""
+	def create_macro( self, environment ):
+		return MACRO( self._name, List( self._script ), Stack( self._arg_names ), environment )
 
 def parse_library( name, string, environment ):
 	bindings = environment.bindings
@@ -695,25 +700,20 @@ def parse_library( name, string, environment ):
 	def done( factory, factories_by_action_symbol ):
 		if factory and factory._name:
 			name = factory._name
-			macro = factory.create_action( environment )
+			macro = factory.create_macro( environment )
 			action_symbol = 'ACTION_%d' % macro._id
 			factories_by_action_symbol[ action_symbol ] = factory
 			bindings[ action_symbol ] = macro
 			debug_parse( "PARSED MACRO %r[ %s ]: %s %s %s", bindings, action_symbol, name, zip( factory._arg_names, factory._arg_types), factory._script )
 		else:
 			debug_parse( "(no macro)" )
-	full_text = prologue_text + " " + string.strip()
-	for word in re.findall( r'/\*.*?\*/|\{[^}]*\}|\S+(?:/:?\w+#*)?', full_text ):
+	for word in re.findall( r'/\*.*?\*/|\{[^}]*\}|\S+(?:/:?\w+#*)?', string.strip() ):
 		debug_parse( "WORD: '%s'", word )
 		if word == "to":
 			done( factory, factories_by_action_symbol )
-			factory = Action_factory()
+			factory = Macro_factory()
 		elif word == "do":
 			factory.begin_script()
-		elif word == "do_eval":
-			factory.begin_eval()
-		elif word == "do_exec":
-			factory.begin_exec()
 		elif word[0] == '{': # Long symbol/string
 			factory.process_word( word[1:-1] )
 		elif word[0:2] == '/*': # comment
@@ -824,32 +824,51 @@ def parse_procedure( name, library_text, script ):
 meta_interpreter_text = """
 to Procedure
 	name script dialect environment
-do_eval { PROCEDURE(**dict( locals() )) }
+do eval current_environment { PROCEDURE(**dict( locals() )) }
 
 to Digression
 	tokens environment resumption
-do_eval { DIGRESSION(**dict( locals() )) }
+do eval current_environment { DIGRESSION(**dict( locals() )) }
 
 to Activation
 	cursor operands history scope caller
-do_eval { ACTIVATION(**dict( locals() )) }
+do eval current_environment { ACTIVATION(**dict( locals() )) }
 
 to Thread
 	activation meta_thread
-do_eval { THREAD(**dict( locals() )) }
+do eval current_environment { THREAD(**dict( locals() )) }
 
 to Environment
 	outer
-do_eval { ENVIRONMENT(**dict( locals() )) }
+do eval current_environment { ENVIRONMENT(**dict( locals() )) }
+
 
 to tag_edge_symbol
 	obj
-do_eval
+do eval current_environment
 	{ ':' + tag( obj ) + '#' }
+
+to get3
+	base f1 f2 f3
+do eval current_environment
+	{ base[ f1 ][ f2 ][ f3 ] }
+
+to give
+	base key_sharp value_sharp
+do exec current_environment
+	{ give( base, key_sharp, value_sharp ) }
+
+to set 
+	symbol value
+do put
+	get2 current_environment digressor bindings
+	symbol
+	value
+
 
 to pop_list 
 	base field_symbol_sharp
-do_eval
+do eval current_environment
 	{ pop_list( base, field_symbol_sharp ) }
 
 
@@ -958,15 +977,26 @@ do
 	get state :ANY
 
 
-to call_function 
-	frame action:PRIMITIVE
-do_exec
-	{ action.function( frame.thread, dict( frame.cursor.environment.bindings ) ) }
-
-to call_function 
-	frame action:MACRO
+to begin_digression 
+	frame reduce_environment action:PRIMITIVE
 do
-	/* Macros have no function.  They just expand into a digression, and that's it. */
+	put frame cursor
+		Digression
+			null  /* Primitive has no script */
+			reduce_environment
+			get frame cursor
+	exec current_environment
+		{ action.function( frame.thread, **dict( reduce_environment.bindings ) ) }
+
+to begin_digression 
+	frame reduce_environment action:MACRO
+do
+	put frame cursor
+		Digression
+			get action script
+			reduce_environment
+			get frame cursor
+
 
 /* Behave as though every token list ends with an infinite sequence of eofs */
 to get_token possible_token do possible_token
@@ -1006,7 +1036,8 @@ do
 to perform 
 	frame state:REDUCE0
 do
-	print_stuff frame
+	exec current_environment
+		{ print_stuff( frame.thread ) }
 	set action
 		bound
 			take
@@ -1022,25 +1053,18 @@ do
 		frame
 		get reduce_environment bindings
 		get action formal_args
-	print_reduce_stuff frame action reduce_environment
-	put frame cursor
-		Digression
-			get action script
-			reduce_environment
-			get frame cursor
-	call_function
+	exec current_environment
+		{ print_reduce_stuff( frame.thread, action, reduce_environment ) }
+	begin_digression
 		frame
+		reduce_environment
 		action
 	end_digression_if_finished
 		frame
 		get2 frame cursor tokens
-	print_program frame
+	exec current_environment
+		{ print_program( frame.thread ) }
 	true
-
-
-to print_stuff        frame                             do_exec { print_stuff( frame.thread ) }
-to print_reduce_stuff frame action reduce_environment   do_exec { print_reduce_stuff( frame.thread, action, reduce_environment ) }
-to print_program      frame                             do_exec { print_program( frame.thread ) }
 
 
 to execute 
@@ -1083,6 +1107,12 @@ do
 # interpreter much slower, so we just leave them as builtins for now.
 #
 not_used_because_they_are_too_slow = """
+to take base field            do    eval current_environment { take( base, field ) }
+to get base field             do    eval current_environment { base[ field ] }
+to get2 base f1 f2            do    eval current_environment { base[ f1 ][ f2 ] }
+to put value base field       do    exec current_environment { base[ field ] = value }
+to cons head_sharp tail       do    eval current_environment { cons( head_sharp, tail ) }
+
 to pop_list 
 	base field_symbol_sharp
 do
@@ -1147,10 +1177,10 @@ def go_world():
 
 
 fib_text = """
-to + a b   do_eval { a+b }
-to - a b   do_eval { a-b }
+to + a b   do eval current_environment { a+b }
+to - a b   do eval current_environment { a-b }
 
-to print_result n   do_exec { print "*** RESULT IS", n, "***" }
+to print_result n do exec current_environment { print "*** RESULT IS", n, "***" }
 
 to fib n=0 do 1
 to fib n=1 do 1
@@ -1163,7 +1193,7 @@ to fib n do
 """
 
 def fib_procedure():
-	return parse_procedure( "fib", fib_text, [ 'print_result', 'fib', 2 ] )
+	return parse_procedure( "fib", fib_text, [ 'print_result', 'fib', 3 ] )
 
 sheppard_interpreter_library = None
 def wrap_procedure( inner_procedure ):
@@ -1218,9 +1248,7 @@ def main():
 	elapsed_time = time.time() - start_time
 	print shift_count, "shifts in", pretty_time( elapsed_time ), "with", object_counter, "objects"
 
-if False:
-	import cProfile
-	cProfile.run( "main()", None, "time" )
-else:
-	main()
+main()
+#import cProfile
+#cProfile.run( "main()", None, "time" )
 
