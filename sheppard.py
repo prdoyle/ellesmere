@@ -226,16 +226,16 @@ def DIGRESSION( tokens, environment, resumption ): return Object( 'DIGRESSION', 
 
 eof = Object( 'EOF' )
 
-def Nothing():
+def Dial_tone():
 	# An endless stack of digressions each returning an endless stream of EOFs
-	result = Object( 'NOTHING', environment=ENVIRONMENT( null ) )
+	result = Object( 'DIAL_TONE', environment=ENVIRONMENT( null ) )
 	endless_eof = LIST( eof, null )
 	endless_eof.tail = endless_eof # oooo, tricky
 	result.tokens = endless_eof
-	result.resumption = result
+	result.resumption = result # oooo, equally tricky
 	return result
 
-nothing = Nothing()
+dial_tone = Dial_tone()
 false = Object( 'FALSE' )
 true  = Object( 'TRUE' )
 
@@ -314,7 +314,7 @@ debug_ellision_limit=999
 printing_level_threshold=1
 
 def cursor_description( cursor ):
-	if cursor == nothing:
+	if cursor == dial_tone:
 		return ''
 	else:
 		return string.join( [ repr(x) for x in python_list( cursor.tokens ) ], "  " ) + " . " + cursor_description( cursor.resumption )
@@ -362,7 +362,7 @@ def define_predefined_bindings( env ):
 	bindings[ 'eof' ] = eof
 	bindings[ 'false' ] = false
 	bindings[ 'true' ] = true
-	bindings[ 'nothing' ] = nothing
+	bindings[ 'dial_tone' ] = dial_tone
 
 def define_builtins( global_scope ):
 	debug_builtins = silence
@@ -563,8 +563,6 @@ def perform_shift( frame ):
 	shift_count += 1
 	#debug_shift = silence
 	#debug_shift( 'shift' )
-	#if frame.operands != null and frame.operands.head in action_words:
-	#	error( Missed_Action_Word( frame.operands.head ) )
 	#debug_shift( "  cursor: %r", frame.cursor )
 	#debug_shift( "  state: %s", frame.history.head )
 	token_sharp = bound( get_token( pop_list( frame.cursor, "tokens#" ) ), frame.cursor.environment )
@@ -607,7 +605,7 @@ perform = {
 	}
 
 def execute( procedure, environment, scope ):
-	frame = ACTIVATION( DIGRESSION( procedure.script, environment, nothing ), null, LIST( procedure.dialect, null ), scope, null )
+	frame = ACTIVATION( DIGRESSION( procedure.script, environment, dial_tone ), null, LIST( procedure.dialect, null ), scope, null )
 	global current_thread # Allow us to print debug info without passing this all over the place
 	current_thread = THREAD( frame, null )
 	frame.thread = current_thread # I don't love this back link, but it's really handy and efficient
@@ -630,6 +628,8 @@ def execute2( frame, keep_going ):
 #
 # Parsing
 #
+
+debug_parse = silence
 
 def maybe_int( symbol ):
 	try:
@@ -657,7 +657,6 @@ class Macro_factory: # Eventually split off the stuff that's acting like a produ
 		self._script = []
 
 	def process_word( self, word ):
-		debug_parse = silence
 		# Could be part of the script
 		try:
 			self._script.append( word )
@@ -689,7 +688,6 @@ class Macro_factory: # Eventually split off the stuff that's acting like a produ
 		self.begin_args()
 
 	def process_arg( self, name, tp ):
-		debug_parse = silence
 		try:
 			x = self._script
 			assert( False ) # Shouldn't see an argument after having started a script!
@@ -703,10 +701,8 @@ class Macro_factory: # Eventually split off the stuff that's acting like a produ
 		return MACRO( self._name, List( self._script ), Stack( self._arg_names ), environment )
 
 def parse_library( name, string, environment ):
-	debug_parse = silence
 	bindings = environment.bindings
 	builtin_action_symbols = set([ k for (k,v) in bindings ])
-	macro_symbols = set()
 	factory = None
 	factories_by_action_symbol = {}
 	def done( factory, factories_by_action_symbol ):
@@ -714,54 +710,47 @@ def parse_library( name, string, environment ):
 			name = factory._name
 			macro = factory.create_macro( environment )
 			action_symbol = 'ACTION_%d' % macro._id
-			macro_symbols.add( action_symbol )
 			factories_by_action_symbol[ action_symbol ] = factory
 			bindings[ action_symbol ] = macro
 			debug_parse( "PARSED MACRO %r[ %s ]: %s %s %s", bindings, action_symbol, name, zip( factory._arg_names, factory._arg_types), factory._script )
 		else:
 			debug_parse( "(no macro)" )
-	for word in re.findall( r'\([^)]*\)|\{[^}]*\}|\[[^]]*\]|\S+(?:/:?\w+#*)?', string.strip() ):
+	for word in re.findall( r'/\*.*?\*/|\{[^}]*\}|\S+(?:/:?\w+#*)?', string.strip() ):
 		debug_parse( "WORD: '%s'", word )
 		if word == "to":
 			done( factory, factories_by_action_symbol )
 			factory = Macro_factory()
 		elif word == "do":
 			factory.begin_script()
-		elif word[0] == '[': # TODO
-			done( factory, factories_by_action_symbol )
-			factory = Macro_factory()
-			object_types = word[1:-1].split()
-			debug_parse( "object_types: %s", object_types )
 		elif word[0] == '{': # Long symbol/string
 			factory.process_word( word[1:-1] )
-		else: # Ordinary word; what it means depends on the state
+		elif word[0:2] == '/*': # comment
+			pass
+		else: # Ordinary word; what it means depends on the factory's state
 			factory.process_word( maybe_int( word ) )
 	done( factory, factories_by_action_symbol )
-
-	automaton = polymorphic_automaton( factories_by_action_symbol, builtin_action_symbols, macro_symbols, environment )
+	automaton = polymorphic_automaton( factories_by_action_symbol, builtin_action_symbols, bindings )
 	return LIBRARY( name, automaton, bindings )
 
-def polymorphic_automaton( factories_by_action_symbol, builtin_action_symbols, macro_symbols, environment ):
+def polymorphic_automaton( factories_by_action_symbol, builtin_action_symbols, bindings ):
 	# A little silly parser generator algorithm to deal with simple
 	# multi-dispatch LR(0) languages using prefix notation and offering very
 	# little error detection.
 	# This will suffice until I write a proper parser generator.
-	action_bindings = environment.bindings
 	debug_ppa = silence
 	default_state = Shift()
 	shift_states = [ default_state ]
 	debug_ppa( "default_state: %s", default_state )
-	debug_ppa( "bindings: %s", environment.bindings )
+	debug_ppa( "bindings: %s", bindings )
 	debug_ppa( "builtin_action_symbols: %s", builtin_action_symbols )
-	debug_ppa( "actions: %s", [environment.bindings[a] for a in builtin_action_symbols] )
-	names = set([ f._name for f in factories_by_action_symbol.values() ]) | set([ environment.bindings[a].name for a in builtin_action_symbols ])
+	debug_ppa( "actions: %s", [bindings[a] for a in builtin_action_symbols] )
+	names = set([ f._name for f in factories_by_action_symbol.values() ]) | set([ bindings[a].name for a in builtin_action_symbols ])
 	debug_ppa( "names: %s", names )
 	name_states = {}
 
 	# The parse graph here starts out as a forest: one tree for each name
 	debug_ppa( "Building parse forest" )
-	for action_symbol in builtin_action_symbols | macro_symbols:
-		action = action_bindings[ action_symbol ]
+	for ( action_symbol, action ) in bindings:
 		name = action.name
 		if action_symbol in builtin_action_symbols:
 			# Note that arg_names here is backward
@@ -902,7 +891,7 @@ to finish_digression
 do
 
 
-to bind_arg 
+to bind_arg
 	arg_bindings arg_symbol_sharp:NULL arg_value_sharp
 do
 
@@ -1001,7 +990,7 @@ to do_action
 do
 	put frame cursor
 		Digression
-			null
+			null  /* Primitive has no script */
 			environment
 			get frame cursor
 	exec current_environment
@@ -1023,15 +1012,9 @@ do
 		get2 frame cursor tokens
 
 
-to get_token 
-	possible_token
-do
-	possible_token
-
-to get_token 
-	x=TAKE_FAILED
-do
-	eof
+/* Behave as though every token list ends with an infinite sequence of eofs */
+to get_token possible_token do possible_token
+to get_token x=TAKE_FAILED  do eof
 
 
 to perform 
@@ -1103,14 +1086,14 @@ do
 			Digression
 				get procedure script
 				environment
-				nothing
-			null
+				dial_tone
+			null  /* Empty operand stack */
 			cons
-				get procedure dialect
+				get procedure dialect  /* Start state */
 				null
 			scope
-			null
-	put frame thread
+			null  /* No caller */
+	put frame thread  /* Putting a thread pointer in each frame seems wasteful, but it's handy */
 		Thread frame current_thread
 	execute2 frame true
 
@@ -1223,150 +1206,14 @@ to fib n do
 def fib_procedure():
 	return parse_procedure( "fib", fib_text, [ 'print_result', 'fib', 3 ] )
 
-# This text is still in the old postfix-style notation
-#
-# Note: the explicit int() calls in hash_test are just for error detection.  We
-# don't want 'foo'*12345 buliding some immense string by accident.
-#
-hash_test_text = """
-( a b ) +        { int(a) +  int(b) } current_environment eval
-( a b ) -        { int(a) -  int(b) } current_environment eval
-( a b ) *        { int(a) *  int(b) } current_environment eval
-( a b ) ^        { int(a) ^  int(b) } current_environment eval
-( a b ) =/:INT   { int(a) == int(b) and true or false } current_environment eval
-
-( a b ) &&/:FALSE   false
-( a b ) &&/:TRUE    a
-( a b ) ||/:FALSE   a
-( a b ) ||/:TRUE    true
-
-( left right )           PAIR { Object( 'PAIR', **dict(locals()) ) } current_environment eval
-()                 HASH_TABLE { Object( 'HASH_TABLE', **dict(locals()) ) } current_environment eval
-( key value next ) HASH_ENTRY { Object( 'HASH_ENTRY', **dict(locals()) ) } current_environment eval
-
-( value ) sharp { sharp( value ) } current_environment eval
-
-( value symbol ) bind 
-		value
-		current_environment digressor bindings get2
-	symbol put
-
-( put_value table put_key hash_code candidate_entry key_matches ) hash_put3/:TRUE
-		put_value
-	candidate_entry value put
-
-( put_value table put_key hash_code candidate_entry key_matches ) hash_put3/:FALSE
-		put_value
-		table
-		put_key
-		hash_code
-		candidate_entry next get
-	hash_put2
-
-( put_value table put_key hash_code candidate_entry ) hash_put2/TAKE_FAILED
-		put_key put_value null HASH_ENTRY
-	table hash_code put
-
-( put_value table put_key hash_code candidate_entry ) hash_put2/:NULL
-		put_key put_value  table hash_code get  HASH_ENTRY
-	table hash_code put
-
-( put_value table put_key hash_code candidate_entry ) hash_put2/:HASH_ENTRY
-		put_value table put_key hash_code candidate_entry
-			candidate_entry key get
-			put_key
-		=
-	hash_put3
-
-( value table put_key ) hash_put
-		put_key hash_code
-	hc bind
-		value
-		table
-		put_key
-		hc
-		table hc sharp take
-	hash_put2
-
-( candidate_entry key_matches ) hash_get3/:TRUE
-	candidate_entry value get
-
-( candidate_entry key_matches ) hash_get3/:FALSE
-	candidate_entry next get hash_get2
-
-( get_key candidate_entry ) hash_get2/:HASH_ENTRY
-		candidate_entry
-			candidate_entry key get
-			get_key
-		=
-	hash_get3
-
-( get_key candidate_entry ) hash_get2/TAKE_FAILED
-	TAKE_FAILED
-
-( get_key candidate_entry ) hash_get2/:NULL
-	TAKE_FAILED
-
-( table key ) hash_get
-		key
-			table
-			key hash_code sharp
-		take
-	hash_get2
-
-( value ) hash_code/:INT
-	value
-
-( pair ) hash_code/:PAIR
-	pair left  get hash_code
-	pair right get hash_code
-	^
-
-( a b ) =/:PAIR
-			a left  get b left  get =
-			a right get b right get =
-		&&
-			a left  get b right get =
-			a right get b left  get =
-		&&
-	||
-
-( table left right_limit ) add_pairs/0
-( table left right_limit ) add_pairs
-		left right_limit PAIR
-	pair bind
-		pair
-		table
-		pair
-	hash_put
-		table
-		left
-		right_limit 1 -
-	add_pairs
-
-( table left_limit ) populate_table/0
-( table left_limit ) populate_table
-	table left_limit 2 add_pairs
-	table left_limit 1 - populate_table
-
-() main
-	HASH_TABLE table bind
-	table 2 populate_table
-	current_environment { print "*** Table:", table.description(), "***" } exec
-
-[ :BINDINGS :ENVIRONMENT :HASH_TABLE :HASH_ENTRY :INT :PAIR :SYMBOL ]
-"""
-
 sheppard_interpreter_library = None
 def wrap_procedure( inner_procedure ):
-	global global_scope, sheppard_interpreter_library, action_words
+	global global_scope, sheppard_interpreter_library
 	if sheppard_interpreter_library is None:
 		global_scope = ENVIRONMENT( null )
 		define_builtins( global_scope )
 		sheppard_interpreter_library = parse_library( "sheppard_interpreter", meta_interpreter_text, global_scope )
 		define_predefined_bindings( global_scope )
-	action_words = [ s[7:] for s in global_scope.bindings._fields ]
-	nothing.environment = global_scope
 	bindings = global_scope.bindings
 	script = List([ 'execute', inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment ])
 	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, script, sheppard_interpreter_library.dialect, global_scope )
