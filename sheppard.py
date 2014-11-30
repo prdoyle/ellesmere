@@ -18,8 +18,8 @@ def error( exception ):
 	raise exception
 
 # Calls to these are often commented out below to improve performance.  "Enabling" these here may not be enough.
-#debug_digressions = silence
-#debug_object = silence
+#debug_digressions = debug
+#debug_object = debug
 
 object_counter = 0
 
@@ -49,7 +49,7 @@ class Object:
 			return self._elements[ key ] # If _elements were implemented as a list, we should catch IndexError and raise KeyError
 
 	def __setitem__( self, key, value ):
-		#debug_object( "%r[ %r ] = %r", self, key, value )
+		#debug_object( "setitem %r[ %r ] = %r", self, key, value )
 		try:
 			setattr( self, key, value )
 			if not key in self._fields:
@@ -84,16 +84,11 @@ class Object:
 			return self._name
 		except AttributeError:
 			pass
-		if self is null:
-			return "null"
-		else:
-			return "%s_%d" % ( self._tag, self._id )
+		return "%s_%d" % ( self._tag, self._id )
 
 	def __str__( self ):
-		if self is null:
-			return "null"
-		else:
-			return repr( self ) + "{ " + string.join([ "%s=%r" % ( field, self[field] ) for field in self._fields ], ', ') + " }"
+		suffix = ""
+		return repr( self ) + "{ " + string.join([ "%s=%r" % ( field, self[field] ) for field in self._fields ], ', ') + " }"
 
 	def description( self ):
 		work_queue = []
@@ -168,6 +163,12 @@ class Null( Object ): # Just to make debugging messages more informative
 
 	def __init__( self ):
 		Object.__init__( self, 'NULL' )
+
+	def __repr__( self ):
+		return "null"
+
+	def __str__( self ):
+		return "null"
 
 null = Null()  # The very first object!  It gets _id=0
 
@@ -277,9 +278,9 @@ def Dial_tone():
 	# An endless stack of digressions each returning an endless stream of EOFs
 	result = Object( 'DIAL_TONE', environment=ENVIRONMENT( null ) )
 	endless_eof = LIST( eof, null )
-	endless_eof.tail = endless_eof # oooo, tricky
-	result.tokens = endless_eof
-	result.resumption = result # oooo, equally tricky
+	endless_eof[ 'tail' ] = endless_eof # oooo, tricky
+	result[ 'tokens' ] = endless_eof
+	result[ 'resumption' ] = result # oooo, equally tricky
 	return result
 
 dial_tone = Dial_tone()
@@ -378,14 +379,14 @@ def print_stuff( th ):
 		print_program( th )
 		debug( "|  history: %s", list_str( frame.history, ':', debug_ellision_limit ) )
 		debug( "|   cursor: %s", frame.cursor )
-		debug( "| bindings: %s", frame.cursor.environment.bindings )
+		#debug( "| bindings: %s", frame.cursor.environment.bindings )
 
-def print_reduce_stuff( th, action, environment ):
+def print_reduce_stuff( th, action, reduce_environment ):
 	if meta_level( th ) >= printing_level_threshold:
 		frame = th.activation
 		debug( ">+  ACTION: %r: %s  (%r)", action.name, list_str( action.formal_args ), action )
 		#debug( ">+  ACTION: %s %s", action.name, action )
-		debug( " |    with: %r %s", environment, environment.bindings )
+		debug( " |    with: %s %s", reduce_environment.bindings, reduce_environment )
 
 def print_backtrace( th ):
 	print_stuff( th )
@@ -415,7 +416,7 @@ def define_builtins( global_scope ):
 	debug_builtins = silence
 	def digress( th, *values ):
 		end_digression_if_finished( th.activation, th.activation.cursor.tokens )
-		th.activation.cursor = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
+		th.activation[ 'cursor' ] = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
 		#debug_digressions( "    new builtin digression: %r = %s", th.activation.cursor, list_str( th.activation.cursor.tokens ) )
 
 	def bind_with_name( func, name, *args ):
@@ -427,198 +428,16 @@ def define_builtins( global_scope ):
 	#def bind( func, *args ):
 	#	bind_with_name( func, func.func_name, *args )
 
-	def buildin_current_thread( th, args ):
+	def builtin_current_thread( th, args ):
 		digress( th, th )
-	bind_with_name( buildin_current_thread, 'current_thread' )
+	bind_with_name( builtin_current_thread, 'current_thread' )
 
 	def builtin_current_environment( th, args ):
-		# I could probably implement this somehow using current_thread and exec,
-		# but it's awkward as long as "set" uses this, because I have no easy
-		# way to set "th" before calling this.
+		# I could probably implement this somehow using eval, but it's a little
+		# awkward.  Ironically, it's easier to get at the current thread from
+		# Sheppard than it is from Python, thanks to current_thread.
 		digress( th, th.activation.cursor.environment.digressor )
-	bind_with_name( builtin_current_environment, 'current_environment' )
-
-
-#####################################
-#
-# The interpreter.
-#
-#
-# This is written in a slightly odd style to make it look as much as possible
-# like Sheppard meta-interpreter.  There's some inevitable dual-maintenance
-# there, so we want them to look as similar as possible to make them easy to
-# compare.
-#
-# Some rules to make it look more like Sheppard code:
-#  - Procedures are only allowed one if statement sequence.  It must be at the
-#    top level, and must use is_a based on the arguments or compare the
-#    argument against a specific symbol.  This represents sheppard
-#    automaton-based dispatch.  (For singletons like null and take_failed, we
-#    can compare against object identity for performance reasons.
-#  - Loops will be replaced with tail digression.  There's only one loop anyway
-#    so that's no big deal.
-#
-# Because no general if-statements are allowed (Sheppard has none), we adopt an
-# unusual style in which all conditionals are turned into dispatches.
-# A routine foo compute some value whose type determines what to do next, and
-# passes that to a polymorphic routine foo2, using the dispatch mechanism to
-# pick the right variant.
-#
-
-def pop_list( base, field_symbol_sharp ):
-	"""Odd little routine that's just super handy for dealing with object fields that are stacks"""
-	current = take( base, field_symbol_sharp )
-	result  = take( current, 'head#' )
-	#debug( "!!! pop_list( %s, %s ) = %s", base, field_symbol_sharp, result )
-	give( base, field_symbol_sharp, take( current, 'tail#' ) )
-	return result
-
-def end_digression_if_finished( frame, remaining_tokens ):
-	if remaining_tokens is null: #is_a( remaining_tokens, 'NULL' ):
-		#debug_digressions( "  (finished %r %r %s)", frame.cursor, frame.cursor.environment, frame.cursor.environment.bindings  )
-		frame.cursor = frame.cursor.resumption
-
-def bind_arg( arg_bindings, arg_symbol_sharp, arg_value_sharp ):
-	debug_bind = silence
-	if arg_symbol_sharp is null: # is_a( arg_symbol_sharp, 'NULL' )
-		#debug_bind( "    pop %r", flat( arg_value_sharp ) )
-		pass
-	else:
-		assert( is_a( arg_symbol_sharp, 'SYMBOL' ) )
-		give( arg_bindings, arg_symbol_sharp, arg_value_sharp )
-		#debug_bind( "    %s=%r", flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
-
-def bind_args( frame, arg_bindings, formal_args ):
-	if formal_args is null:
-		pass
-	else:
-		frame.history = frame.history.tail
-		bind_arg( arg_bindings, take( formal_args, 'head#' ), pop_list( frame, 'operands#' ) )
-		bind_args( frame, arg_bindings, formal_args.tail )
-
-def bound( obj_sharp, environment ):
-	if environment is null:
-		return obj_sharp
-	else:
-		return bound2( obj_sharp, environment, take( environment.bindings, obj_sharp ) )
-
-def bound2( obj_sharp, environment, possible_match ):
-	if possible_match is take_failed:
-		return bound( obj_sharp, environment.outer )
-	else:
-		return possible_match
-
-def next_state( state, obj_sharp ):
-	# First we check of the object is itself a symbol that has an edge from this
-	# state (ie. it's acting as a keyword).  Failing that, we check the object's
-	# "tag edge symbol" to see if the object is of a type that has an edge.  If
-	# that also fails, we default to the ":ANY" edge.  (This is where we should
-	# be doing something smart for inheritance.)  These successive checks
-	# necessitate not just one next_state2 routine, but another next_state3
-	# routine too.
-	return next_state2( state, obj_sharp, take( state, obj_sharp ) )
-
-def next_state2( state, obj_sharp, possible_match ):
-	if possible_match is take_failed:
-		return next_state3( state, obj_sharp, take( state, tag_edge_symbol(obj_sharp) ) )
-	else:
-		return possible_match
-
-def next_state3( state, obj_sharp, possible_match ):
-	if possible_match is take_failed:
-		try:
-			return state[ ':ANY' ]
-		except KeyError:
-			# Raise a more descriptive Sheppard error
-			raise Unexpected_token( state, obj_sharp )
-	else:
-		return possible_match
-
-
-def call_function( frame, action ):
-	if is_a( action, 'PRIMITIVE' ):
-		action.function( frame.thread, dict( frame.cursor.environment.bindings ) )
-	else:
-		pass
-
-def get_token( possible_token ):
-	"""Transmute TAKE_FAILED into eof to make all token lists appear to end with an infinite stream of eofs"""
-	if possible_token is take_failed:
-		return sharp( eof )
-	else:
-		return possible_token
-
-def perform_accept( frame ):
-	debug( 'accept' )
-	return false
-
-shift_count = 0
-def perform_shift( frame ):
-	global shift_count
-	shift_count += 1
-	#debug_shift = silence
-	#debug_shift( 'shift' )
-	#debug_shift( "  cursor: %r", frame.cursor )
-	#debug_shift( "  state: %s", frame.history.head )
-	token_sharp = bound( get_token( pop_list( frame.cursor, "tokens#" ) ), frame.cursor.environment )
-	end_digression_if_finished( frame, frame.cursor.tokens )
-	#debug_shift( "    value: %r", flat( token_sharp ) )
-	frame.operands = cons( token_sharp, frame.operands )
-	frame.history = cons( next_state( frame.history.head, token_sharp ), frame.history )
-	#debug_shift( "  new_state: %r", frame.history.head )
-	if list_length( frame.operands ) > 50:
-		error( RuntimeError( "Operand stack overflow" ) )
-	return true
-
-def perform_reduce0( frame ):
-	if meta_level( frame.thread ) >= printing_level_threshold:
-		debug_reduce = debug
-		debug2_reduce = silence
-	else:
-		debug_reduce = silence
-		debug2_reduce = silence
-	print_stuff( frame.thread )
-	#debug2_reduce( ">-- reduce0 %s --", frame.history.head.action )
-	action = bound( take( frame.history.head, 'action#' ), frame.scope ) # 'take' here just to get a sharp result
-	#debug2_reduce( "  action: %r", action )
-	#if is_a( action, 'MACRO' ):
-	#	debug_reduce( "    %s", python_list( action.script ) )
-	reduce_environment = ENVIRONMENT( action.environment )
-	reduce_environment.digressor = frame.cursor.environment  # Need this in order to make 'bind' a macro, or else I can't access the environment I'm trying to bind
-	bind_args( frame, reduce_environment.bindings, action.formal_args )
-	print_reduce_stuff( frame.thread, action, reduce_environment )
-	#debug2_reduce( "  environment: %s", reduce_environment )
-	#debug2_reduce( "    based on: %s", frame.cursor )
-	frame.cursor = DIGRESSION( action.script, reduce_environment, frame.cursor )
-	call_function( frame, action )
-	end_digression_if_finished( frame, frame.cursor.tokens )
-	print_program( frame.thread )
-	return true
-
-perform = {
-	'ACCEPT':  perform_accept,
-	'SHIFT':   perform_shift,
-	'REDUCE0': perform_reduce0,
-	}
-
-def execute( procedure, environment, scope ):
-	frame = ACTIVATION( DIGRESSION( procedure.script, environment, dial_tone ), null, LIST( procedure.dialect, null ), scope, null )
-	global current_thread # Allow us to print debug info without passing this all over the place
-	current_thread = THREAD( frame, null )
-	frame.thread = current_thread # I don't love this back link, but it's really handy and efficient
-	debug( "starting thread: %r with digression:\n\t%s", current_thread, frame.cursor )
-	execute2( frame, true )
-
-def execute2( frame, keep_going ):
-	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
-	while keep_going == true: #is_a( keep_going, 'TRUE' ):
-		#print_stuff( frame.thread )
-		command = tag( frame.history.head )
-		#debug( "-__ execute2 __ %s", perform[ command ] )
-		# if Python had tail call elimination, we could do this:
-		#   execute2( frame, perform[ command ]( frame ) )
-		# but instead, we loop
-		keep_going = perform[ command ]( frame )
+	#bind_with_name( builtin_current_environment, 'current_environment' )
 
 
 #####################################
@@ -665,10 +484,8 @@ class Action_factory: # Eventually split off the stuff that's acting like a prod
 		def builtin_eval( th, args ):
 			#debug( "builtin_eval running: %r", self._script[0] )
 			result = eval( self._script[0], globals(), args )
-			# One day, we should sharp/flat all the args and results of eval I guess.  Good thing the meta-interpreter doesn't use ints yet.
-			#result = sharp( result )
 			end_digression_if_finished( th.activation, th.activation.cursor.tokens )
-			th.activation.cursor = DIGRESSION( List([ result ]), th.activation.cursor.environment, th.activation.cursor )
+			th.activation[ 'cursor' ] = DIGRESSION( List([ result ]), th.activation.cursor.environment, th.activation.cursor )
 		self._function = builtin_eval
 
 	def process_word( self, word ):
@@ -719,12 +536,15 @@ class Action_factory: # Eventually split off the stuff that's acting like a prod
 			return MACRO( self._name, List( self._script ), Stack( self._arg_names ), environment )
 
 prologue_text = """
-to take   base field                   do_eval { take( base, field ) }
-to give   base key_sharp value_sharp   do_exec { give( base, key_sharp, value_sharp ) }
-to get    base field                   do_eval { base[ field ] }
-to get2   base f1 f2                   do_eval { base[ f1 ][ f2 ] }
-to put    base field value             do_exec { base[ field ] = value }
-to cons   head_sharp tail              do_eval { cons( head_sharp, tail ) }
+to take   base field                   python_eval { take( base, field ) }
+to give   base key_sharp value_sharp   python_exec { give( base, key_sharp, value_sharp ) }
+to get    base field                   python_eval { base[ field ] }
+to get2   base f1 f2                   python_eval { base[ f1 ][ f2 ] }
+to put    base field value             python_exec { base[ field ] = value }
+to cons   head_sharp tail              python_eval { cons( head_sharp, tail ) }
+
+to current_environment       do current_environment2 current_thread
+to current_environment2 th   do python_eval { th.activation.cursor.environment.digressor }
 
 to set 
 	symbol value
@@ -757,9 +577,9 @@ def parse_library( name, string, environment ):
 			factory = Action_factory()
 		elif word == "do":
 			factory.begin_script()
-		elif word == "do_eval":
+		elif word == "python_eval":
 			factory.begin_eval()
-		elif word == "do_exec":
+		elif word == "python_exec":
 			factory.begin_exec()
 		elif word[0] == '{': # Long symbol/string
 			factory.process_word( word[1:-1] )
@@ -865,38 +685,225 @@ def parse_procedure( name, library_text, script ):
 
 #####################################
 #
+# The interpreter.
+#
+#
+# This is written in a slightly odd style to make it look as much as possible
+# like Sheppard meta-interpreter.  There's some inevitable dual-maintenance
+# there, so we want them to look as similar as possible to make them easy to
+# compare.
+#
+# Some rules to make it look more like Sheppard code:
+#  - Procedures are only allowed one if statement sequence.  It must be at the
+#    top level, and must use is_a based on the arguments or compare the
+#    argument against a specific symbol.  This represents sheppard
+#    automaton-based dispatch.  (For singletons like null and take_failed, we
+#    can compare against object identity for performance reasons.
+#  - Loops will be replaced with tail digression.  There's only one loop anyway
+#    so that's no big deal.
+#
+# Because no general if-statements are allowed (Sheppard has none), we adopt an
+# unusual style in which all conditionals are turned into dispatches.
+# A routine foo compute some value whose type determines what to do next, and
+# passes that to a polymorphic routine foo2, using the dispatch mechanism to
+# pick the right variant.
+#
+
+def pop_list( base, field_symbol_sharp ):
+	"""Odd little routine that's just super handy for dealing with object fields that are stacks"""
+	current = take( base, field_symbol_sharp )
+	result  = take( current, 'head#' )
+	#debug( "!!! pop_list( %s, %s ) = %s", base, field_symbol_sharp, result )
+	give( base, field_symbol_sharp, take( current, 'tail#' ) )
+	return result
+
+def end_digression_if_finished( frame, remaining_tokens ):
+	if remaining_tokens is null: #is_a( remaining_tokens, 'NULL' ):
+		#debug_digressions( "  (finished %r %r %s)", frame.cursor, frame.cursor.environment, frame.cursor.environment.bindings  )
+		frame[ 'cursor' ] = frame.cursor.resumption
+
+def bind_arg( arg_bindings, arg_symbol_sharp, arg_value_sharp ):
+	debug_bind = silence
+	if arg_symbol_sharp is null: # is_a( arg_symbol_sharp, 'NULL' )
+		#debug_bind( "    pop %r", flat( arg_value_sharp ) )
+		pass
+	else:
+		assert( is_a( arg_symbol_sharp, 'SYMBOL' ) )
+		give( arg_bindings, arg_symbol_sharp, arg_value_sharp )
+		#debug_bind( "    %s=%r", flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
+
+def bind_args( frame, arg_bindings, formal_args ):
+	if formal_args is null:
+		pass
+	else:
+		frame[ 'history' ] = frame.history.tail
+		bind_arg( arg_bindings, take( formal_args, 'head#' ), pop_list( frame, 'operands#' ) )
+		bind_args( frame, arg_bindings, formal_args.tail )
+
+def bound( obj_sharp, environment ):
+	if environment is null:
+		return obj_sharp
+	else:
+		return bound2( obj_sharp, environment, take( environment.bindings, obj_sharp ) )
+
+def bound2( obj_sharp, environment, possible_match ):
+	if possible_match is take_failed:
+		return bound( obj_sharp, environment.outer )
+	else:
+		return possible_match
+
+def next_state( state, obj_sharp ):
+	# First we check of the object is itself a symbol that has an edge from this
+	# state (ie. it's acting as a keyword).  Failing that, we check the object's
+	# "tag edge symbol" to see if the object is of a type that has an edge.  If
+	# that also fails, we default to the ":ANY" edge.  (This is where we should
+	# be doing something smart for inheritance.)  These successive checks
+	# necessitate not just one next_state2 routine, but another next_state3
+	# routine too.
+	return next_state2( state, obj_sharp, take( state, obj_sharp ) )
+
+def next_state2( state, obj_sharp, possible_match ):
+	if possible_match is take_failed:
+		return next_state3( state, obj_sharp, take( state, tag_edge_symbol(obj_sharp) ) )
+	else:
+		return possible_match
+
+def next_state3( state, obj_sharp, possible_match ):
+	if possible_match is take_failed:
+		try:
+			return state[ ':ANY' ]
+		except KeyError:
+			# Raise a more descriptive Sheppard error
+			raise Unexpected_token( state, obj_sharp )
+	else:
+		return possible_match
+
+
+def call_function( frame, action ):
+	if is_a( action, 'PRIMITIVE' ):
+		action.function( frame.thread, dict( frame.cursor.environment.bindings ) )
+	else:
+		pass
+
+def get_token( possible_token ):
+	"""Transmute TAKE_FAILED into eof to make all token lists appear to end with an infinite stream of eofs"""
+	if possible_token is take_failed:
+		return sharp( eof )
+	else:
+		return possible_token
+
+def perform_accept( frame ):
+	debug( 'accept' )
+	return false
+
+shift_count = 0
+def perform_shift( frame ):
+	global shift_count
+	shift_count += 1
+	#debug_shift = silence
+	#debug_shift( 'shift' )
+	#debug_shift( "  cursor: %r", frame.cursor )
+	#debug_shift( "  state: %s", frame.history.head )
+	token_sharp = bound( get_token( pop_list( frame.cursor, "tokens#" ) ), frame.cursor.environment )
+	end_digression_if_finished( frame, frame.cursor.tokens )
+	#debug_shift( "    value: %r", flat( token_sharp ) )
+	frame[ 'operands' ] = cons( token_sharp, frame.operands )
+	frame[ 'history' ] = cons( next_state( frame.history.head, token_sharp ), frame.history )
+	#debug_shift( "  new_state: %r", frame.history.head )
+	if list_length( frame.operands ) > 50:
+		error( RuntimeError( "Operand stack overflow" ) )
+	return true
+
+def perform_reduce0( frame ):
+	if meta_level( frame.thread ) >= printing_level_threshold:
+		debug_reduce = debug
+		debug2_reduce = silence
+	else:
+		debug_reduce = silence
+		debug2_reduce = silence
+	print_stuff( frame.thread )
+	#debug2_reduce( ">-- reduce0 %s --", frame.history.head.action )
+	action = bound( take( frame.history.head, 'action#' ), frame.scope ) # 'take' here just to get a sharp result
+	#debug2_reduce( "  action: %r", action )
+	#if is_a( action, 'MACRO' ):
+	#	debug_reduce( "    %s", python_list( action.script ) )
+	reduce_environment = ENVIRONMENT( action.environment )
+	reduce_environment[ 'digressor' ] = frame.cursor.environment  # Need this in order to make 'set' a macro, or else I can't access the environment I'm trying to bind
+	bind_args( frame, reduce_environment.bindings, action.formal_args )
+	print_reduce_stuff( frame.thread, action, reduce_environment )
+	#debug2_reduce( "  environment: %s", reduce_environment )
+	#debug2_reduce( "    based on: %s", frame.cursor )
+	frame[ 'cursor' ] = DIGRESSION( action.script, reduce_environment, frame.cursor )
+	call_function( frame, action )
+	end_digression_if_finished( frame, frame.cursor.tokens )
+	print_program( frame.thread )
+	return true
+
+perform = {
+	'ACCEPT':  perform_accept,
+	'SHIFT':   perform_shift,
+	'REDUCE0': perform_reduce0,
+	}
+
+def execute( procedure, environment, scope ):
+	frame = ACTIVATION( DIGRESSION( procedure.script, environment, dial_tone ), null, LIST( procedure.dialect, null ), scope, null )
+	global current_thread # Allow us to print debug info without passing this all over the place
+	current_thread = THREAD( frame, null )
+	frame[ 'thread' ] = current_thread # I don't love this back link, but it's really handy and efficient
+	debug( "starting thread: %r with digression:\n\t%s", current_thread, frame.cursor )
+	execute2( frame, true )
+
+def execute2( frame, keep_going ):
+	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
+	while keep_going == true: #is_a( keep_going, 'TRUE' ):
+		#print_stuff( frame.thread )
+		command = tag( frame.history.head )
+		#debug( "-__ execute2 __ %s", perform[ command ] )
+		# if Python had tail call elimination, we could do this:
+		#   execute2( frame, perform[ command ]( frame ) )
+		# but instead, we loop
+		keep_going = perform[ command ]( frame )
+
+
+#####################################
+#
 # Meta-interpreter
 #
 
 meta_interpreter_text = """
 to Procedure
 	name script dialect environment
-do_eval { PROCEDURE(**dict( locals() )) }
+python_eval
+	{ PROCEDURE(**dict( locals() )) }
 
 to Digression
 	tokens environment resumption
-do_eval { DIGRESSION(**dict( locals() )) }
+python_eval
+	{ DIGRESSION(**dict( locals() )) }
 
 to Activation
 	cursor operands history scope caller
-do_eval { ACTIVATION(**dict( locals() )) }
+python_eval
+	{ ACTIVATION(**dict( locals() )) }
 
 to Thread
 	activation meta_thread
-do_eval { THREAD(**dict( locals() )) }
+python_eval
+	{ THREAD(**dict( locals() )) }
 
 to Environment
 	outer
-do_eval { ENVIRONMENT(**dict( locals() )) }
+python_eval
+	{ ENVIRONMENT(**dict( locals() )) }
 
 to tag_edge_symbol
 	obj
-do_eval
+python_eval
 	{ ':' + tag( obj ) + '#' }
 
 to pop_list 
 	base field_symbol_sharp
-do_eval
+python_eval
 	{ pop_list( base, field_symbol_sharp ) }
 
 
@@ -1007,7 +1014,7 @@ do
 
 to call_function 
 	frame action:PRIMITIVE
-do_exec
+python_exec
 	{ action.function( frame.thread, dict( frame.cursor.environment.bindings ) ) }
 
 to call_function 
@@ -1085,9 +1092,9 @@ do
 	true
 
 
-to print_stuff        frame                             do_exec { print_stuff( frame.thread ) }
-to print_reduce_stuff frame action reduce_environment   do_exec { print_reduce_stuff( frame.thread, action, reduce_environment ) }
-to print_program      frame                             do_exec { print_program( frame.thread ) }
+to print_stuff        frame                             python_exec { print_stuff( frame.thread ) }
+to print_reduce_stuff frame action reduce_environment   python_exec { print_reduce_stuff( frame.thread, action, reduce_environment ) }
+to print_program      frame                             python_exec { print_program( frame.thread ) }
 
 
 to execute 
@@ -1194,10 +1201,10 @@ def go_world():
 
 
 fib_text = """
-to + a b   do_eval { a+b }
-to - a b   do_eval { a-b }
+to + a b   python_eval { a+b }
+to - a b   python_eval { a-b }
 
-to print_result n   do_exec { print "*** RESULT IS", n, "***" }
+to print_result n   python_exec { print "*** RESULT IS", n, "***" }
 
 to fib n=0 do 1
 to fib n=1 do 1
