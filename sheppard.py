@@ -323,6 +323,12 @@ def list_str( lst, sep=", ", ellision_limit=999 ):
 		prefix = "... "
 	return prefix + string.join([ repr(s) for s in reversed( pl )], sep )
 
+def future_str( cursor ):
+	if cursor is dial_tone:
+		return ""
+	else:
+		return repr( cursor ) + " " + future_str( cursor.resumption )
+
 def meta_level( th ):
 	if th.meta_thread is null:
 		return 0
@@ -379,7 +385,7 @@ def print_stuff( th ):
 		#debug( "stack: %s", zip( python_list( frame.history ), python_list( frame.operands ) ) )
 		print_program( th )
 		debug( "|  history: %s", list_str( frame.history, ':', debug_ellision_limit ) )
-		debug( "|   cursor: %s", frame.cursor )
+		debug( "|   future: %s", future_str( frame.cursor ) )
 		#debug( "| bindings: %s", frame.cursor.environment.bindings )
 
 def print_reduce_stuff( th, action, reduce_environment ):
@@ -440,12 +446,12 @@ to cons       head_sharp tail              python_eval { cons( head_sharp, tail 
 
 /* This could really just be a binding */
 to current_environment       do current_environment2 current_thread
-to current_environment2 th   do python_eval { th.activation.cursor.environment.digressor }
+to current_environment2 th   python_eval { th.activation.cursor.environment.digressor }
 
 to set 
 	symbol value
 do put
-	get2 current_environment digressor bindings
+	get2 current_environment digressor bindings  /* Bindings at the point that 'set' was expanded */
 	symbol
 	value
 """
