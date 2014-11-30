@@ -95,21 +95,68 @@ class Object:
 		else:
 			return repr( self ) + "{ " + string.join([ "%s=%r" % ( field, self[field] ) for field in self._fields ], ', ') + " }"
 
-	def description( self, already_described=None, indent=1 ):
+	def description( self ):
+		work_queue = []
+		already_described = set()
+		result = self._description( work_queue, already_described )
+		while work_queue:
+			next_item = work_queue.pop(0)
+			if next_item not in already_described:
+				result = result + ";\n" + next_item._description( work_queue, already_described )
+		return result
+
+	def _description( self, work_queue, already_described, indent=1 ):
+		debug_description = silence
+		silence( "description( %r )", self )
 		if already_described is None:
 			already_described = set()
 		if self is null:
 			return "null"
 		elif self in already_described:
+			silence( "%r alredy described", self )
 			return repr( self )
 		else:
 			already_described.add( self )
+			silence( "   %r is being described", self )
 			indent_str = " |" * indent
-			return repr( self ) + "{" + string.join([ "\n%s%s=%s" % ( indent_str, key, self._description( value, already_described, indent+1 ) ) for ( key, value ) in self ], ',' ) + " }"
+			if self._expand_children():
+				children_strings = [ "\n%s%s=%s" % ( indent_str, key, self._long_description( value, already_described, work_queue, indent+1 ) ) for ( key, value ) in self ]
+			else:
+				keys = [ key for ( key, value ) in self ]
+				def smart_order( key1, key2 ):
+					global smart_splitter
+					smart_splitter = re.compile(r"(.*[^0-9])(.*)$")
+					try:
+						split1 = smart_splitter.match( key1 ).groups()
+						split2 = smart_splitter.match( key2 ).groups()
+						result = cmp( split1, split2 )
+						return result
+					except TypeError:
+						return 0
+				keys.sort( smart_order )
 
-	def _description( self, value, already_described, indent ):
+				children = [ value for ( key, value ) in self if isinstance( value, Object ) ]
+				silence( "Children of %r: %s", self, string.join([ "%r" % c for c in children ], ', ') )
+				if len( children ) <= 6:
+					children_strings = [ " %s=%s" % ( key, self._short_description( self[ key ], already_described, work_queue, indent+1 ) ) for key in keys ]
+				else:
+					children_strings = [ "\n%s%s=%s" % ( indent_str, key, self._short_description( self[ key ], already_described, work_queue, indent+1 ) ) for key in keys ]
+				work_queue += children
+			result = repr( self ) + "{" + string.join( children_strings, ',' ) + " }"
+			return result
+
+	def _expand_children( self ):
+		return False
+
+	def _long_description( self, value, already_described, work_queue, indent ):
 		if isinstance( value, Object ):
-			return value.description( already_described, indent )
+			return value._description( work_queue, already_described, indent )
+		else:
+			return str( value )
+
+	def _short_description( self, value, already_described, work_queue, indent ):
+		if isinstance( value, Object ):
+			return repr( value )
 		else:
 			return str( value )
 
@@ -730,9 +777,9 @@ def polymorphic_automaton( factories_by_action_symbol, builtin_action_symbols, b
 	# little error detection.
 	# This will suffice until I write a proper parser generator.
 	debug_ppa = silence
-	default_state = Shift()
-	shift_states = [ default_state ]
-	debug_ppa( "default_state: %s", default_state )
+	initial_state = Shift()
+	shift_states = [ initial_state ]
+	debug_ppa( "initial_state: %s", initial_state )
 	debug_ppa( "bindings: %s", bindings )
 	debug_ppa( "builtin_action_symbols: %s", builtin_action_symbols )
 	debug_ppa( "actions: %s", [bindings[a] for a in builtin_action_symbols] )
@@ -752,7 +799,7 @@ def polymorphic_automaton( factories_by_action_symbol, builtin_action_symbols, b
 			f = factories_by_action_symbol[ action_symbol ]
 			arg_names = None
 			arg_types = f._arg_types
-		cur_state = default_state
+		cur_state = initial_state
 		debug_ppa( '  %r @ %r', name, cur_state )
 		debug_ppa( '    action: %s', action )
 		for tp in arg_types[:-1]:
@@ -769,13 +816,13 @@ def polymorphic_automaton( factories_by_action_symbol, builtin_action_symbols, b
 		reduce_state = Reduce0( action_symbol )
 		cur_state[ arg_types[-1] ] = reduce_state
 		debug_ppa( '    %r >> %r', arg_types[-1], reduce_state )
-		name_states[ name ] = default_state[ name ]
+		name_states[ name ] = initial_state[ name ]
 
 	if 0:
 		debug_ppa( "Adding macros to parse forest" )
 		for f in factories:
 			# Shift until you get to the last arg
-			cur_state = default_state
+			cur_state = initial_state
 			debug_ppa( '  %r', cur_state )
 			for tp in f._arg_types[:-1]:
 				try:
@@ -801,11 +848,11 @@ def polymorphic_automaton( factories_by_action_symbol, builtin_action_symbols, b
 			debug_ppa( '    %r => %r', s, s[ name ] )
 
 	# The accept state
-	default_state[ ':EOF' ] = Accept()
-	debug_ppa( 'EOF => %s', default_state[ ':EOF' ] )
+	initial_state[ ':EOF' ] = Accept()
+	debug_ppa( 'EOF => %s', initial_state[ ':EOF' ] )
 
-	debug_ppa( 'Automaton:\n%s', default_state.description() )
-	return default_state
+	debug_ppa( 'Automaton:\n%s', initial_state.description() )
+	return initial_state
 
 def parse_procedure( name, library_text, script ):
 	env = ENVIRONMENT( null )
