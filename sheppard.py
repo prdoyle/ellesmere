@@ -1,7 +1,6 @@
 #! /usr/bin/python -O
 
 import string, re, time
-from itertools import islice
 from sys import argv
 
 def debug( message, *args ):
@@ -305,6 +304,8 @@ def Shift( **edges ):
 	return result
 def LIBRARY( name, dialect, environment ): return Object( 'LIBRARY', name=name, dialect=dialect, environment=environment )
 
+# A few functions to help with the Python / Sheppard impedance mismatch
+
 def python_list( sheppard_list, head='head', tail='tail' ):
 	if sheppard_list:
 		return [ sheppard_list[ head ] ] + python_list( sheppard_list[ tail ], head, tail )
@@ -424,20 +425,30 @@ def define_builtins( global_scope ):
 		global_scope.bindings[ 'ACTION_' + name ] = PRIMITIVE( name, func, arg_stack, global_scope )
 		debug_builtins( "Binding primitive: %s %s", name, list(args) )
 
-	# Cython doesn't support func_name
-	#def bind( func, *args ):
-	#	bind_with_name( func, func.func_name, *args )
-
+	# We're down to just one builtin: current_thread
 	def builtin_current_thread( th, args ):
 		digress( th, th )
 	bind_with_name( builtin_current_thread, 'current_thread' )
 
-	def builtin_current_environment( th, args ):
-		# I could probably implement this somehow using eval, but it's a little
-		# awkward.  Ironically, it's easier to get at the current thread from
-		# Sheppard than it is from Python, thanks to current_thread.
-		digress( th, th.activation.cursor.environment.digressor )
-	#bind_with_name( builtin_current_environment, 'current_environment' )
+prologue_text = """
+to take   base field                   python_eval { take( base, field ) }
+to give   base key_sharp value_sharp   python_exec { give( base, key_sharp, value_sharp ) }
+to get    base field                   python_eval { base[ field ] }
+to get2   base f1 f2                   python_eval { base[ f1 ][ f2 ] }
+to put    base field value             python_exec { base[ field ] = value }
+to cons   head_sharp tail              python_eval { cons( head_sharp, tail ) }
+
+/* This could really just be a binding */
+to current_environment       do current_environment2 current_thread
+to current_environment2 th   do python_eval { th.activation.cursor.environment.digressor }
+
+to set 
+	symbol value
+do put
+	get2 current_environment digressor bindings
+	symbol
+	value
+"""
 
 
 #####################################
@@ -534,25 +545,6 @@ class Action_factory: # Eventually split off the stuff that's acting like a prod
 			return PRIMITIVE( self._name, self._function, Stack( self._arg_names ), environment )
 		except AttributeError: # No _function
 			return MACRO( self._name, List( self._script ), Stack( self._arg_names ), environment )
-
-prologue_text = """
-to take   base field                   python_eval { take( base, field ) }
-to give   base key_sharp value_sharp   python_exec { give( base, key_sharp, value_sharp ) }
-to get    base field                   python_eval { base[ field ] }
-to get2   base f1 f2                   python_eval { base[ f1 ][ f2 ] }
-to put    base field value             python_exec { base[ field ] = value }
-to cons   head_sharp tail              python_eval { cons( head_sharp, tail ) }
-
-to current_environment       do current_environment2 current_thread
-to current_environment2 th   do python_eval { th.activation.cursor.environment.digressor }
-
-to set 
-	symbol value
-do put
-	get2 current_environment digressor bindings
-	symbol
-	value
-"""
 
 def parse_library( name, string, environment ):
 	bindings = environment.bindings
@@ -1171,34 +1163,6 @@ class Unexpected_token( BaseException ):
 
 	def __str__( self ):
 		return "Unexpected token %r in state %s" % ( self._token, self._state )
-
-def go_world():
-	def primitive_hello( th, where ):
-		print "!! Called primitive_hello( %s )" % where
-
-	global_scope = ENVIRONMENT( null )
-	bindings = global_scope.bindings
-	bindings[ "A1" ] = MACRO( "A1",
-		formal_args = Stack([ null, 'arg' ]),
-		script = List([ 'hello', 'arg' ]),
-		environment = global_scope
-		)
-	bindings[ "A2" ] = PRIMITIVE( "A2",
-		formal_args= Stack([ null, 'where' ]), # ignore the 'go' keyword
-		function = primitive_hello,
-		environment = global_scope
-		)
-	dialect = Shift(
-		go = Shift( SYMBOL = Reduce0( "A1" )),
-		hello = Shift( SYMBOL = Reduce0( "A2" )),
-		EOF = Accept())
-
-	#debug( "Global scope: %s", global_scope )
-	#debug( "  bindings: %s", global_scope.bindings )
-	#debug( "  dialect: %s", dialect.description() )
-
-	return PROCEDURE( 'go_world', List([ 'go', 'world' ]), dialect, global_scope )
-
 
 fib_text = """
 to + a b   python_eval { a+b }
