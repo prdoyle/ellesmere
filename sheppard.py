@@ -431,12 +431,12 @@ def define_builtins( global_scope ):
 	bind_with_name( builtin_current_thread, 'current_thread' )
 
 prologue_text = """
-to take   base field                   python_eval { take( base, field ) }
-to give   base key_sharp value_sharp   python_exec { give( base, key_sharp, value_sharp ) }
-to get    base field                   python_eval { base[ field ] }
-to get2   base f1 f2                   python_eval { base[ f1 ][ f2 ] }
-to put    base field value             python_exec { base[ field ] = value }
-to cons   head_sharp tail              python_eval { cons( head_sharp, tail ) }
+to take       base key_sharp               python_eval { take( base, key_sharp ) }
+to give       base key_sharp value_sharp   python_exec { give( base, key_sharp, value_sharp ) }
+to get        base key                     python_eval { base[ key ] }
+to get2       base f1 f2                   python_eval { base[ f1 ][ f2 ] }
+to put        base key value               python_exec { base[ key ] = value }
+to cons       head_sharp tail              python_eval { cons( head_sharp, tail ) }
 
 /* This could really just be a binding */
 to current_environment       do current_environment2 current_thread
