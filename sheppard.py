@@ -359,9 +359,6 @@ def take( obj, key_sharp ):
 	except KeyError:
 		return take_failed
 
-def make( tag_sharp ):
-	return Object( flat( tag_sharp ) )
-
 def cons( head_sharp, tail ):
 	return LIST( flat( head_sharp ), tail )
 
@@ -636,27 +633,6 @@ def polymorphic_automaton( factories_by_action_symbol, builtin_action_symbols, b
 		debug_ppa( '    %r >> %r', arg_types[-1], reduce_state )
 		name_states[ name ] = initial_state[ name ]
 
-	if 0:
-		debug_ppa( "Adding macros to parse forest" )
-		for f in factories:
-			# Shift until you get to the last arg
-			cur_state = initial_state
-			debug_ppa( '  %r', cur_state )
-			for tp in f._arg_types[:-1]:
-				try:
-					cur_state = cur_state[ tp ]
-					debug_ppa( '    %s => %s', tp, cur_state )
-				except KeyError:
-					next_state = Shift()
-					cur_state[ tp ] = next_state
-					shift_states.append( next_state )
-					cur_state = next_state
-					debug_ppa( '    %s >> %s', tp, cur_state )
-			# Last arg causes a reduce
-			reduce_state = Reduce0( 'ACTION_' + f._name )
-			cur_state[ f._arg_types[-1] ] = reduce_state
-			debug_ppa( '    %s >> %s', f._arg_types[-1], reduce_state )
-
 	# Names are effectively keywords.  Any time we see one of those, whatever shift state we are in, we leap to that name_state
 	debug_ppa( "Implementing keywords" )
 	for name in names:
@@ -687,7 +663,7 @@ def parse_procedure( name, library_text, script ):
 #
 #
 # This is written in a slightly odd style to make it look as much as possible
-# like Sheppard meta-interpreter.  There's some inevitable dual-maintenance
+# like the Sheppard meta-interpreter.  There's some inevitable dual-maintenance
 # there, so we want them to look as similar as possible to make them easy to
 # compare.
 #
@@ -696,13 +672,13 @@ def parse_procedure( name, library_text, script ):
 #    top level, and must use is_a based on the arguments or compare the
 #    argument against a specific symbol.  This represents sheppard
 #    automaton-based dispatch.  (For singletons like null and take_failed, we
-#    can compare against object identity for performance reasons.
+#    can compare against object identity for performance reasons.)
 #  - Loops will be replaced with tail digression.  There's only one loop anyway
 #    so that's no big deal.
 #
-# Because no general if-statements are allowed (Sheppard has none), we adopt an
-# unusual style in which all conditionals are turned into dispatches.
-# A routine foo compute some value whose type determines what to do next, and
+# Because no general if-statements are allowed (Sheppard has none yet), we
+# adopt an unusual style in which all conditionals are turned into dispatches.
+# A routine foo computes some value whose type determines what to do next, and
 # passes that to a polymorphic routine foo2, using the dispatch mechanism to
 # pick the right variant.
 #
@@ -751,7 +727,7 @@ def bound2( obj_sharp, environment, possible_match ):
 		return possible_match
 
 def next_state( state, obj_sharp ):
-	# First we check of the object is itself a symbol that has an edge from this
+	# First we check if the object is itself a symbol that has an edge from this
 	# state (ie. it's acting as a keyword).  Failing that, we check the object's
 	# "tag edge symbol" to see if the object is of a type that has an edge.  If
 	# that also fails, we default to the ":ANY" edge.  (This is where we should
