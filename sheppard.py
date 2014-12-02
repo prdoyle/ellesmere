@@ -568,11 +568,10 @@ def parse_library( name, string, environment ):
 	factory = None
 	def done( factory ):
 		if factory and factory._name:
-			name = factory._name
 			macro = factory.create_action( environment )
 			action_symbol = 'ACTION_%d' % macro._id
 			bindings[ action_symbol ] = macro
-			debug_parse( "PARSED MACRO %r[ %s ]: %s %s %s", bindings, action_symbol, name, zip( factory._arg_names, factory._arg_types), factory._script )
+			debug_parse( "PARSED MACRO %r[ %s ]: %s %s %s", bindings, action_symbol, factory._name, zip( factory._arg_names, factory._arg_types), factory._script )
 		else:
 			debug_parse( "(no macro)" )
 	for word in library_words( string ):
@@ -606,8 +605,6 @@ def polymorphic_automaton( bindings ):
 	shift_states = [ initial_state ]
 	debug_ppa( "initial_state: %s", initial_state )
 	debug_ppa( "bindings: %s", bindings )
-	names = set([ action.name for ( symbol, action ) in bindings ])
-	debug_ppa( "names: %s", names )
 	name_states = {}
 
 	# The parse graph here starts out as a forest: one tree for each name
@@ -635,7 +632,8 @@ def polymorphic_automaton( bindings ):
 		name_states[ name ] = initial_state[ name ]
 
 	# Names are effectively keywords.  Any time we see one of those, whatever shift state we are in, we leap to that name_state
-	debug_ppa( "Implementing keywords" )
+	names = set([ action.name for ( symbol, action ) in bindings ])
+	debug_ppa( "Implementing keywords: %s", names )
 	for name in names:
 		debug_ppa( '  %s:', name )
 		for s in shift_states:
