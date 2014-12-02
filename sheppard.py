@@ -87,7 +87,7 @@ class Object:
 
 	def __str__( self ):
 		suffix = ""
-		return repr( self ) + "{ " + string.join([ "%s=%r" % ( field, self[field] ) for field in self._fields ], ', ') + " }"
+		return repr( self ) + "{ " + string.join([ "%s=%s" % ( field, self._short_description( self[field] ) ) for field in self._fields ], ', ') + " }"
 
 	def description( self ):
 		work_queue = []
@@ -132,9 +132,9 @@ class Object:
 				children = [ value for ( key, value ) in self if isinstance( value, Object ) ]
 				silence( "Children of %r: %s", self, string.join([ "%r" % c for c in children ], ', ') )
 				if len( children ) <= 6:
-					children_strings = [ " %s=%s" % ( key, self._short_description( self[ key ], already_described, work_queue, indent+1 ) ) for key in keys ]
+					children_strings = [ " %s=%s" % ( key, self._short_description( self[ key ] ) ) for key in keys ]
 				else:
-					children_strings = [ "\n%s%s=%s" % ( indent_str, key, self._short_description( self[ key ], already_described, work_queue, indent+1 ) ) for key in keys ]
+					children_strings = [ "\n%s%s=%s" % ( indent_str, key, self._short_description( self[ key ] ) ) for key in keys ]
 				work_queue += children
 			result = repr( self ) + "{" + string.join( children_strings, ',' ) + " }"
 			return result
@@ -148,7 +148,11 @@ class Object:
 		else:
 			return str( value )
 
-	def _short_description( self, value, already_described, work_queue, indent ):
+	def _short_description( self, value ):
+		try:
+			return "<<%s>>" % value.__name__
+		except AttributeError:
+			pass
 		if isinstance( value, Object ):
 			return repr( value )
 		else:
@@ -288,9 +292,13 @@ true  = Object( 'TRUE' )
 
 def ACTIVATION( cursor, operands, history, scope, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, scope=scope, caller=caller )
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
-def MACRO( name, script, formal_args, environment ): return Object( 'MACRO', name=name, script=script, formal_args=formal_args, environment=environment )
 def PROCEDURE( name, script, dialect, environment ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, environment=environment )
-def PRIMITIVE( name, function, formal_args, environment ): return Object( 'PRIMITIVE', name=name, script=null, function=function, formal_args=formal_args, environment=environment )
+
+def MACRO( name, script, formal_arg_names, formal_arg_types, environment ):
+	return Object( 'MACRO', name=name, script=script, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, environment=environment )
+def PRIMITIVE( name, function, formal_arg_names, formal_arg_types, environment ):
+	return Object( 'PRIMITIVE', name=name, script=null, function=function, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, environment=environment )
+
 def Reduce0( action ): return Object( 'REDUCE0', action=action )
 def Accept(): return Object( 'ACCEPT' )
 def Shift( **edges ):
@@ -388,7 +396,7 @@ def print_stuff( th ):
 def print_reduce_stuff( th, action, reduce_environment ):
 	if meta_level( th ) >= printing_level_threshold:
 		frame = th.activation
-		debug( ">+  ACTION: %r: %s  (%r)", action.name, list_str( action.formal_args ), action )
+		debug( ">+  ACTION: %r: %s  (%r)", action.name, list_str( action.formal_arg_names ), action )
 		#debug( ">+  ACTION: %s %s", action.name, action )
 		debug( " |    with: %s %s", reduce_environment.bindings, reduce_environment )
 
@@ -424,8 +432,9 @@ def define_builtins( global_scope ):
 		#debug_digressions( "    new builtin digression: %r = %s", th.activation.cursor, list_str( th.activation.cursor.tokens ) )
 
 	def bind_with_name( func, name, *args ):
-		arg_stack = Stack( [null] + list( args ) )
-		global_scope.bindings[ 'ACTION_' + name ] = PRIMITIVE( name, func, arg_stack, global_scope )
+		arg_name_stack = Stack( [null] + list( args ) )
+		arg_type_stack = Stack( [name] + [':ANY'] * len( args ) )
+		global_scope.bindings[ 'ACTION_' + name ] = PRIMITIVE( name, func, arg_name_stack, arg_type_stack, global_scope )
 		debug_builtins( "Binding primitive: %s %s", name, list(args) )
 
 	# We're down to just one builtin: current_thread
@@ -545,30 +554,31 @@ class Action_factory: # Eventually split off the stuff that's acting like a prod
 
 	def create_action( self, environment ):
 		try:
-			return PRIMITIVE( self._name, self._function, Stack( self._arg_names ), environment )
+			return PRIMITIVE( self._name, self._function, Stack( self._arg_names ), Stack( self._arg_types ), environment )
 		except AttributeError: # No _function
-			return MACRO( self._name, List( self._script ), Stack( self._arg_names ), environment )
+			return MACRO( self._name, List( self._script ), Stack( self._arg_names ), Stack( self._arg_types ), environment )
+
+def library_words( library_text ):
+	full_text = prologue_text + " " + library_text.strip()
+	for word in re.findall( r'/\*.*?\*/|\{[^}]*\}|\S+(?:/:?\w+#*)?', full_text ):
+		yield word
 
 def parse_library( name, string, environment ):
 	bindings = environment.bindings
-	builtin_action_symbols = set([ k for (k,v) in bindings ])
 	factory = None
-	factories_by_action_symbol = {}
-	def done( factory, factories_by_action_symbol ):
+	def done( factory ):
 		if factory and factory._name:
 			name = factory._name
 			macro = factory.create_action( environment )
 			action_symbol = 'ACTION_%d' % macro._id
-			factories_by_action_symbol[ action_symbol ] = factory
 			bindings[ action_symbol ] = macro
 			debug_parse( "PARSED MACRO %r[ %s ]: %s %s %s", bindings, action_symbol, name, zip( factory._arg_names, factory._arg_types), factory._script )
 		else:
 			debug_parse( "(no macro)" )
-	full_text = prologue_text + " " + string.strip()
-	for word in re.findall( r'/\*.*?\*/|\{[^}]*\}|\S+(?:/:?\w+#*)?', full_text ):
+	for word in library_words( string ):
 		debug_parse( "WORD: '%s'", word )
 		if word == "to":
-			done( factory, factories_by_action_symbol )
+			done( factory )
 			factory = Action_factory()
 		elif word == "do":
 			factory.begin_script()
@@ -582,11 +592,11 @@ def parse_library( name, string, environment ):
 			pass
 		else: # Ordinary word; what it means depends on the factory's state
 			factory.process_word( maybe_int( word ) )
-	done( factory, factories_by_action_symbol )
-	automaton = polymorphic_automaton( factories_by_action_symbol, builtin_action_symbols, bindings )
+	done( factory )
+	automaton = polymorphic_automaton( bindings )
 	return LIBRARY( name, automaton, bindings )
 
-def polymorphic_automaton( factories_by_action_symbol, builtin_action_symbols, bindings ):
+def polymorphic_automaton( bindings ):
 	# A little silly parser generator algorithm to deal with simple
 	# multi-dispatch LR(0) languages using prefix notation and offering very
 	# little error detection.
@@ -596,9 +606,7 @@ def polymorphic_automaton( factories_by_action_symbol, builtin_action_symbols, b
 	shift_states = [ initial_state ]
 	debug_ppa( "initial_state: %s", initial_state )
 	debug_ppa( "bindings: %s", bindings )
-	debug_ppa( "builtin_action_symbols: %s", builtin_action_symbols )
-	debug_ppa( "actions: %s", [bindings[a] for a in builtin_action_symbols] )
-	names = set([ f._name for f in factories_by_action_symbol.values() ]) | set([ bindings[a].name for a in builtin_action_symbols ])
+	names = set([ action.name for ( symbol, action ) in bindings ])
 	debug_ppa( "names: %s", names )
 	name_states = {}
 
@@ -606,17 +614,10 @@ def polymorphic_automaton( factories_by_action_symbol, builtin_action_symbols, b
 	debug_ppa( "Building parse forest" )
 	for ( action_symbol, action ) in bindings:
 		name = action.name
-		if action_symbol in builtin_action_symbols:
-			# Note that arg_names here is backward
-			arg_names = python_list( action.formal_args )
-			arg_types = [ name ] + [':ANY'] * ( len( arg_names ) -1 )
-		else:
-			f = factories_by_action_symbol[ action_symbol ]
-			arg_names = None
-			arg_types = f._arg_types
+		arg_types = list( reversed( python_list( action.formal_arg_types ) ) )
 		cur_state = initial_state
 		debug_ppa( '  %r @ %r', name, cur_state )
-		debug_ppa( '    action: %s', action )
+		debug_ppa( '    action: %s %r', action, arg_types )
 		for tp in arg_types[:-1]:
 			try:
 				cur_state = cur_state[ tp ]
@@ -706,13 +707,13 @@ def bind_arg( arg_bindings, arg_symbol_sharp, arg_value_sharp ):
 		give( arg_bindings, arg_symbol_sharp, arg_value_sharp )
 		#debug_bind( "    %s=%r", flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
 
-def bind_args( frame, arg_bindings, formal_args ):
-	if formal_args is null:
+def bind_args( frame, arg_bindings, formal_arg_names ):
+	if formal_arg_names is null:
 		pass
 	else:
 		frame[ 'history' ] = frame.history.tail
-		bind_arg( arg_bindings, take( formal_args, 'head#' ), pop_list( frame, 'operands#' ) )
-		bind_args( frame, arg_bindings, formal_args.tail )
+		bind_arg( arg_bindings, take( formal_arg_names, 'head#' ), pop_list( frame, 'operands#' ) )
+		bind_args( frame, arg_bindings, formal_arg_names.tail )
 
 def bound( obj_sharp, environment ):
 	if environment is null:
@@ -803,7 +804,7 @@ def perform_reduce0( frame ):
 	#	debug_reduce( "    %s", python_list( action.script ) )
 	reduce_environment = ENVIRONMENT( action.environment )
 	reduce_environment[ 'digressor' ] = frame.cursor.environment  # Need this in order to make 'set' a macro, or else I can't access the environment I'm trying to bind
-	bind_args( frame, reduce_environment.bindings, action.formal_args )
+	bind_args( frame, reduce_environment.bindings, action.formal_arg_names )
 	print_reduce_stuff( frame.thread, action, reduce_environment )
 	#debug2_reduce( "  environment: %s", reduce_environment )
 	#debug2_reduce( "    based on: %s", frame.cursor )
@@ -903,22 +904,22 @@ do
 
 
 to bind_args 
-	frame arg_bindings formal_args:NULL
+	frame arg_bindings formal_arg_names:NULL
 do
 
 to bind_args 
-	frame arg_bindings formal_args:LIST
+	frame arg_bindings formal_arg_names:LIST
 do
 	put frame history
 		get2 frame history tail
 	bind_arg
 		arg_bindings
-		take formal_args head#
+		take formal_arg_names head#
 		pop_list frame operands#
 	bind_args
 		frame
 		arg_bindings
-		get formal_args tail
+		get formal_arg_names tail
 
 
 to bound 
@@ -1049,7 +1050,7 @@ do
 	bind_args
 		frame
 		get reduce_environment bindings
-		get action formal_args
+		get action formal_arg_names
 	print_reduce_stuff frame action reduce_environment
 	put frame cursor
 		Digression
