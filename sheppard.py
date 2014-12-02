@@ -16,6 +16,9 @@ def error( exception ):
 	print_backtrace( current_thread )
 	raise exception
 
+def reprs( xs ):
+	return "[ " + string.join([ repr(x) for x in xs ], ", ") + " ]"
+
 # Calls to these are often commented out below to improve performance.  "Enabling" these here may not be enough.
 #debug_digressions = debug
 #debug_object = debug
@@ -445,17 +448,17 @@ def define_builtins( global_scope ):
 prologue_text = """
 to take       base key_sharp               python_eval { take( base, key_sharp ) }
 to give       base key_sharp value_sharp   python_exec { give( base, key_sharp, value_sharp ) }
-to get        base key                     python_eval { base[ key ] }
-to get2       base f1 f2                   python_eval { base[ f1 ][ f2 ] }
-to put        base key value               python_exec { base[ key ] = value }
+to get        base key:SYMBOL              python_eval { base[ key ] }
+to get2       base f1:SYMBOL f2:SYMBOL     python_eval { base[ f1 ][ f2 ] }
+to put        base key:SYMBOL value        python_exec { base[ key ] = value }
 to cons       head_sharp tail              python_eval { cons( head_sharp, tail ) }
 
 /* This could really just be a binding */
-to current_environment       do current_environment2 current_thread
-to current_environment2 th   python_eval { th.activation.cursor.environment.digressor }
+to current_environment              do current_environment2 current_thread
+to current_environment2 th:THREAD   python_eval { th.activation.cursor.environment.digressor }
 
 to set 
-	symbol value
+	symbol:SYMBOL value
 do put
 	get2 current_environment digressor bindings  /* Bindings at the point that 'set' was expanded */
 	symbol
@@ -595,56 +598,56 @@ def parse_library( name, string, environment ):
 	automaton = polymorphic_automaton( bindings )
 	return LIBRARY( name, automaton, bindings )
 
-def polymorphic_automaton( bindings ):
+def polymorphic_automaton( action_bindings ):
 	# A little silly parser generator algorithm to deal with simple
 	# multi-dispatch LR(0) languages using prefix notation and offering very
 	# little error detection.
 	# This will suffice until I write a proper parser generator.
 	debug_ppa = silence
+	debug_ppa( "Building automaton" )
 	initial_state = Shift()
 	shift_states = [ initial_state ]
-	debug_ppa( "initial_state: %s", initial_state )
-	debug_ppa( "bindings: %s", bindings )
+	debug_ppa( "  initial_state: %s", initial_state )
+	debug_ppa( "  action_bindings: %s", action_bindings )
 	name_states = {}
 
-	# The parse graph here starts out as a forest: one tree for each name
-	debug_ppa( "Building parse forest" )
-	for ( action_symbol, action ) in bindings:
+	debug_ppa( "  Building parse tree" )
+	for ( action_symbol, action ) in action_bindings:
 		name = action.name
 		arg_types = list( reversed( python_list( action.formal_arg_types ) ) )
 		cur_state = initial_state
-		debug_ppa( '  %r @ %r', name, cur_state )
-		debug_ppa( '    action: %s %r', action, arg_types )
+		debug_ppa( '    %r @ %r', name, cur_state )
+		debug_ppa( '      action: %s %r', action, arg_types )
 		for tp in arg_types[:-1]:
 			try:
 				cur_state = cur_state[ tp ]
-				debug_ppa( '    %r => %r', tp, cur_state )
+				debug_ppa( '      %r -> %r', tp, cur_state )
 			except KeyError:
 				next_state = Shift()
 				cur_state[ tp ] = next_state
 				shift_states.append( next_state )
 				cur_state = next_state
-				debug_ppa( '    %r >> %r', tp, cur_state )
+				debug_ppa( '      %r => %r', tp, cur_state )
 
 		reduce_state = Reduce0( action_symbol )
 		cur_state[ arg_types[-1] ] = reduce_state
-		debug_ppa( '    %r >> %r', arg_types[-1], reduce_state )
+		debug_ppa( '      %r >> %r', arg_types[-1], reduce_state )
 		name_states[ name ] = initial_state[ name ]
 
 	# Names are effectively keywords.  Any time we see one of those, whatever shift state we are in, we leap to that name_state
-	names = set([ action.name for ( symbol, action ) in bindings ])
-	debug_ppa( "Implementing keywords: %s", names )
+	names = set([ action.name for ( symbol, action ) in action_bindings ])
+	debug_ppa( "  Implementing keywords: %s", names )
 	for name in names:
-		debug_ppa( '  %s:', name )
+		target_state = name_states[ name ]
+		debug_ppa( '    %s -> %r from %s', name, target_state, reprs( shift_states ) )
 		for s in shift_states:
-			s[ name ] = name_states[ name ]
-			debug_ppa( '    %r => %r', s, s[ name ] )
+			s[ name ] = target_state
 
 	# The accept state
 	initial_state[ ':EOF' ] = Accept()
-	debug_ppa( 'EOF => %s', initial_state[ ':EOF' ] )
+	debug_ppa( '  EOF => %s', initial_state[ ':EOF' ] )
 
-	debug_ppa( 'Automaton:\n%s', initial_state.description() )
+	debug_ppa( '  Automaton:\n%s', initial_state.description() )
 	return initial_state
 
 def parse_procedure( name, library_text, script ):
@@ -875,7 +878,7 @@ python_eval
 	{ ':' + tag( obj ) + '#' }
 
 to pop_list 
-	base field_symbol_sharp
+	base field_symbol_sharp:SYMBOL
 python_eval
 	{ pop_list( base, field_symbol_sharp ) }
 
@@ -1151,10 +1154,10 @@ to - a b   python_eval { a-b }
 
 to print_result n   python_exec { print "*** RESULT IS", n, "***" }
 
-to fib n=0 do 1
-to fib n=1 do 1
+to fib n=0  do 1
+to fib n=1  do 1
 
-to fib n do
+to fib n  do
 	+
 		fib - n 1
 		fib - n 2
