@@ -3,6 +3,11 @@
 import string, re, time
 from sys import argv
 
+# I've adopted a convention that strings used as Sheppard symbols (or parts
+# thereof) have single-quotes, and ordinary Python strings have double-quotes.
+# Since Python sees no difference between these, there's no way to enforce this
+# rule, so you may find some unintentional inconsistencies.
+
 def debug( message, *args ):
 	if args:
 		message = message % args
@@ -28,16 +33,18 @@ object_counter = 0
 class Object:
 	"""Warps Python's object model to make it more Sheppard-like"""
 
-	def __init__( self, tag, **edges ):
+	def __init__( _self, _tag, **edges ):
 		global object_counter
-		assert( tag.isupper() )
-		self._tag = tag
-		self._elements = {}
-		self._fields = sorted([ k for k in edges ]) # _fields can be adjusted if we want a particular field ordering
-		self._id = object_counter
+		assert( _tag.isupper() )
+		_self._tag = _tag
+		# The terminology is a little weird here, from a time when numbers were not considered
+		# symbols, so I differentiated "elements" (indexed by ints) from "fields".
+		_self._elements = {}
+		_self._fields = sorted([ k for k in edges ]) # _fields can be adjusted if we want a particular field ordering
+		_self._id = object_counter
 		object_counter += 1
 		for ( name, value ) in edges.iteritems():
-			setattr( self, name, value )
+			setattr( _self, name, value )
 
 	# Allow map syntax for convenience
 
@@ -90,9 +97,10 @@ class Object:
 
 	def __str__( self ):
 		suffix = ""
-		return repr( self ) + "{ " + string.join([ "%s=%s" % ( field, self._short_description( self[field] ) ) for field in self._fields ], ', ') + " }"
+		return repr( self ) + "{ " + string.join([ "%s=%s" % ( field, self._short_description( self[field] ) ) for field in ( self._fields + self._elements.keys() ) ], ', ') + " }"
 
 	def description( self ):
+		# TODO: This should move out of Object.  Any names in here render the object unable to have a field of the same name.
 		work_queue = []
 		already_described = set()
 		result = self._description( work_queue, already_described )
@@ -186,10 +194,19 @@ null = Null()  # The very first object!  It gets _id=0
 def is_int( obj ):    return isinstance( obj, int ) # Sheppard integers are represented by Python ints
 def is_symbol( obj ): return isinstance( obj, str ) # Sheppard symbols are represented by Python strs
 
-# I've adopted a convention that strings used as Sheppard symbols (or parts
-# thereof) have single-quotes, and ordinary Python strings have double-quotes.
-# Since Python sees no difference between these, there's no way to enforce this
-# rule, so you may find some unintentional inconsistencies.
+def all_fields( obj ):
+	if isinstance( obj, Object ):
+		str_fields = obj._fields
+		int_fields = obj._elements.keys()
+		str_fields.sort()
+		int_fields.sort()
+		fields = str_fields + int_fields
+		result = Object( 'FIELD_ARRAY', length=len( fields ), subject=obj )
+		for ( i, value ) in enumerate( fields ):
+			result[ i+1 ] = value # Let's count from 1, just to be zany
+		return result
+	else:
+		return Object( 'FIELD_ARRAY', length=0, subject=obj )
 
 def tag( obj ):
 	try:
@@ -302,6 +319,8 @@ def MACRO( name, script, formal_arg_names, formal_arg_types, environment ):
 def PRIMITIVE( name, function, formal_arg_names, formal_arg_types, environment ):
 	return Object( 'PRIMITIVE', name=name, script=null, function=function, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, environment=environment )
 
+def PRODUCTION( lhs, rhs, action ): return Object( 'PRODUCTION', lhs=lhs, rhs=rhs, action=action )
+
 def Reduce0( action ): return Object( 'REDUCE0', action=action )
 def Accept(): return Object( 'ACCEPT' )
 def Shift( **edges ):
@@ -313,6 +332,7 @@ def Shift( **edges ):
 		else:
 			result[     name ] = value
 	return result
+
 def LIBRARY( name, dialect, environment ): return Object( 'LIBRARY', name=name, dialect=dialect, environment=environment )
 
 # A few functions to help with the Python / Sheppard impedance mismatch
@@ -452,6 +472,7 @@ to get        base key:SYMBOL              python_eval { base[ key ] }
 to get2       base f1:SYMBOL f2:SYMBOL     python_eval { base[ f1 ][ f2 ] }
 to put        base key:SYMBOL value        python_exec { base[ key ] = value }
 to cons       head_sharp tail              python_eval { cons( head_sharp, tail ) }
+to all_fields obj                          python_eval { all_fields( obj ) }
 
 /* This could really just be a binding */
 to current_environment              do current_environment2 current_thread
@@ -562,8 +583,7 @@ class Action_factory: # Eventually split off the stuff that's acting like a prod
 			return MACRO( self._name, List( self._script ), Stack( self._arg_names ), Stack( self._arg_types ), environment )
 
 def library_words( library_text ):
-	full_text = prologue_text + " " + library_text.strip()
-	for word in re.findall( r'/\*.*?\*/|\{[^}]*\}|\S+(?:/:?\w+#*)?', full_text ):
+	for word in re.findall( r'/\*.*?\*/|\{[^}]*\}|\S+(?:/:?\w+#*)?', library_text ):
 		yield word
 
 def parse_library( name, string, environment ):
@@ -1042,7 +1062,7 @@ do
 			take
 				get2 frame history head
 				action#
-			get frame scope
+			get frame scope  /* TODO: Does this make sense?  Should there be a specific action_bindings object? */
 	set reduce_environment
 		Environment
 			get action environment
@@ -1071,6 +1091,7 @@ do
 to print_stuff        frame                             python_exec { print_stuff( frame.thread ) }
 to print_reduce_stuff frame action reduce_environment   python_exec { print_reduce_stuff( frame.thread, action, reduce_environment ) }
 to print_program      frame                             python_exec { print_program( frame.thread ) }
+to print              obj                               python_exec { print str( obj ) }
 
 
 to execute 
@@ -1173,7 +1194,7 @@ def wrap_procedure( inner_procedure ):
 	if sheppard_interpreter_library is None:
 		global_scope = ENVIRONMENT( null )
 		define_builtins( global_scope )
-		sheppard_interpreter_library = parse_library( "sheppard_interpreter", meta_interpreter_text, global_scope )
+		sheppard_interpreter_library = parse_library( "sheppard_interpreter", prologue_text + meta_interpreter_text, global_scope )
 		define_predefined_bindings( global_scope )
 	bindings = global_scope.bindings
 	script = List([ 'execute', inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment ])
