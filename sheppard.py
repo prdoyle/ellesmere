@@ -503,76 +503,51 @@ def maybe_int( symbol ):
 	except( TypeError, ValueError ):
 		return symbol
 
-class Cursor:
-
-	"""Iterator with a lookahead method telling what will come next"""
-
-	def __init__( self, items ):
-		self._iterator = iter( items )
-		self._advance()
-
-	def _advance( self ):
-		try:
-			self._current = self._iterator.next()
-		except StopIteration:
-			debug_parse( "(Cursor done after %r)", self._current )
-			del self._current
-
-	def lookahead( self ):
-		try:
-			return self._current
-		except AttributeError:
-			raise StopIteration
-
-	def next( self ):
-		result = self.lookahead()
-		self._advance()
-		return result
+def unpack_symbol( symbol ):
+	if symbol[0] == '{':
+		return maybe_int( symbol[1:-1] )
+	else:
+		return maybe_int( symbol )
 
 def library_words( library_text ):
-	def word_generator():
-		for word in re.findall( r'/\*.*?\*/|\{[^}]*\}|\S+(?:/:?\w+#*)?', library_text ):
-			if word[0] == '{':
-				result = maybe_int( word[1:-1] )
-				debug_parse( "Long word: %r", result )
-				yield result
-			elif word[0:2] == '/*':
-				debug_parse( "Comment: %r", result )
-				pass
-			else:
-				result = maybe_int( word )
-				debug_parse( "Word: %r", result )
-				yield result
-	return Cursor( word_generator() )
+	raw_words = re.findall( r'/\*.*?\*/|\{[^}]*\}|\S+(?:/:?\w+#*)?', library_text )
+	words = map( unpack_symbol, filter( lambda s: s[0:2] != '/*', raw_words ) )
+	return List( words )
 
 def FORMAL_ARG( name, symbol ): return Object( 'FORMAL_ARG', name=name, symbol=symbol )
 
-def parse_arg_list( words ):
-	if words.lookahead() in [ 'do', 'python_eval', 'python_exec' ]:
-		debug_parse( "Ending arg list on %r", words.lookahead() )
+def take_word( word_cursor ):
+	return pop_list( word_cursor, 'current#' )
+
+def parse_arg_list( word_cursor ):
+	return parse_arg_list2( word_cursor.current.head, word_cursor )
+
+def parse_arg_list2( lookahead, word_cursor ):
+	if lookahead in [ 'do', 'python_eval', 'python_exec', take_failed ]:
+		debug_parse( "Ending arg list on %r", lookahead )
 		return null
 	else:
-		word = words.next()
-		if '=' in word:
-			[ name, symbol ] = word.split( '=' )
+		word_sharp = take_word( word_cursor )
+		if '=' in word_sharp:
+			[ name, symbol ] = flat( word_sharp ).split( '=' )
 			symbol = maybe_int( symbol )
-		elif ':' in word:
-			[ name, symbol ] = word.split( ':' )
+		elif ':' in word_sharp:
+			[ name, symbol ] = flat( word_sharp ).split( ':' )
 			symbol = ':' + symbol
 		else:
-			name = word
+			name = flat( word_sharp )
 			symbol = ':ANY'
 		debug_parse( '  arg %s %r', name, symbol )
-		return LIST( FORMAL_ARG( name, symbol ), parse_arg_list( words ) )
+		return LIST( FORMAL_ARG( name, symbol ), parse_arg_list( word_cursor ) )
 
-def parse_script( words ):
-	try:
-		if words.lookahead() == 'to':
-			return null
-		else:
-			return LIST( words.next(), parse_script( words ) )
-	except StopIteration:
+def parse_script( word_cursor ):
+	return parse_script2( take( word_cursor.current, 'head#' ), word_cursor )
+
+def parse_script2( lookahead_sharp, word_cursor ):
+	if lookahead_sharp in [ 'to#', take_failed ]:
 		return null
+	else:
+		return cons( take_word( word_cursor ), parse_script( word_cursor ) )
 
 def arg_stack( arg_list, field, tail=null ):
 	if arg_list is null:
@@ -580,54 +555,66 @@ def arg_stack( arg_list, field, tail=null ):
 	else:
 		return arg_stack( arg_list.tail, field, LIST( arg_list.head[ field ], tail ) )
 
-def parse_action( words, environment ):
-	word = words.next()
-	if word != 'to':
-		raise ParseError( "Expected action declaration to begin with 'to'; found %r" % word )
-	name = words.next()
-	arg_list = LIST( FORMAL_ARG( null, name ), parse_arg_list( words ) )
-	arg_names = arg_stack( arg_list, 'name' )
-	arg_types = arg_stack( arg_list, 'symbol' )
-	word = words.next()
-	debug_parse( "Action keyword: %r", word )
-	if word == 'do':
-		script = parse_script( words )
-		result = MACRO( name, script, arg_names, arg_types, environment )
-	elif word == 'python_exec':
-		code = words.next().strip()
+def parse_action( word_cursor, environment ):
+	return parse_action2( take_word( word_cursor ), word_cursor, environment )
+
+def parse_action2( start_word_sharp, word_cursor, environment ):
+	if start_word_sharp is take_failed:
+		return null
+	else:
+		if start_word_sharp != 'to#':
+			raise ParseError( "Expected action declaration to begin with 'to'; found %r" % start_word_sharp )
+		name_sharp = take_word( word_cursor )
+		arg_list = LIST( FORMAL_ARG( null, flat( name_sharp ) ), parse_arg_list( word_cursor ) )
+		arg_names = arg_stack( arg_list, 'name' )
+		arg_types = arg_stack( arg_list, 'symbol' )
+		result = parse_action3( name_sharp, take_word( word_cursor ), arg_names, arg_types, word_cursor, environment )
+		debug_parse( "Parsed %s", result )
+		return result
+
+def parse_action3( name_sharp, kind_sharp, arg_names, arg_types, word_cursor, environment ):
+	debug_parse( "Action keyword: %r", kind_sharp )
+	if kind_sharp == 'do#':
+		script = parse_script( word_cursor )
+		debug_parse( "Parsed script: %r", python_list( script ) )
+		result = MACRO( flat( name_sharp ), script, arg_names, arg_types, environment )
+	elif kind_sharp == 'python_exec#':
+		code = flat( take_word( word_cursor ) ).strip()
 		debug_parse( "Code: %r", code )
 		def builtin_exec( th, args ):
 			#debug( "builtin_exec running: %r", code )
 			exec code in globals(), args
-		result = PRIMITIVE( name, builtin_exec, arg_names, arg_types, environment )
-	elif word == 'python_eval':
-		code = words.next().strip()
+		result = PRIMITIVE( flat( name_sharp ), builtin_exec, arg_names, arg_types, environment )
+	elif kind_sharp == 'python_eval#':
+		code = flat( take_word( word_cursor ) ).strip()
 		debug_parse( "Code: %r", code )
 		def builtin_eval( th, args ):
 			#debug( "builtin_eval running: %r", code )
 			result = eval( code, globals(), args )
 			end_digression_if_finished( th.activation, th.activation.cursor.tokens )
 			th.activation[ 'cursor' ] = DIGRESSION( List([ result ]), th.activation.cursor.environment, th.activation.cursor )
-		result = PRIMITIVE( name, builtin_eval, arg_names, arg_types, environment )
+		result = PRIMITIVE( flat( name_sharp ), builtin_eval, arg_names, arg_types, environment )
 	else:
-		raise ParseError( "Expected 'do', 'python_eval', or 'python_exec'; found %r" % word )
-	debug_parse( "Parsed %s", result )
+		raise ParseError( "Expected 'do', 'python_eval', or 'python_exec'; found %r" % kind_sharp )
 	return result
 
 def parse_library( name, string, environment ):
 	debug_parse( "parse_library( %r, %r, %r )", name, string, environment )
 	bindings = environment.bindings
-	words = library_words( string )
-	try:
-		while True:
-			debug_parse( "Parsing action starting at %r", words.lookahead() )
-			action = parse_action( words, environment )
-			action_symbol = 'ACTION_%d' % action._id
-			bindings[ action_symbol ] = action
-	except StopIteration:
-		debug_parse( "Finished parsing actions" )
+	word_cursor = Object( 'WORD_CURSOR', current = library_words( string ) )
+	while bind_action( bindings, parse_action( word_cursor, environment ) ):
+		pass
 	automaton = polymorphic_automaton( bindings )
 	return LIBRARY( name, automaton, bindings )
+
+def bind_action( bindings, action ):
+	if action is null:
+		return False
+	else:
+		action_symbol = 'ACTION_%d' % action._id
+		bindings[ action_symbol ] = action
+		debug_parse( "Bound %r to %s", action_symbol, action )
+		return True
 
 def polymorphic_automaton( action_bindings ):
 	# A little silly parser generator algorithm to deal with simple
