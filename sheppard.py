@@ -419,9 +419,9 @@ def print_stuff( th ):
 def print_reduce_stuff( th, action, reduce_environment ):
 	if meta_level( th ) >= printing_level_threshold:
 		frame = th.activation
-		debug( ">+  ACTION: %r: %s  (%r)", action.name, list_str( action.formal_arg_names ), action )
+		debug( ">+  ACTION: %r %r with %s", action, action.name, reduce_environment.bindings )
 		#debug( ">+  ACTION: %s %s", action.name, action )
-		debug( " |    with: %s %s", reduce_environment.bindings, reduce_environment )
+		#debug( " |    with: %s %s", reduce_environment.bindings, reduce_environment )
 
 def print_backtrace( th ):
 	print_stuff( th )
@@ -634,8 +634,8 @@ def polymorphic_automaton( action_bindings ):
 		name = action.name
 		arg_types = list( reversed( python_list( action.formal_arg_types ) ) )
 		cur_state = initial_state
-		debug_ppa( '    %r @ %r', name, cur_state )
-		debug_ppa( '      action: %s %r', action, arg_types )
+		#debug_ppa( '    %r @ %r', name, cur_state )
+		debug_ppa( '    %r %r', action, arg_types )
 		for tp in arg_types[:-1]:
 			try:
 				cur_state = cur_state[ tp ]
@@ -665,7 +665,7 @@ def polymorphic_automaton( action_bindings ):
 	initial_state[ ':EOF' ] = Accept()
 	debug_ppa( '  EOF => %s', initial_state[ ':EOF' ] )
 
-	debug_ppa( '  Automaton:\n%s', initial_state.description() )
+	#debug_ppa( '  Automaton:\n%s\n', initial_state.description() )
 	return initial_state
 
 def parse_procedure( name, library_text, script ):
@@ -786,29 +786,29 @@ def get_token( possible_token ):
 	else:
 		return possible_token
 
-def perform_accept( frame ):
+def perform_accept( frame, state ):
 	debug( 'accept' )
 	return false
 
 shift_count = 0
-def perform_shift( frame ):
+def perform_shift( frame, state ):
 	global shift_count
 	shift_count += 1
 	#debug_shift = silence
 	#debug_shift( 'shift' )
 	#debug_shift( "  cursor: %r", frame.cursor )
-	#debug_shift( "  state: %s", frame.history.head )
+	#debug_shift( "  state: %s", state )
 	token_sharp = bound( get_token( pop_list( frame.cursor, "tokens#" ) ), frame.cursor.environment )
 	end_digression_if_finished( frame, frame.cursor.tokens )
 	#debug_shift( "    value: %r", flat( token_sharp ) )
 	frame[ 'operands' ] = cons( token_sharp, frame.operands )
-	frame[ 'history' ] = cons( next_state( frame.history.head, token_sharp ), frame.history )
-	#debug_shift( "  new_state: %r", frame.history.head )
+	frame[ 'history' ] = cons( next_state( state, token_sharp ), frame.history )
+	#debug_shift( "  new_state: %r", state )
 	if list_length( frame.operands ) > 50:
 		error( RuntimeError( "Operand stack overflow" ) )
 	return true
 
-def perform_reduce0( frame ):
+def perform_reduce0( frame, state ):
 	if meta_level( frame.thread ) >= printing_level_threshold:
 		debug_reduce = debug
 		debug2_reduce = silence
@@ -816,8 +816,8 @@ def perform_reduce0( frame ):
 		debug_reduce = silence
 		debug2_reduce = silence
 	print_stuff( frame.thread )
-	#debug2_reduce( ">-- reduce0 %s --", frame.history.head.action )
-	action = bound( take( frame.history.head, 'action#' ), frame.scope ) # 'take' here just to get a sharp result
+	#debug2_reduce( ">-- reduce0 %s --", state.action )
+	action = bound( take( state, 'action#' ), frame.scope ) # 'take' here just to get a sharp result
 	#debug2_reduce( "  action: %r", action )
 	#if is_a( action, 'MACRO' ):
 	#	debug_reduce( "    %s", python_list( action.script ) )
@@ -845,18 +845,15 @@ def execute( procedure, environment, scope ):
 	current_thread = THREAD( frame, null )
 	frame[ 'thread' ] = current_thread # I don't love this back link, but it's really handy and efficient
 	debug( "starting thread: %r with digression:\n\t%s", current_thread, frame.cursor )
+	print_program( current_thread )
 	execute2( frame, true )
 
 def execute2( frame, keep_going ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
 	while keep_going == true: #is_a( keep_going, 'TRUE' ):
 		#print_stuff( frame.thread )
-		command = tag( frame.history.head )
-		#debug( "-__ execute2 __ %s", perform[ command ] )
-		# if Python had tail call elimination, we could do this:
-		#   execute2( frame, perform[ command ]( frame ) )
-		# but instead, we loop
-		keep_going = perform[ command ]( frame )
+		perform_func = perform[ tag( frame.history.head ) ]
+		keep_going = perform_func( frame, frame.history.head )
 
 
 #####################################
@@ -1045,9 +1042,7 @@ do
 			get frame operands
 	put frame history
 		cons
-			next_state
-				get2 frame history head
-				token_sharp
+			next_state state token_sharp
 			get frame history
 	true
 
@@ -1057,9 +1052,7 @@ do
 	print_stuff frame
 	set action
 		bound
-			take
-				get2 frame history head
-				action#
+			take state action#
 			get frame scope  /* TODO: Does this make sense?  Should there be a specific action_bindings object? */
 	set reduce_environment
 		Environment
@@ -1109,6 +1102,7 @@ do
 			null  /* No caller */
 	put frame thread  /* Putting a thread pointer in each frame seems wasteful, but it's handy */
 		Thread frame current_thread
+	print_program frame
 	execute2 frame true
 
 
@@ -1168,19 +1162,18 @@ class Unexpected_token( BaseException ):
 		return "Unexpected token %r in state %s" % ( self._token, self._state )
 
 fib_text = """
-to + a b   python_eval { a+b }
-to - a b   python_eval { a-b }
+to fib  n=0  do 1
+to fib  n=1  do 1
 
-to print_result n   python_exec { print "*** RESULT IS", n, "***" }
-
-to fib n=0  do 1
-to fib n=1  do 1
-
-to fib n  do
+to fib  n  do
 	+
 		fib - n 1
 		fib - n 2
 
+to + a b   python_eval { a+b }
+to - a b   python_eval { a-b }
+
+to print_result  n  python_exec { print "*** RESULT IS", n, "***" }
 """
 
 def fib_procedure():
