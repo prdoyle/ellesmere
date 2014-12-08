@@ -193,6 +193,7 @@ null = Null()  # The very first object!  It gets _id=0
 
 def is_int( obj ):    return isinstance( obj, int ) # Sheppard integers are represented by Python ints
 def is_symbol( obj ): return isinstance( obj, str ) # Sheppard symbols are represented by Python strs
+# TODO: What about the fact that I'm now considering ints to be symbols?
 
 def all_fields( obj ):
 	if isinstance( obj, Object ):
@@ -372,14 +373,9 @@ def tag_edge_symbol( obj ):
 # These functions operate in sharp-land, so they're safe to call directly from
 # a Sheppard program without interfering with the automaton
 
-give_failed = 'GIVE_FAILED'
-
 def give( obj, key_sharp, value_sharp ):
-	#debug( "--GIVE-- %r %r %r", value_sharp, obj, key_sharp )
-	if is_symbol( key_sharp ):
-		obj[ flat(key_sharp) ] = flat( value_sharp )
-	else:
-		return give_failed
+	#debug( "--GIVE-- %r . %r = %r", obj, flat(key_sharp), flat(value_sharp) )
+	obj[ flat(key_sharp) ] = flat( value_sharp )
 
 take_failed = 'TAKE_FAILED'
 
@@ -616,15 +612,36 @@ def bind_action( bindings, action ):
 		debug_parse( "Bound %r to %s", action_symbol, action )
 		return True
 
+debug_ppa = silence
+
+def extend_branch( state, arg_types, all_shift_states ):
+	if arg_types is null:
+		return state
+	else:
+		return extend_one_step( extend_branch( state, arg_types.tail, all_shift_states ), take( arg_types, 'head#' ), all_shift_states )
+
+def extend_one_step( state, arg_type_sharp, all_shift_states ):
+	return extend_one_step2( state, arg_type_sharp, take( state, arg_type_sharp ), all_shift_states )
+
+def extend_one_step2( state, arg_type_sharp, possible_match, all_shift_states ):
+	if possible_match is take_failed:
+		result = Shift()
+		all_shift_states.first = cons( result, all_shift_states.first )
+		give( state, arg_type_sharp, result )
+		debug_ppa( '      %r => %r', flat( arg_type_sharp ), result )
+		return result
+	else:
+		debug_ppa( '      %r -> %r', flat( arg_type_sharp ), possible_match )
+		return possible_match
+
 def polymorphic_automaton( action_bindings ):
 	# A little silly parser generator algorithm to deal with simple
 	# multi-dispatch LR(0) languages using prefix notation and offering very
 	# little error detection.
 	# This will suffice until I write a proper parser generator.
-	debug_ppa = silence
 	debug_ppa( "Building automaton" )
 	initial_state = Shift()
-	shift_states = [ initial_state ]
+	all_shift_states = Object( 'SHIFT_STATE_COLLECTOR', first = cons( initial_state, null ) )
 	debug_ppa( "  initial_state: %s", initial_state )
 	debug_ppa( "  action_bindings: %s", action_bindings )
 	name_states = {}
@@ -632,27 +649,18 @@ def polymorphic_automaton( action_bindings ):
 	debug_ppa( "  Building parse tree" )
 	for ( action_symbol, action ) in action_bindings:
 		name = action.name
-		arg_types = list( reversed( python_list( action.formal_arg_types ) ) )
-		cur_state = initial_state
-		#debug_ppa( '    %r @ %r', name, cur_state )
-		debug_ppa( '    %r %r', action, arg_types )
-		for tp in arg_types[:-1]:
-			try:
-				cur_state = cur_state[ tp ]
-				debug_ppa( '      %r -> %r', tp, cur_state )
-			except KeyError:
-				next_state = Shift()
-				cur_state[ tp ] = next_state
-				shift_states.append( next_state )
-				cur_state = next_state
-				debug_ppa( '      %r => %r', tp, cur_state )
-
+		if debug_ppa != silence:
+			arg_types = list( reversed( python_list( action.formal_arg_types ) ) )
+			debug_ppa( '    %r %r', action, arg_types )
+		tip = extend_branch( initial_state, action.formal_arg_types.tail, all_shift_states )
 		reduce_state = Reduce0( action_symbol )
-		cur_state[ arg_types[-1] ] = reduce_state
-		debug_ppa( '      %r >> %r', arg_types[-1], reduce_state )
+		reduce_word_sharp = take( action.formal_arg_types, 'head#' )
+		give( tip, reduce_word_sharp, reduce_state )
+		debug_ppa( '      %r >> %r', flat( reduce_word_sharp ), reduce_state )
 		name_states[ name ] = initial_state[ name ]
 
 	# Names are effectively keywords.  Any time we see one of those, whatever shift state we are in, we leap to that name_state
+	shift_states = python_list( all_shift_states.first )
 	names = set([ action.name for ( symbol, action ) in action_bindings ])
 	debug_ppa( "  Implementing keywords: %s", names )
 	for name in names:
