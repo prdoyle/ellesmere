@@ -24,6 +24,32 @@ def error( exception ):
 def reprs( xs ):
 	return "[ " + string.join([ repr(x) for x in xs ], ", ") + " ]"
 
+def symbol_str( obj ):
+	global identifier_re
+	identifier_re = re.compile(r":*[A-Za-z]\w*#*")
+	if isinstance( obj, int ):
+		return str( obj )
+	elif isinstance( obj, str ):
+		if identifier_re.match( obj ):
+			return obj
+		else:
+			return repr( obj )
+	else:
+		raise TypeError
+
+def smart_order( key1, key2 ):
+	# One day, this is supposed to grow into something that sorts the numeric
+	# parts of a string numerically instead of alphabetically...  One day...
+	global smart_splitter
+	smart_splitter = re.compile(r"(.*[^0-9])(.*)$")
+	try:
+		split1 = smart_splitter.match( key1 ).groups()
+		split2 = smart_splitter.match( key2 ).groups()
+		result = cmp( split1, split2 )
+		return result
+	except TypeError:
+		return 0
+
 # Calls to these are often commented out below to improve performance.  "Enabling" these here may not be enough.
 #debug_digressions = debug
 #debug_object = debug
@@ -99,55 +125,44 @@ class Object:
 		suffix = ""
 		return repr( self ) + "{ " + string.join([ "%s=%s" % ( field, self._short_description( self[field] ) ) for field in ( self._fields + self._elements.keys() ) ], ', ') + " }"
 
-	def description( self ):
-		# TODO: This should move out of Object.  Any names in here render the object unable to have a field of the same name.
+	def _description( self, indent=0 ):
 		work_queue = []
 		already_described = set()
-		result = self._description( work_queue, already_described )
+		result = self._description_impl( work_queue, already_described, indent )
 		while work_queue:
 			next_item = work_queue.pop(0)
 			if next_item not in already_described:
-				result = result + ";\n" + next_item._description( work_queue, already_described )
+				result = result + ";\n" + next_item._description_impl( work_queue, already_described, indent )
 		return result
 
-	def _description( self, work_queue, already_described, indent=1 ):
+	def _description_impl( self, work_queue, already_described, indent ):
 		debug_description = silence
-		silence( "description( %r )", self )
-		if already_described is None:
-			already_described = set()
+		debug_description( "description( %r )", self )
 		if self is null:
 			return "null"
 		elif self in already_described:
-			silence( "%r alredy described", self )
+			debug_description( "%r alredy described", self )
 			return repr( self )
 		else:
 			already_described.add( self )
-			silence( "   %r is being described", self )
-			indent_str = " |" * indent
+			debug_description( "   %r is being described", self )
+			indent_str = " |" * ( indent+1 )
 			if self._expand_children():
-				children_strings = [ "\n%s%s=%s" % ( indent_str, key, self._long_description( value, already_described, work_queue, indent+1 ) ) for ( key, value ) in self ]
+				children_strings = [ "\n%s%s=%s" % ( indent_str, symbol_str( key ), self._long_description( value, already_described, work_queue, indent+1 ) ) for ( key, value ) in self ]
 			else:
 				keys = [ key for ( key, value ) in self ]
-				def smart_order( key1, key2 ):
-					global smart_splitter
-					smart_splitter = re.compile(r"(.*[^0-9])(.*)$")
-					try:
-						split1 = smart_splitter.match( key1 ).groups()
-						split2 = smart_splitter.match( key2 ).groups()
-						result = cmp( split1, split2 )
-						return result
-					except TypeError:
-						return 0
+				debug_description( "  Keys of %r: %s", self, string.join([ "%r" % k for k in keys ], ', ') )
+				debug_description( "  Values of %r: %s", self, string.join([ "%r" % self[k] for k in keys ], ', ') )
 				keys.sort( smart_order )
 
 				children = [ value for ( key, value ) in self if isinstance( value, Object ) ]
-				silence( "Children of %r: %s", self, string.join([ "%r" % c for c in children ], ', ') )
+				debug_description( "  Children of %r: %s", self, string.join([ "%r" % c for c in children ], ', ') )
 				if len( children ) <= 6:
-					children_strings = [ " %s=%s" % ( key, self._short_description( self[ key ] ) ) for key in keys ]
+					children_strings = [ " %s=%s" % ( symbol_str( key ), self._short_description( self[ key ] ) ) for key in keys ]
 				else:
-					children_strings = [ "\n%s%s=%s" % ( indent_str, key, self._short_description( self[ key ] ) ) for key in keys ]
+					children_strings = [ "\n%s%s=%s" % ( indent_str, symbol_str( key ), self._short_description( self[ key ] ) ) for key in keys ]
 				work_queue += children
-			result = repr( self ) + "{" + string.join( children_strings, ',' ) + " }"
+			result = " |" * indent + repr( self ) + "{" + string.join( children_strings, ',' ) + " }"
 			return result
 
 	def _expand_children( self ):
@@ -155,16 +170,16 @@ class Object:
 
 	def _long_description( self, value, already_described, work_queue, indent ):
 		if isinstance( value, Object ):
-			return value._description( work_queue, already_described, indent )
+			return value._description_impl( work_queue, already_described, indent )
 		else:
-			return str( value )
+			return repr( value )
 
 	def _short_description( self, value ):
 		try:
 			return "<<%s>>" % value.__name__
 		except AttributeError:
 			pass
-		if isinstance( value, Object ):
+		if isinstance( value, Object ) or isinstance( value, str ):
 			return repr( value )
 		else:
 			return str( value )
@@ -259,6 +274,94 @@ def flat( arg ):
 	else:
 		return arg
 
+#####################################
+#
+# Serialization
+#
+
+debug_shogun = silence
+
+def get_index( obj, obj_list ):
+	try:
+		return obj_list.index( obj )
+	except ValueError:
+		obj_list.append( obj )
+		return len( obj_list ) - 1
+
+def shogun( obj ):
+	"""SHeppard Object Graph Unicode Notation"""
+	objects = [ null, obj ]
+	result = "{\n"
+	i = 1
+	while i < len(objects):
+		obj = objects[ i ]
+		if isinstance( obj, int ) or isinstance( obj, str ):
+			result += "\t%r: %r\n" % ( i, obj )
+		else:
+			result += "\t%r: %s {\n" % ( i, tag( obj ) ) # TODO: What if the tag is really weird?
+			for ( key, value ) in obj:
+				if isinstance( value, int ) or isinstance( value, str ):
+					result += "\t\t%r: %r\n" % ( key, value )
+				else:
+					result += "\t\t%r: @%r\n" % ( key, get_index( value, objects ) )
+			result += "\t}\n"
+		i += 1
+	return result + "}[1]"
+
+def consume( expectation, words ):
+	word = words.pop()
+	if word != expectation:
+		words = words[:]
+		words.reverse()
+		raise ParseError( "Encountered %r instead of %r before %r" % ( word, expectation, words ) )
+
+def deshogun( text ):
+	dictionary = { '0':null }
+	relocations = []
+	words = re.findall( r"'[^']*'|@\d+|\d+|[{}:]|\[|\]|\S+", text )
+	#debug_shogun( "Words:\n%r", words )
+	words.reverse()
+	consume( "{", words )
+	while words[-1] != "}":
+		key = maybe_int( words.pop() )
+		debug_shogun( "key is %r", key )
+		consume( ":", words )
+		item = words.pop()
+		debug_shogun( "item is %r", item )
+		if item[0].isdigit():
+			dictionary[ key ] = int( item )
+		elif item[0] == "'":
+			dictionary[ key ] = item[1:-1]
+		else:
+			obj = Object( item )
+			dictionary[ key ] = obj
+			consume( "{", words )
+			while words[-1] != "}":
+				field = words.pop()
+				if field[0] == "'":
+					field = field[1:-1]
+				else:
+					field = maybe_int( field )
+				debug_shogun( "field is %r", field )
+				consume( ":", words )
+				value = words.pop()
+				debug_shogun( "value is %r", value )
+				if value[0].isdigit():
+					obj[ field ] = int( value )
+				elif value[0] == "@":
+					relocations.append(( obj, field, int( value[1:] ) ))
+				elif value[0] == "'":
+					obj[ field ] = value[1:-1]
+				else:
+					raise ParseError( "Value word %r must start with digit, apostrophe, or '@'" % value )
+			consume( "}", words )
+	consume( "}", words )
+	for ( obj, key, index ) in relocations:
+		obj[ key ] = dictionary[ index ]
+	consume( "[", words )
+	result = dictionary[ maybe_int( words.pop() ) ]
+	consume( "]", words )
+	return result
 
 # Object constructors
 
@@ -319,6 +422,7 @@ def MACRO( name, script, formal_arg_names, formal_arg_types, environment ):
 	return Object( 'MACRO', name=name, script=script, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, environment=environment )
 def PRIMITIVE( name, function, formal_arg_names, formal_arg_types, environment ):
 	return Object( 'PRIMITIVE', name=name, script=null, function=function, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, environment=environment )
+	# PROBLEM: This "function" thing is the only thing in this whole object graph that is not a Sheppard object
 
 def PRODUCTION( lhs, rhs, action ): return Object( 'PRODUCTION', lhs=lhs, rhs=rhs, action=action )
 
@@ -673,7 +777,14 @@ def polymorphic_automaton( action_bindings ):
 	initial_state[ ':EOF' ] = Accept()
 	debug_ppa( '  EOF => %s', initial_state[ ':EOF' ] )
 
-	#debug_ppa( '  Automaton:\n%s\n', initial_state.description() )
+	debug_ppa( ' Automaton:\n%s\n', initial_state._description( 1 ) )
+	if True:
+		s1 = shogun( initial_state )
+		s2 = shogun( deshogun( s1 ) )
+		if s1 != s2:
+			raise ParseError # Shogun test mismatch
+	#debug( ' Automaton:\n%s\n', s1 )
+	#debug( ' Automaton again:\n%s\n', shogun( deshogun( shogun( initial_state ) ) ) )
 	return initial_state
 
 def parse_procedure( name, library_text, script ):
@@ -682,6 +793,9 @@ def parse_procedure( name, library_text, script ):
 	lib = parse_library( name, library_text, env )
 	define_predefined_bindings( env )
 	result = PROCEDURE( name, List( script ), lib.dialect, env )
+	if False:
+		debug( "Parsed procedure:" )
+		debug( "%s", shogun( result ) )
 	return result
 
 
@@ -1211,7 +1325,7 @@ def test( depth, plt ):
 		debug( "procedure: %s", str( procedure ) )
 		debug( "   script: %s", str( procedure.script ) )
 		debug( " bindings: %s", str( procedure.environment.bindings ) )
-		#debug( "  dialect: %s", procedure.dialect.description() )
+		#debug( "  dialect: %s", procedure.dialect._description() )
 	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
 
 def pretty_time( t ):
