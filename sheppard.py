@@ -279,7 +279,9 @@ def flat( arg ):
 # Serialization
 #
 
-debug_shogun = silence
+debug_shogun   = silence
+debug_deshogun = silence
+sanity_limit = 999
 
 def get_index( obj, obj_list ):
 	try:
@@ -297,19 +299,65 @@ def shogun( obj ):
 		obj = objects[ i ]
 		if isinstance( obj, int ) or isinstance( obj, str ):
 			result += "\t%r: %r\n" % ( i, obj )
+		elif tag( obj ) == 'LIST':
+			try:
+				result += "\t%r: [%s]\n" % ( i, ", ".join( shogun_list_elements( obj, objects, sanity_limit ) ) )
+			except NotAListError:
+				result += "\t%r: %s" % ( i, shogun_object_by_fields( obj, objects ) )
 		else:
-			result += "\t%r: %s {\n" % ( i, tag( obj ) ) # TODO: What if the tag is really weird?
-			fields = [ f for (f,v) in obj ]
-			fields.sort( smart_order )
-			for field in fields:
-				value = obj[ field ]
-				if isinstance( value, int ) or isinstance( value, str ):
-					result += "\t\t%r: %r\n" % ( field, value )
-				else:
-					result += "\t\t%r: @%r\n" % ( field, get_index( value, objects ) )
-			result += "\t}\n"
+			result += "\t%r: %s" % ( i, shogun_object_by_fields( obj, objects ) )
 		i += 1
 	return result + "}[1]"
+
+class ParseError( Exception ):
+	pass
+
+class NotAListError( ParseError ):
+	pass
+
+class NotASimpleValueError( ParseError ):
+	pass
+
+def shogun_list_elements( obj, objects, length_limit ):
+	debug_shogun( "shogun_list_elements( %r )", obj )
+	if length_limit < 0:
+		raise NotAListError
+	elif obj is null:
+		return []
+	elif tag( obj ) == 'LIST':
+		try:
+			# Can't do relocations in here yet, so we don't want "@" references, so pass None as the objects list
+			value_str = shogun_value( obj.head, None )
+		except AttributeError:
+			raise NotAListError
+		return [ value_str ] + shogun_list_elements( obj.tail, objects, length_limit-1 )
+	else:
+		raise NotAListError
+
+def shogun_object_by_fields( obj, objects ):
+	debug_shogun( "shogun_object_by_fields( %r )", obj )
+	result = "%s {\n" % tag( obj ) # TODO: What if the tag is really weird?
+	fields = [ f for (f,v) in obj ]
+	fields.sort( smart_order )
+	for field in fields:
+		value = obj[ field ]
+		result += "\t\t%r: %s\n" % ( field, shogun_value( value, objects ) )
+	result += "\t}\n"
+	return result
+
+def shogun_value( value, objects ):
+	debug_shogun( "shogun_value( %r )", value )
+	if value is null:
+		return "@0" # SPECIAL CASE FOR NULL
+	elif isinstance( value, int ) or isinstance( value, str ):
+		return repr( value )
+	elif tag( value ) == 'LIST':
+		try:
+			return "[ %s ]" % ", ".join( shogun_list_elements( value, objects, sanity_limit ) )
+		except NotAListError:
+			pass
+	# Default
+	return "@%r" % get_index( value, objects )
 
 def consume( expectation, words ):
 	word = words.pop()
@@ -332,41 +380,41 @@ def deshogun( text ):
 
 	relocations = []
 	words = re.findall( r"'[^']*'|@\d+|\d+|[{}:]|\[|\]|'.*'|\".*\"|\S+", text )
-	debug_shogun( "Words:\n%r", words )
+	debug_deshogun( "Words:\n%r", words )
 	words.reverse()
 	consume( "{", words )
 	while words[-1] != "}":
 		key = maybe_int( words.pop() )
-		debug_shogun( "key is %r", key )
+		debug_deshogun( "key is %r", key )
 		consume( ":", words )
 		item = words.pop()
-		debug_shogun( "item is %r", item )
-		if item[0].isdigit():
-			dictionary[ key ] = int( item )
-		elif item[0] in [ "'", '"' ]:
-			dictionary[ key ] = ast.literal_eval( item )
-		else:
+		debug_deshogun( "item is %r", item )
+		try:
+			dictionary[ key ] = deshogun_simple_value( item, words )
+		except NotASimpleValueError, e:
+			try:
+				consume( "{", words )
+			except ParseError:
+				raise e # Re-raise the exception that brought us here
 			obj = Object( item )
 			dictionary[ key ] = obj
-			consume( "{", words )
 			while words[-1] != "}":
 				field = words.pop()
 				if field[0] in [ "'", '"' ]:
 					field = ast.literal_eval( field )
 				else:
 					field = maybe_int( field )
-				debug_shogun( "field is %r", field )
+				debug_deshogun( "field is %r", field )
 				consume( ":", words )
 				value = words.pop()
-				debug_shogun( "value is %r", value )
-				if value[0].isdigit():
-					obj[ field ] = int( value )
-				elif value[0] == "@":
-					relocations.append(( obj, field, int( value[1:] ) ))
-				elif value[0] in [ "'", '"' ]:
-					obj[ field ] = ast.literal_eval( value )
-				else:
-					raise ParseError( "Value word %r must start with digit, quote, apostrophe, or '@'" % value )
+				debug_deshogun( "value is %r", value )
+				try:
+					obj[ field ] = deshogun_simple_value( value, words )
+				except NotASimpleValueError, e:
+					if value[0] == "@":
+						relocations.append(( obj, field, int( value[1:] ) ))
+					else:
+						raise e
 			consume( "}", words )
 	consume( "}", words )
 	for ( obj, key, index ) in relocations:
@@ -375,6 +423,39 @@ def deshogun( text ):
 	result = dictionary[ maybe_int( words.pop() ) ]
 	consume( "]", words )
 	return result
+
+def deshogun_simple_value( word, words ):
+	debug_deshogun( "deshogun_simple_value( %r )", word )
+	if word[0].isdigit():
+		return int( word )
+	elif word[0] in [ "'", '"' ]:
+		return ast.literal_eval( word )
+	elif word == "@0": # SPECIAL CASE FOR null
+		return null
+	elif word == "[":
+		list_words = pop_list_words( words )
+		debug_deshogun( "  list_words: %r" % list_words )
+		# This almost works, but not quite, because we have no way to do relocations for "@" references
+		list_values = [ deshogun_simple_value( word, words ) for word in list_words if word != "," ]
+		value = List( list_values )
+		debug_deshogun( "  result: %r" % value )
+		return value
+	else:
+		raise NotASimpleValueError( "Value word %r must start with digit, quote, apostrophe, or bracket" % word )
+
+def pop_list_words( words, depth=1 ):
+	result = []
+	while words:
+		word = words.pop()
+		if word == "]":
+			depth -= 1
+			if depth <= 0:
+				return result
+		elif word == "[":
+			depth += 1
+		result.append( word )
+	return result
+
 
 # Object constructors
 
@@ -600,9 +681,6 @@ do put
 #
 
 debug_parse = silence
-
-class ParseError( Exception ):
-	pass
 
 def maybe_int( symbol ):
 	try:
