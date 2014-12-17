@@ -1,6 +1,6 @@
 #! /usr/bin/python -O
 
-import string, re, time
+import string, re, time, ast
 from sys import argv
 
 # I've adopted a convention that strings used as Sheppard symbols (or parts
@@ -299,11 +299,14 @@ def shogun( obj ):
 			result += "\t%r: %r\n" % ( i, obj )
 		else:
 			result += "\t%r: %s {\n" % ( i, tag( obj ) ) # TODO: What if the tag is really weird?
-			for ( key, value ) in obj:
+			fields = [ f for (f,v) in obj ]
+			fields.sort( smart_order )
+			for field in fields:
+				value = obj[ field ]
 				if isinstance( value, int ) or isinstance( value, str ):
-					result += "\t\t%r: %r\n" % ( key, value )
+					result += "\t\t%r: %r\n" % ( field, value )
 				else:
-					result += "\t\t%r: @%r\n" % ( key, get_index( value, objects ) )
+					result += "\t\t%r: @%r\n" % ( field, get_index( value, objects ) )
 			result += "\t}\n"
 		i += 1
 	return result + "}[1]"
@@ -316,10 +319,20 @@ def consume( expectation, words ):
 		raise ParseError( "Encountered %r instead of %r before %r" % ( word, expectation, words ) )
 
 def deshogun( text ):
-	dictionary = { '0':null }
+	# Note that we prime the dictionary with the null object.  We don't want
+	# just any instance of NULL: we want the same "mull" that the rest of the
+	# program will be using.  Without special handling, we can easily end up
+	# with multiple instances of NULL floating around.
+	#
+	# HOWEVER, this is not sufficient.  Other singletons (notably those from
+	# define_predefined_bindings) might need the same treatment, and I'm not
+	# sure what else.
+	#
+	dictionary = { 0:null }
+
 	relocations = []
-	words = re.findall( r"'[^']*'|@\d+|\d+|[{}:]|\[|\]|\S+", text )
-	#debug_shogun( "Words:\n%r", words )
+	words = re.findall( r"'[^']*'|@\d+|\d+|[{}:]|\[|\]|'.*'|\".*\"|\S+", text )
+	debug_shogun( "Words:\n%r", words )
 	words.reverse()
 	consume( "{", words )
 	while words[-1] != "}":
@@ -330,16 +343,16 @@ def deshogun( text ):
 		debug_shogun( "item is %r", item )
 		if item[0].isdigit():
 			dictionary[ key ] = int( item )
-		elif item[0] == "'":
-			dictionary[ key ] = item[1:-1]
+		elif item[0] in [ "'", '"' ]:
+			dictionary[ key ] = ast.literal_eval( item )
 		else:
 			obj = Object( item )
 			dictionary[ key ] = obj
 			consume( "{", words )
 			while words[-1] != "}":
 				field = words.pop()
-				if field[0] == "'":
-					field = field[1:-1]
+				if field[0] in [ "'", '"' ]:
+					field = ast.literal_eval( field )
 				else:
 					field = maybe_int( field )
 				debug_shogun( "field is %r", field )
@@ -350,10 +363,10 @@ def deshogun( text ):
 					obj[ field ] = int( value )
 				elif value[0] == "@":
 					relocations.append(( obj, field, int( value[1:] ) ))
-				elif value[0] == "'":
-					obj[ field ] = value[1:-1]
+				elif value[0] in [ "'", '"' ]:
+					obj[ field ] = ast.literal_eval( value )
 				else:
-					raise ParseError( "Value word %r must start with digit, apostrophe, or '@'" % value )
+					raise ParseError( "Value word %r must start with digit, quote, apostrophe, or '@'" % value )
 			consume( "}", words )
 	consume( "}", words )
 	for ( obj, key, index ) in relocations:
@@ -420,9 +433,10 @@ def PROCEDURE( name, script, dialect, environment ): return Object( 'PROCEDURE',
 
 def MACRO( name, script, formal_arg_names, formal_arg_types, environment ):
 	return Object( 'MACRO', name=name, script=script, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, environment=environment )
-def PRIMITIVE( name, function, formal_arg_names, formal_arg_types, environment ):
-	return Object( 'PRIMITIVE', name=name, script=null, function=function, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, environment=environment )
-	# PROBLEM: This "function" thing is the only thing in this whole object graph that is not a Sheppard object
+def PYTHON_EVAL( name, expression, formal_arg_names, formal_arg_types, environment ):
+	return Object( 'PYTHON_EVAL', name=name, script=null, expression=expression, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, environment=environment )
+def PYTHON_EXEC( name, statement, formal_arg_names, formal_arg_types, environment ):
+	return Object( 'PYTHON_EXEC', name=name, script=null, statement=statement, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, environment=environment )
 
 def PRODUCTION( lhs, rhs, action ): return Object( 'PRODUCTION', lhs=lhs, rhs=rhs, action=action )
 
@@ -536,11 +550,10 @@ def print_backtrace( th ):
 
 # Sheppard builtins
 
-def define_predefined_bindings( env ):
+def define_predefined_bindings( bindings ):
 	# Note: You usually want to add these after calling
 	# polymorphic_automaton, because that routine expects all bindings
 	# to be for actions only.
-	bindings = env.bindings
 	bindings[ 'null' ] = null
 	bindings[ 'eof' ] = eof
 	bindings[ 'false' ] = false
@@ -548,22 +561,16 @@ def define_predefined_bindings( env ):
 	bindings[ 'dial_tone' ] = dial_tone
 
 def define_builtins( global_scope ):
-	debug_builtins = silence
-	def digress( th, *values ):
-		end_digression_if_finished( th.activation, th.activation.cursor.tokens )
-		th.activation[ 'cursor' ] = DIGRESSION( List( values ), th.activation.cursor.environment, th.activation.cursor )
-		#debug_digressions( "    new builtin digression: %r = %s", th.activation.cursor, list_str( th.activation.cursor.tokens ) )
-
-	def bind_with_name( func, name, *args ):
-		arg_name_stack = Stack( [null] + list( args ) )
-		arg_type_stack = Stack( [name] + [':ANY'] * len( args ) )
-		global_scope.bindings[ 'ACTION_' + name ] = PRIMITIVE( name, func, arg_name_stack, arg_type_stack, global_scope )
-		debug_builtins( "Binding primitive: %s %s", name, list(args) )
-
-	# We're down to just one builtin: current_thread
-	def builtin_current_thread( th, args ):
-		digress( th, th )
-	bind_with_name( builtin_current_thread, 'current_thread' )
+	name = 'current_thread'
+	arg_name_stack = Stack( [null] )
+	arg_type_stack = Stack( [name] )
+	global_scope.bindings[ 'ACTION_current_thread' ] = Object(
+		'CURRENT_THREAD',
+		name=name,
+		script=null,
+		formal_arg_names=arg_name_stack,
+		formal_arg_types=arg_type_stack,
+		environment=global_scope )
 
 prologue_text = """
 to take       base key_sharp               python_eval { take( base, key_sharp ) }
@@ -679,21 +686,13 @@ def parse_action3( name_sharp, kind_sharp, arg_names, arg_types, word_cursor, en
 		debug_parse( "Parsed script: %r", python_list( script ) )
 		result = MACRO( flat( name_sharp ), script, arg_names, arg_types, environment )
 	elif kind_sharp == 'python_exec#':
-		code = flat( take_word( word_cursor ) ).strip()
-		debug_parse( "Code: %r", code )
-		def builtin_exec( th, args ):
-			#debug( "builtin_exec running: %r", code )
-			exec code in globals(), args
-		result = PRIMITIVE( flat( name_sharp ), builtin_exec, arg_names, arg_types, environment )
+		expression = flat( take_word( word_cursor ) ).strip()
+		debug_parse( "Expression: %r", expression )
+		result = PYTHON_EXEC( flat( name_sharp ), expression, arg_names, arg_types, environment )
 	elif kind_sharp == 'python_eval#':
-		code = flat( take_word( word_cursor ) ).strip()
-		debug_parse( "Code: %r", code )
-		def builtin_eval( th, args ):
-			#debug( "builtin_eval running: %r", code )
-			result = eval( code, globals(), args )
-			end_digression_if_finished( th.activation, th.activation.cursor.tokens )
-			th.activation[ 'cursor' ] = DIGRESSION( List([ result ]), th.activation.cursor.environment, th.activation.cursor )
-		result = PRIMITIVE( flat( name_sharp ), builtin_eval, arg_names, arg_types, environment )
+		statement = flat( take_word( word_cursor ) ).strip()
+		debug_parse( "Statement: %r", statement )
+		result = PYTHON_EVAL( flat( name_sharp ), statement, arg_names, arg_types, environment )
 	else:
 		raise ParseError( "Expected 'do', 'python_eval', or 'python_exec'; found %r" % kind_sharp )
 	return result
@@ -777,12 +776,7 @@ def polymorphic_automaton( action_bindings ):
 	initial_state[ ':EOF' ] = Accept()
 	debug_ppa( '  EOF => %s', initial_state[ ':EOF' ] )
 
-	debug_ppa( ' Automaton:\n%s\n', initial_state._description( 1 ) )
-	if True:
-		s1 = shogun( initial_state )
-		s2 = shogun( deshogun( s1 ) )
-		if s1 != s2:
-			raise ParseError # Shogun test mismatch
+	#debug_ppa( ' Automaton:\n%s\n', initial_state._description( 1 ) )
 	#debug( ' Automaton:\n%s\n', s1 )
 	#debug( ' Automaton again:\n%s\n', shogun( deshogun( shogun( initial_state ) ) ) )
 	return initial_state
@@ -791,11 +785,12 @@ def parse_procedure( name, library_text, script ):
 	env = ENVIRONMENT( null )
 	define_builtins( env )
 	lib = parse_library( name, library_text, env )
-	define_predefined_bindings( env )
+	define_predefined_bindings( env.bindings )
 	result = PROCEDURE( name, List( script ), lib.dialect, env )
 	if False:
-		debug( "Parsed procedure:" )
-		debug( "%s", shogun( result ) )
+		debug( "Procedure:\n%s\n", result._description( 1 ) )
+	if False:
+		debug( "Procedure:\n%s\n", shogun( result ) )
 	return result
 
 
@@ -895,11 +890,27 @@ def next_state3( state, obj_sharp, possible_match ):
 		return possible_match
 
 
-def call_function( frame, action ):
-	if is_a( action, 'PRIMITIVE' ):
-		action.function( frame.thread, dict( frame.cursor.environment.bindings ) )
+def perform( frame, action, reduce_environment ):
+	if is_a( action, 'PYTHON_EXEC' ):
+		perform_python_exec( frame, action, reduce_environment )
+	elif is_a( action, 'PYTHON_EVAL' ):
+		perform_python_eval( frame, action, reduce_environment )
+	elif is_a( action, 'CURRENT_THREAD' ):
+		perform_current_thread( frame, action, reduce_environment )
 	else:
 		pass
+
+def perform_python_exec( frame, action, reduce_environment ):
+	exec action.statement in globals(), dict( reduce_environment.bindings )
+
+def perform_python_eval( frame, action, reduce_environment ):
+	result = eval( action.expression,  globals(), dict( reduce_environment.bindings ) )
+	end_digression_if_finished( frame, frame.cursor.tokens )
+	frame[ 'cursor' ] = DIGRESSION( List([ result ]), frame.cursor.environment, frame.cursor )
+
+def perform_current_thread( frame, action, reduce_environment ):
+	end_digression_if_finished( frame, frame.cursor.tokens )
+	frame[ 'cursor' ] = DIGRESSION( List([ frame.thread ]), frame.cursor.environment, frame.cursor )
 
 def get_token( possible_token ):
 	"""Transmute TAKE_FAILED into eof to make all token lists appear to end with an infinite stream of eofs"""
@@ -908,12 +919,12 @@ def get_token( possible_token ):
 	else:
 		return possible_token
 
-def perform_accept( frame, state ):
+def process_accept( frame, state ):
 	debug( 'accept' )
 	return false
 
 shift_count = 0
-def perform_shift( frame, state ):
+def process_shift( frame, state ):
 	global shift_count
 	shift_count += 1
 	#debug_shift = silence
@@ -930,7 +941,7 @@ def perform_shift( frame, state ):
 		error( RuntimeError( "Operand stack overflow" ) )
 	return true
 
-def perform_reduce0( frame, state ):
+def process_reduce0( frame, state ):
 	if meta_level( frame.thread ) >= printing_level_threshold:
 		debug_reduce = debug
 		debug2_reduce = silence
@@ -950,15 +961,15 @@ def perform_reduce0( frame, state ):
 	#debug2_reduce( "  environment: %s", reduce_environment )
 	#debug2_reduce( "    based on: %s", frame.cursor )
 	frame[ 'cursor' ] = DIGRESSION( action.script, reduce_environment, frame.cursor )
-	call_function( frame, action )
+	perform( frame, action, reduce_environment )
 	end_digression_if_finished( frame, frame.cursor.tokens )
 	print_program( frame.thread )
 	return true
 
-perform = {
-	'ACCEPT':  perform_accept,
-	'SHIFT':   perform_shift,
-	'REDUCE0': perform_reduce0,
+process = {
+	'ACCEPT':  process_accept,
+	'SHIFT':   process_shift,
+	'REDUCE0': process_reduce0,
 	}
 
 def execute( procedure, environment, scope ):
@@ -974,8 +985,8 @@ def execute2( frame, keep_going ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
 	while keep_going == true: #is_a( keep_going, 'TRUE' ):
 		#print_stuff( frame.thread )
-		perform_func = perform[ tag( frame.history.head ) ]
-		keep_going = perform_func( frame, frame.history.head )
+		process_func = process[ tag( frame.history.head ) ]
+		keep_going = process_func( frame, frame.history.head )
 
 
 #####################################
@@ -1125,27 +1136,37 @@ do
 	get state :ANY
 
 
-to call_function 
-	frame action:PRIMITIVE
+to perform 
+	frame action:PYTHON_EXEC reduce_environment
 python_exec
-	{ action.function( frame.thread, dict( frame.cursor.environment.bindings ) ) }
+	{ perform_python_exec( frame, action, reduce_environment ) }
 
-to call_function 
-	frame action:MACRO
+to perform 
+	frame action:PYTHON_EVAL reduce_environment
+python_exec
+	{ perform_python_eval( frame, action, reduce_environment ) }
+
+to perform 
+	frame action:CURRENT_THREAD reduce_environment
+python_exec
+	{ perform_current_thread( frame, action, reduce_environment ) }
+
+to perform 
+	frame action:MACRO reduce_environment
 do
-	/* Macros have no function.  They just expand into a digression, and that's it. */
+	/* Macros just expand into a digression, and that's it. */
 
 /* Behave as though every token list ends with an infinite sequence of eofs */
 to get_token possible_token do possible_token
 to get_token x=TAKE_FAILED  do eof
 
 
-to perform 
+to process 
 	frame state:ACCEPT
 do
 	false
 
-to perform 
+to process 
 	frame state:SHIFT
 do
 	set token_sharp
@@ -1168,7 +1189,7 @@ do
 			get frame history
 	true
 
-to perform 
+to process 
 	frame state:REDUCE0
 do
 	print_stuff frame
@@ -1191,9 +1212,10 @@ do
 			get action script
 			reduce_environment
 			get frame cursor
-	call_function
+	perform
 		frame
 		action
+		reduce_environment
 	end_digression_if_finished
 		frame
 		get2 frame cursor tokens
@@ -1237,7 +1259,7 @@ to execute2
 do
 	execute2
 		frame
-		perform
+		process
 			frame
 			get2 frame history head
 
@@ -1308,7 +1330,7 @@ def wrap_procedure( inner_procedure ):
 		global_scope = ENVIRONMENT( null )
 		define_builtins( global_scope )
 		sheppard_interpreter_library = parse_library( "sheppard_interpreter", prologue_text + meta_interpreter_text, global_scope )
-		define_predefined_bindings( global_scope )
+		define_predefined_bindings( global_scope.bindings )
 	bindings = global_scope.bindings
 	script = List([ 'execute', inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment ])
 	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, script, sheppard_interpreter_library.dialect, global_scope )
@@ -1326,6 +1348,13 @@ def test( depth, plt ):
 		debug( "   script: %s", str( procedure.script ) )
 		debug( " bindings: %s", str( procedure.environment.bindings ) )
 		#debug( "  dialect: %s", procedure.dialect._description() )
+	if False:
+		s1 = shogun( procedure )
+		file("s1.txt", "w").write(s1)
+		s2 = shogun( deshogun( s1 ) )
+		file("s2.txt", "w").write(s2)
+		if s1 != s2:
+			raise ParseError # Shogun test mismatch: check for differences between the files
 	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
 
 def pretty_time( t ):
