@@ -809,11 +809,44 @@ def extend_one_step2( state, arg_type_sharp, possible_match, all_shift_states ):
 		result = Shift()
 		all_shift_states.first = cons( result, all_shift_states.first )
 		give( state, arg_type_sharp, result )
-		debug_ppa( '      %r => %r', flat( arg_type_sharp ), result )
+		debug_ppa( '      %r:%r => %r', state, flat( arg_type_sharp ), result )
 		return result
 	else:
-		debug_ppa( '      %r -> %r', flat( arg_type_sharp ), possible_match )
+		debug_ppa( '      %r:%r -> %r', state, flat( arg_type_sharp ), possible_match )
 		return possible_match
+
+def make_branches( initial_state, bound_symbols, index, all_shift_states ):
+	if index == 0:
+		pass
+	else:
+		action_symbol = bound_symbols[ index ]
+		action = bound_symbols.subject[ action_symbol ]
+		name = action.name
+		tip = extend_branch( initial_state, action.formal_arg_types.tail, all_shift_states )
+		reduce_state = Reduce0( action_symbol )
+		reduce_word_sharp = take( action.formal_arg_types, 'head#' )
+		give( tip, reduce_word_sharp, reduce_state )
+		debug_ppa( '      %r:%r >> %r', tip, flat( reduce_word_sharp ), reduce_state )
+		# Tail digression
+		make_branches( initial_state, bound_symbols, index-1, all_shift_states )
+
+def connect_keywords( initial_state, bound_symbols, index, all_shift_states ):
+	#debug_ppa( "      connect_keywords( %r, %r, %r, %r )" % ( initial_state, bound_symbols, index, all_shift_states ) )
+	if all_shift_states is null:
+		pass
+	else:
+		connect_keywords_to_state( initial_state, bound_symbols, index, all_shift_states.head )
+		connect_keywords         ( initial_state, bound_symbols, index, all_shift_states.tail )
+
+def connect_keywords_to_state( initial_state, bound_symbols, index, shift_state ):
+	#debug_ppa( "      connect_keywords_to_state( %r, %r, %r, %r )" % ( initial_state, bound_symbols, index, shift_state ) )
+	if index == 0:
+		pass
+	else:
+		action = take( bound_symbols.subject, take( bound_symbols, sharp( index ) ) )
+		name_sharp = take( action, "name#" )
+		give( shift_state, name_sharp, take( initial_state, name_sharp ) )
+		connect_keywords_to_state( initial_state, bound_symbols, index-1, shift_state )
 
 def polymorphic_automaton( action_bindings ):
 	# A little silly parser generator algorithm to deal with simple
@@ -825,37 +858,22 @@ def polymorphic_automaton( action_bindings ):
 	all_shift_states = Object( 'SHIFT_STATE_COLLECTOR', first = cons( initial_state, null ) )
 	debug_ppa( "  initial_state: %s", initial_state )
 	debug_ppa( "  action_bindings: %s", action_bindings )
-	name_states = {}
-
 	debug_ppa( "  Building parse tree" )
-	for ( action_symbol, action ) in action_bindings:
-		name = action.name
-		if debug_ppa != silence:
-			arg_types = list( reversed( python_list( action.formal_arg_types ) ) )
-			debug_ppa( '    %r %r', action, arg_types )
-		tip = extend_branch( initial_state, action.formal_arg_types.tail, all_shift_states )
-		reduce_state = Reduce0( action_symbol )
-		reduce_word_sharp = take( action.formal_arg_types, 'head#' )
-		give( tip, reduce_word_sharp, reduce_state )
-		debug_ppa( '      %r >> %r', flat( reduce_word_sharp ), reduce_state )
-		name_states[ name ] = initial_state[ name ]
+	bound_symbols = all_fields( action_bindings )
+	debug_ppa( "    Bound symbols: %s", bound_symbols )
+
+	make_branches( initial_state, bound_symbols, bound_symbols.length, all_shift_states )
 
 	# Names are effectively keywords.  Any time we see one of those, whatever shift state we are in, we leap to that name_state
-	shift_states = python_list( all_shift_states.first )
-	names = set([ action.name for ( symbol, action ) in action_bindings ])
-	debug_ppa( "  Implementing keywords: %s", names )
-	for name in names:
-		target_state = name_states[ name ]
-		debug_ppa( '    %s -> %r from %s', name, target_state, reprs( shift_states ) )
-		for s in shift_states:
-			s[ name ] = target_state
+	debug_ppa( "  Connecting keywords" )
+	connect_keywords( initial_state, bound_symbols, bound_symbols.length, all_shift_states.first )
 
 	# The accept state
 	initial_state[ ':EOF' ] = Accept()
 	debug_ppa( '  EOF => %s', initial_state[ ':EOF' ] )
 
 	#debug_ppa( ' Automaton:\n%s\n', initial_state._description( 1 ) )
-	#debug( ' Automaton:\n%s\n', s1 )
+	#debug_ppa( ' Automaton:\n%s\n', shogun( initial_state ) )
 	#debug( ' Automaton again:\n%s\n', shogun( deshogun( shogun( initial_state ) ) ) )
 	return initial_state
 
