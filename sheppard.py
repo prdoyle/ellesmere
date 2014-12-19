@@ -319,6 +319,7 @@ class NotASimpleValueError( ParseError ):
 	pass
 
 def shogun_list_elements( obj, objects, length_limit ):
+	# length_limit is a lame way to avoid stack overflow (or even infinite recursion on a cyclic list)
 	debug_shogun( "shogun_list_elements( %r )", obj )
 	if length_limit < 0:
 		raise NotAListError
@@ -491,13 +492,13 @@ def flat_inheritance( type_list ):
 
 def ENVIRONMENT( outer, **bindings ): return Object( 'ENVIRONMENT', outer=outer, bindings=Object('BINDINGS', **bindings) )
 
-def DIGRESSION( tokens, environment, resumption ): return Object( 'DIGRESSION', tokens=tokens, environment=environment, resumption=resumption )
+def DIGRESSION( tokens, local_scope, resumption ): return Object( 'DIGRESSION', tokens=tokens, local_scope=local_scope, resumption=resumption )
 
 eof = Object( 'EOF' )
 
 def Dial_tone():
 	# An endless stack of digressions each returning an endless stream of EOFs
-	result = Object( 'DIAL_TONE', environment=ENVIRONMENT( null ) )
+	result = Object( 'DIAL_TONE', local_scope=ENVIRONMENT( null ) )
 	endless_eof = LIST( eof, null )
 	endless_eof[ 'tail' ] = endless_eof # oooo, tricky
 	result[ 'tokens' ] = endless_eof
@@ -510,14 +511,14 @@ true  = Object( 'TRUE' )
 
 def ACTIVATION( cursor, operands, history, action_bindings, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, action_bindings=action_bindings, caller=caller )
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
-def PROCEDURE( name, script, dialect, environment ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, environment=environment )
+def PROCEDURE( name, script, dialect, enclosing_scope ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, enclosing_scope=enclosing_scope )
 
-def MACRO( name, script, formal_arg_names, formal_arg_types, environment ):
-	return Object( 'MACRO', name=name, script=script, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, environment=environment )
-def PYTHON_EVAL( name, expression, formal_arg_names, formal_arg_types, environment ):
-	return Object( 'PYTHON_EVAL', name=name, script=null, expression=expression, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, environment=environment )
-def PYTHON_EXEC( name, statement, formal_arg_names, formal_arg_types, environment ):
-	return Object( 'PYTHON_EXEC', name=name, script=null, statement=statement, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, environment=environment )
+def MACRO( name, script, formal_arg_names, formal_arg_types, enclosing_scope ):
+	return Object( 'MACRO', name=name, script=script, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, enclosing_scope=enclosing_scope )
+def PYTHON_EVAL( name, expression, formal_arg_names, formal_arg_types, enclosing_scope ):
+	return Object( 'PYTHON_EVAL', name=name, script=null, expression=expression, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, enclosing_scope=enclosing_scope )
+def PYTHON_EXEC( name, statement, formal_arg_names, formal_arg_types, enclosing_scope ):
+	return Object( 'PYTHON_EXEC', name=name, script=null, statement=statement, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, enclosing_scope=enclosing_scope )
 
 def PRODUCTION( lhs, rhs, action ): return Object( 'PRODUCTION', lhs=lhs, rhs=rhs, action=action )
 
@@ -533,7 +534,7 @@ def Shift( **edges ):
 			result[     name ] = value
 	return result
 
-def LIBRARY( name, dialect, environment ): return Object( 'LIBRARY', name=name, dialect=dialect, environment=environment )
+def LIBRARY( name, dialect ): return Object( 'LIBRARY', name=name, dialect=dialect )
 
 # A few functions to help with the Python / Sheppard impedance mismatch
 
@@ -609,7 +610,7 @@ def print_stuff( th ):
 		print_program( th )
 		debug( "|  history: %s", list_str( frame.history, ':', debug_ellision_limit ) )
 		debug( "|   future: %s", future_str( frame.cursor ) )
-		#debug( "| bindings: %s", frame.cursor.environment.bindings )
+		#debug( "| bindings: %s", frame.cursor.local_scope.bindings )
 
 def print_reduce_stuff( th, action, reduce_environment ):
 	if meta_level( th ) >= printing_level_threshold:
@@ -641,17 +642,17 @@ def define_predefined_bindings( bindings ):
 	bindings[ 'true' ] = true
 	bindings[ 'dial_tone' ] = dial_tone
 
-def define_builtins( global_scope ):
+def define_builtins( action_bindings, enclosing_scope ):
 	name = 'current_thread'
 	arg_name_stack = Stack( [null] )
 	arg_type_stack = Stack( [name] )
-	global_scope.bindings[ 'ACTION_current_thread' ] = Object(
+	action_bindings[ 'ACTION_current_thread' ] = Object(
 		'CURRENT_THREAD',
 		name=name,
 		script=null,
 		formal_arg_names=arg_name_stack,
 		formal_arg_types=arg_type_stack,
-		environment=global_scope )
+		enclosing_scope=enclosing_scope )
 
 prologue_text = """
 to take       base key_sharp               python_eval { take( base, key_sharp ) }
@@ -664,15 +665,15 @@ to all_fields obj                          python_eval { all_fields( obj ) }
 to sharp      symbol                       python_eval { sharp( symbol ) }
 
 /* This could really just be a binding */
-to current_environment              do current_environment2 current_thread
-to current_environment2 th:THREAD   python_eval { th.activation.cursor.environment.digressor }
+to current_environment th:THREAD   python_eval { th.activation.cursor.local_scope.digressor }
 
 to set 
 	symbol:SYMBOL value
-do put
-	get2 current_environment digressor bindings  /* Bindings at the point that 'set' was expanded */
-	symbol
-	value
+do
+	put
+		get2 current_environment current_thread digressor bindings  /* Bindings at the point that 'set' was expanded */
+		symbol
+		value
 
 /* Math */
 to + a b   python_eval { a+b }
@@ -688,14 +689,13 @@ to - a b   python_eval { a-b }
 
 debug_parse = silence
 
-def parse_library( name, string, environment ):
-	debug_parse( "parse_library( %r, %r, %r )", name, string, environment )
-	bindings = environment.bindings
+def parse_library( name, string, action_bindings, enclosing_scope ):
+	debug_parse( "parse_library( %r, %r, %r, $r )", name, string, action_bindings, enclosing_scope )
 	word_cursor = Object( 'WORD_CURSOR', current = library_words( string ) )
-	while bind_action( bindings, parse_action( word_cursor, environment ) ):
+	while bind_action( action_bindings, parse_action( word_cursor, enclosing_scope ) ):
 		pass
-	automaton = polymorphic_automaton( bindings )
-	return LIBRARY( name, automaton, bindings )
+	automaton = polymorphic_automaton( action_bindings )
+	return LIBRARY( name, automaton )
 
 def maybe_int( symbol ):
 	try:
@@ -755,10 +755,10 @@ def arg_stack( arg_list, field, tail=null ):
 	else:
 		return arg_stack( arg_list.tail, field, LIST( arg_list.head[ field ], tail ) )
 
-def parse_action( word_cursor, environment ):
-	return parse_action2( take_word( word_cursor ), word_cursor, environment )
+def parse_action( word_cursor, enclosing_scope ):
+	return parse_action2( take_word( word_cursor ), word_cursor, enclosing_scope )
 
-def parse_action2( start_word_sharp, word_cursor, environment ):
+def parse_action2( start_word_sharp, word_cursor, enclosing_scope ):
 	if start_word_sharp is take_failed:
 		return null
 	else:
@@ -768,24 +768,24 @@ def parse_action2( start_word_sharp, word_cursor, environment ):
 		arg_list = LIST( FORMAL_ARG( null, flat( name_sharp ) ), parse_arg_list( word_cursor ) )
 		arg_names = arg_stack( arg_list, 'name' )
 		arg_types = arg_stack( arg_list, 'symbol' )
-		result = parse_action3( name_sharp, take_word( word_cursor ), arg_names, arg_types, word_cursor, environment )
+		result = parse_action3( name_sharp, take_word( word_cursor ), arg_names, arg_types, word_cursor, enclosing_scope )
 		debug_parse( "Parsed %s", result )
 		return result
 
-def parse_action3( name_sharp, kind_sharp, arg_names, arg_types, word_cursor, environment ):
+def parse_action3( name_sharp, kind_sharp, arg_names, arg_types, word_cursor, enclosing_scope ):
 	debug_parse( "Action keyword: %r", kind_sharp )
 	if kind_sharp == 'do#':
 		script = parse_script( word_cursor )
 		debug_parse( "Parsed script: %r", python_list( script ) )
-		result = MACRO( flat( name_sharp ), script, arg_names, arg_types, environment )
+		result = MACRO( flat( name_sharp ), script, arg_names, arg_types, enclosing_scope )
 	elif kind_sharp == 'python_eval#':
 		expression = flat( take_word( word_cursor ) ).strip()
 		debug_parse( "Expression: %r", expression )
-		result = PYTHON_EVAL( flat( name_sharp ), expression, arg_names, arg_types, environment )
+		result = PYTHON_EVAL( flat( name_sharp ), expression, arg_names, arg_types, enclosing_scope )
 	elif kind_sharp == 'python_exec#':
 		statement = flat( take_word( word_cursor ) ).strip()
 		debug_parse( "Statement: %r", statement )
-		result = PYTHON_EXEC( flat( name_sharp ), statement, arg_names, arg_types, environment )
+		result = PYTHON_EXEC( flat( name_sharp ), statement, arg_names, arg_types, enclosing_scope )
 	else:
 		raise ParseError( "Expected 'do', 'python_eval', or 'python_exec'; found %r" % kind_sharp )
 	return result
@@ -814,7 +814,7 @@ def polymorphic_automaton( action_bindings ):
 		use_sheppard_text = False
 		procedure = parse_procedure( "polymorphic_automaton", prologue_text + polymorphic_automaton_text, [ "polymorphic_automaton", action_bindings ] )
 		# TODO: This following line seems really redundant
-		execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
+		execute( procedure, procedure.enclosing_scope )
 		# Uh, how do I get the result?
 	if True:
 		debug_ppa( "Building automaton" )
@@ -1047,11 +1047,12 @@ do
 # parse_procedure
 
 def parse_procedure( name, library_text, script ):
-	env = ENVIRONMENT( null )
-	define_builtins( env )
-	lib = parse_library( name, library_text, env )
-	define_predefined_bindings( env.bindings )
-	result = PROCEDURE( name, List( script ), lib.dialect, env )
+	global_scope = ENVIRONMENT( null )
+	action_bindings = global_scope.bindings # double-duty
+	define_builtins( action_bindings, global_scope )
+	lib = parse_library( name, library_text, action_bindings, global_scope )
+	define_predefined_bindings( global_scope.bindings )
+	result = PROCEDURE( name, List( script ), lib.dialect, global_scope )
 	if False:
 		debug( "Procedure:\n%s\n", result._description( 1 ) )
 	if False:
@@ -1095,7 +1096,7 @@ def pop_list( base, field_symbol_sharp ):
 
 def end_digression_if_finished( frame, remaining_tokens ):
 	if remaining_tokens is null: #is_a( remaining_tokens, 'NULL' ):
-		#debug_digressions( "  (finished %r %r %s)", frame.cursor, frame.cursor.environment, frame.cursor.environment.bindings  )
+		#debug_digressions( "  (finished %r %r %s)", frame.cursor, frame.cursor.local_scope, frame.cursor.local_scope.bindings  )
 		frame[ 'cursor' ] = frame.cursor.resumption
 
 def bind_arg( arg_bindings, arg_symbol_sharp, arg_value_sharp ):
@@ -1171,11 +1172,11 @@ def perform_python_exec( frame, action, reduce_environment ):
 def perform_python_eval( frame, action, reduce_environment ):
 	result = eval( action.expression,  globals(), dict( reduce_environment.bindings ) )
 	end_digression_if_finished( frame, frame.cursor.tokens )
-	frame[ 'cursor' ] = DIGRESSION( List([ result ]), frame.cursor.environment, frame.cursor )
+	frame[ 'cursor' ] = DIGRESSION( List([ result ]), frame.cursor.local_scope, frame.cursor )
 
 def perform_current_thread( frame, action, reduce_environment ):
 	end_digression_if_finished( frame, frame.cursor.tokens )
-	frame[ 'cursor' ] = DIGRESSION( List([ frame.thread ]), frame.cursor.environment, frame.cursor )
+	frame[ 'cursor' ] = DIGRESSION( List([ frame.thread ]), frame.cursor.local_scope, frame.cursor )
 
 def get_token( possible_token ):
 	"""Transmute TAKE_FAILED into eof to make all token lists appear to end with an infinite stream of eofs"""
@@ -1196,7 +1197,7 @@ def process_shift( frame, state ):
 	#debug_shift( 'shift' )
 	#debug_shift( "  cursor: %r", frame.cursor )
 	#debug_shift( "  state: %s", state )
-	token_sharp = bound( get_token( pop_list( frame.cursor, "tokens#" ) ), frame.cursor.environment )
+	token_sharp = bound( get_token( pop_list( frame.cursor, "tokens#" ) ), frame.cursor.local_scope )
 	end_digression_if_finished( frame, frame.cursor.tokens )
 	#debug_shift( "    value: %r", flat( token_sharp ) )
 	frame[ 'operands' ] = cons( token_sharp, frame.operands )
@@ -1219,8 +1220,8 @@ def process_reduce0( frame, state ):
 	#debug2_reduce( "  action: %r", action )
 	#if is_a( action, 'MACRO' ):
 	#	debug_reduce( "    %s", python_list( action.script ) )
-	reduce_environment = ENVIRONMENT( action.environment )
-	reduce_environment[ 'digressor' ] = frame.cursor.environment  # Need this in order to make 'set' a macro, or else I can't access the environment I'm trying to bind
+	reduce_environment = ENVIRONMENT( action.enclosing_scope )
+	reduce_environment[ 'digressor' ] = frame.cursor.local_scope  # Need this in order to make 'set' a macro, or else I can't access the environment I'm trying to bind
 	bind_args( frame, reduce_environment.bindings, action.formal_arg_names )
 	print_reduce_stuff( frame.thread, action, reduce_environment )
 	#debug2_reduce( "  environment: %s", reduce_environment )
@@ -1237,8 +1238,8 @@ process = {
 	'REDUCE0': process_reduce0,
 	}
 
-def execute( procedure, environment, action_bindings ):
-	frame = ACTIVATION( DIGRESSION( procedure.script, environment, dial_tone ), null, LIST( procedure.dialect, null ), action_bindings, null )
+def execute( procedure, action_bindings ):
+	frame = ACTIVATION( DIGRESSION( procedure.script, ENVIRONMENT( procedure.enclosing_scope ), dial_tone ), null, LIST( procedure.dialect, null ), action_bindings, null )
 	global current_thread # Allow us to print debug info without passing this all over the place
 	current_thread = THREAD( frame, null )
 	frame[ 'thread' ] = current_thread # I don't love this back link, but it's really handy and efficient
@@ -1261,12 +1262,12 @@ def execute2( frame, keep_going ):
 
 meta_interpreter_text = """
 to Procedure
-	name script dialect environment
+	name script dialect enclosing_scope
 python_eval
 	{ PROCEDURE(**dict( locals() )) }
 
 to Digression
-	tokens environment resumption
+	tokens local_scope resumption
 python_eval
 	{ DIGRESSION(**dict( locals() )) }
 
@@ -1440,7 +1441,7 @@ do
 				pop_list
 					get frame cursor
 					tokens#
-			get2 frame cursor environment
+			get2 frame cursor local_scope
 	end_digression_if_finished
 		frame
 		get2 frame cursor tokens
@@ -1464,9 +1465,9 @@ do
 			get frame action_bindings
 	set reduce_environment
 		Environment
-			get action environment
+			get action enclosing_scope
 	put reduce_environment digressor
-		get2 frame cursor environment
+		get2 frame cursor local_scope
 	bind_args
 		frame
 		get reduce_environment bindings
@@ -1495,13 +1496,14 @@ to print              obj                               python_exec { print str(
 
 
 to execute 
-	procedure environment action_bindings
+	procedure action_bindings
 do
 	set frame
 		Activation
 			Digression
 				get procedure script
-				environment
+				Environment
+					get procedure enclosing_scope
 				dial_tone
 			null  /* Empty operand stack */
 			cons
@@ -1593,11 +1595,12 @@ def wrap_procedure( inner_procedure ):
 	global global_scope, sheppard_interpreter_library
 	if sheppard_interpreter_library is None:
 		global_scope = ENVIRONMENT( null )
-		define_builtins( global_scope )
-		sheppard_interpreter_library = parse_library( "sheppard_interpreter", prologue_text + meta_interpreter_text, global_scope )
+		action_bindings = global_scope.bindings # double-duty
+		define_builtins( action_bindings, global_scope )
+		sheppard_interpreter_library = parse_library( "sheppard_interpreter", prologue_text + meta_interpreter_text, action_bindings, global_scope )
 		define_predefined_bindings( global_scope.bindings )
 	bindings = global_scope.bindings
-	script = List([ 'execute', inner_procedure, ENVIRONMENT( inner_procedure.environment ), inner_procedure.environment ])
+	script = List([ 'execute', inner_procedure, inner_procedure.enclosing_scope ])
 	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, script, sheppard_interpreter_library.dialect, global_scope )
 	return outer_procedure
 
@@ -1611,7 +1614,7 @@ def test( depth, plt ):
 	if printing_level_threshold < depth:
 		debug( "procedure: %s", str( procedure ) )
 		debug( "   script: %s", str( procedure.script ) )
-		debug( " bindings: %s", str( procedure.environment.bindings ) )
+		debug( " bindings: %s", str( procedure.enclosing_scope.bindings ) )
 		#debug( "  dialect: %s", procedure.dialect._description() )
 	if False:
 		s1 = shogun( procedure )
@@ -1620,7 +1623,7 @@ def test( depth, plt ):
 		file("s2.txt", "w").write(s2)
 		if s1 != s2:
 			raise ParseError # Shogun test mismatch: check for differences between the files
-	execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
+	execute( procedure, procedure.enclosing_scope )
 
 def pretty_time( t ):
 	if t < 1:
@@ -1658,7 +1661,6 @@ else:
 # Directions to pursue:
 #
 # Cleanup:
-# - Rename all fields/variables called "environment" to be more descriptive
 # - Change get/set/put so the only way to get a flat symbol on the operand stack is by calling "flat"
 # - Rearrange symbols so there are three kinds: names, numbers, and anonymous "fresh" symbols
 # - Figure out a way to have Sheppard procedures return a value.  Perhaps preserve the final operand stack when an Accept occurs.
