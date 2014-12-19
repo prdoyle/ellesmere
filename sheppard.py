@@ -508,7 +508,7 @@ dial_tone = Dial_tone()
 false = Object( 'FALSE' )
 true  = Object( 'TRUE' )
 
-def ACTIVATION( cursor, operands, history, scope, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, scope=scope, caller=caller )
+def ACTIVATION( cursor, operands, history, action_bindings, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, action_bindings=action_bindings, caller=caller )
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
 def PROCEDURE( name, script, dialect, environment ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, environment=environment )
 
@@ -656,11 +656,12 @@ def define_builtins( global_scope ):
 prologue_text = """
 to take       base key_sharp               python_eval { take( base, key_sharp ) }
 to give       base key_sharp value_sharp   python_exec { give( base, key_sharp, value_sharp ) }
-to get        base key:SYMBOL              python_eval { base[ key ] }
-to get2       base f1:SYMBOL f2:SYMBOL     python_eval { base[ f1 ][ f2 ] }
+to get        base key                     python_eval { base[ key ] } /* key can be an int */
+to get2       base f1 f2                   python_eval { base[ f1 ][ f2 ] }
 to put        base key:SYMBOL value        python_exec { base[ key ] = value }
 to cons       head_sharp tail              python_eval { cons( head_sharp, tail ) }
 to all_fields obj                          python_eval { all_fields( obj ) }
+to sharp      symbol                       python_eval { sharp( symbol ) }
 
 /* This could really just be a binding */
 to current_environment              do current_environment2 current_thread
@@ -672,6 +673,11 @@ do put
 	get2 current_environment digressor bindings  /* Bindings at the point that 'set' was expanded */
 	symbol
 	value
+
+/* Math */
+to + a b   python_eval { a+b }
+to - a b   python_eval { a-b }
+
 """
 
 
@@ -681,6 +687,15 @@ do put
 #
 
 debug_parse = silence
+
+def parse_library( name, string, environment ):
+	debug_parse( "parse_library( %r, %r, %r )", name, string, environment )
+	bindings = environment.bindings
+	word_cursor = Object( 'WORD_CURSOR', current = library_words( string ) )
+	while bind_action( bindings, parse_action( word_cursor, environment ) ):
+		pass
+	automaton = polymorphic_automaton( bindings )
+	return LIBRARY( name, automaton, bindings )
 
 def maybe_int( symbol ):
 	try:
@@ -705,11 +720,11 @@ def take_word( word_cursor ):
 	return pop_list( word_cursor, 'current#' )
 
 def parse_arg_list( word_cursor ):
-	return parse_arg_list2( word_cursor.current.head, word_cursor )
+	return parse_arg_list2( take( word_cursor.current, 'head#' ), word_cursor )
 
-def parse_arg_list2( lookahead, word_cursor ):
-	if lookahead in [ 'do', 'python_eval', 'python_exec', take_failed ]:
-		debug_parse( "Ending arg list on %r", lookahead )
+def parse_arg_list2( lookahead_sharp, word_cursor ):
+	if lookahead_sharp in [ 'do#', 'python_eval#', 'python_exec#' ]:
+		debug_parse( "Ending arg list on %r", lookahead_sharp )
 		return null
 	else:
 		word_sharp = take_word( word_cursor )
@@ -763,26 +778,17 @@ def parse_action3( name_sharp, kind_sharp, arg_names, arg_types, word_cursor, en
 		script = parse_script( word_cursor )
 		debug_parse( "Parsed script: %r", python_list( script ) )
 		result = MACRO( flat( name_sharp ), script, arg_names, arg_types, environment )
-	elif kind_sharp == 'python_exec#':
+	elif kind_sharp == 'python_eval#':
 		expression = flat( take_word( word_cursor ) ).strip()
 		debug_parse( "Expression: %r", expression )
-		result = PYTHON_EXEC( flat( name_sharp ), expression, arg_names, arg_types, environment )
-	elif kind_sharp == 'python_eval#':
+		result = PYTHON_EVAL( flat( name_sharp ), expression, arg_names, arg_types, environment )
+	elif kind_sharp == 'python_exec#':
 		statement = flat( take_word( word_cursor ) ).strip()
 		debug_parse( "Statement: %r", statement )
-		result = PYTHON_EVAL( flat( name_sharp ), statement, arg_names, arg_types, environment )
+		result = PYTHON_EXEC( flat( name_sharp ), statement, arg_names, arg_types, environment )
 	else:
 		raise ParseError( "Expected 'do', 'python_eval', or 'python_exec'; found %r" % kind_sharp )
 	return result
-
-def parse_library( name, string, environment ):
-	debug_parse( "parse_library( %r, %r, %r )", name, string, environment )
-	bindings = environment.bindings
-	word_cursor = Object( 'WORD_CURSOR', current = library_words( string ) )
-	while bind_action( bindings, parse_action( word_cursor, environment ) ):
-		pass
-	automaton = polymorphic_automaton( bindings )
-	return LIBRARY( name, automaton, bindings )
 
 def bind_action( bindings, action ):
 	if action is null:
@@ -793,7 +799,58 @@ def bind_action( bindings, action ):
 		debug_parse( "Bound %r to %s", action_symbol, action )
 		return True
 
-debug_ppa = silence
+debug_ppa = debug
+
+# polymorphic_automaton
+
+use_sheppard_text = False
+def polymorphic_automaton( action_bindings ):
+	# A little silly parser generator algorithm to deal with simple
+	# multi-dispatch LR(0) languages using prefix notation and offering very
+	# little error detection.
+	# This will suffice until I write a proper parser generator.
+	global use_sheppard_text
+	if use_sheppard_text:
+		use_sheppard_text = False
+		procedure = parse_procedure( "polymorphic_automaton", prologue_text + polymorphic_automaton_text, [ "polymorphic_automaton", action_bindings ] )
+		# TODO: This following line seems really redundant
+		execute( procedure, ENVIRONMENT( procedure.environment ), procedure.environment )
+		# Uh, how do I get the result?
+	if True:
+		debug_ppa( "Building automaton" )
+		initial_state = Shift()
+		all_shift_states = Object( 'SHIFT_STATE_COLLECTOR', first = cons( initial_state, null ) )
+		debug_ppa( "  initial_state: %s", initial_state )
+		debug_ppa( "  action_bindings: %s", action_bindings )
+		debug_ppa( "  Building parse tree" )
+		bound_symbols = all_fields( action_bindings )
+		debug_ppa( "    Bound symbols: %s", bound_symbols )
+		make_branches( initial_state, bound_symbols, bound_symbols.length, all_shift_states )
+		# Names are effectively keywords.  Any time we see one of those, whatever shift state we are in, we leap to that name_state
+		debug_ppa( "  Connecting keywords" )
+		connect_keywords( initial_state, bound_symbols, bound_symbols.length, all_shift_states.first )
+		# The accept state
+		initial_state[ ':EOF' ] = Accept()
+		debug_ppa( '  EOF => %s', initial_state[ ':EOF' ] )
+		#debug_ppa( ' Automaton:\n%s\n', initial_state._description( 1 ) )
+		debug_ppa( ' Automaton:\n%s\n', shogun( initial_state ) )
+		#debug( ' Automaton again:\n%s\n', shogun( deshogun( shogun( initial_state ) ) ) )
+		return initial_state
+
+def make_branches( initial_state, bound_symbols, index, all_shift_states ):
+	if index == 0:
+		pass
+	else:
+		action_symbol_sharp = take( bound_symbols, sharp( index ) )
+		action = take( bound_symbols.subject, action_symbol_sharp )
+		name = action.name
+		tip = extend_branch( initial_state, action.formal_arg_types.tail, all_shift_states )
+		reduce_state = Reduce0( flat( action_symbol_sharp ) )
+		reduce_word_sharp = take( action.formal_arg_types, 'head#' )
+		give( tip, reduce_word_sharp, reduce_state )
+		debug_ppa( '      %r:%r >> %r', tip, flat( reduce_word_sharp ), reduce_state )
+		# Tail digression
+		make_branches( initial_state, bound_symbols, index-1, all_shift_states )
 
 def extend_branch( state, arg_types, all_shift_states ):
 	if arg_types is null:
@@ -815,28 +872,13 @@ def extend_one_step2( state, arg_type_sharp, possible_match, all_shift_states ):
 		debug_ppa( '      %r:%r -> %r', state, flat( arg_type_sharp ), possible_match )
 		return possible_match
 
-def make_branches( initial_state, bound_symbols, index, all_shift_states ):
-	if index == 0:
+def connect_keywords( initial_state, bound_symbols, index, states ):
+	#debug_ppa( "      connect_keywords( %r, %r, %r, %r )" % ( initial_state, bound_symbols, index, states ) )
+	if states is null:
 		pass
 	else:
-		action_symbol = bound_symbols[ index ]
-		action = bound_symbols.subject[ action_symbol ]
-		name = action.name
-		tip = extend_branch( initial_state, action.formal_arg_types.tail, all_shift_states )
-		reduce_state = Reduce0( action_symbol )
-		reduce_word_sharp = take( action.formal_arg_types, 'head#' )
-		give( tip, reduce_word_sharp, reduce_state )
-		debug_ppa( '      %r:%r >> %r', tip, flat( reduce_word_sharp ), reduce_state )
-		# Tail digression
-		make_branches( initial_state, bound_symbols, index-1, all_shift_states )
-
-def connect_keywords( initial_state, bound_symbols, index, all_shift_states ):
-	#debug_ppa( "      connect_keywords( %r, %r, %r, %r )" % ( initial_state, bound_symbols, index, all_shift_states ) )
-	if all_shift_states is null:
-		pass
-	else:
-		connect_keywords_to_state( initial_state, bound_symbols, index, all_shift_states.head )
-		connect_keywords         ( initial_state, bound_symbols, index, all_shift_states.tail )
+		connect_keywords_to_state( initial_state, bound_symbols, index, states.head )
+		connect_keywords         ( initial_state, bound_symbols, index, states.tail )
 
 def connect_keywords_to_state( initial_state, bound_symbols, index, shift_state ):
 	#debug_ppa( "      connect_keywords_to_state( %r, %r, %r, %r )" % ( initial_state, bound_symbols, index, shift_state ) )
@@ -848,34 +890,161 @@ def connect_keywords_to_state( initial_state, bound_symbols, index, shift_state 
 		give( shift_state, name_sharp, take( initial_state, name_sharp ) )
 		connect_keywords_to_state( initial_state, bound_symbols, index-1, shift_state )
 
-def polymorphic_automaton( action_bindings ):
-	# A little silly parser generator algorithm to deal with simple
-	# multi-dispatch LR(0) languages using prefix notation and offering very
-	# little error detection.
-	# This will suffice until I write a proper parser generator.
-	debug_ppa( "Building automaton" )
-	initial_state = Shift()
-	all_shift_states = Object( 'SHIFT_STATE_COLLECTOR', first = cons( initial_state, null ) )
-	debug_ppa( "  initial_state: %s", initial_state )
-	debug_ppa( "  action_bindings: %s", action_bindings )
-	debug_ppa( "  Building parse tree" )
-	bound_symbols = all_fields( action_bindings )
-	debug_ppa( "    Bound symbols: %s", bound_symbols )
+polymorphic_automaton_text = r"""
+to Shift                          python_eval { Shift() }
+to Reduce0  action_symbol_sharp   python_eval { Reduce0( flat( action_symbol_sharp ) ) }
+to Accept                         python_eval { Accept() }
+to ShiftStateCollector state      python_eval { Object( 'SHIFT_STATE_COLLECTOR', first = cons( state, null ) ) }
 
-	make_branches( initial_state, bound_symbols, bound_symbols.length, all_shift_states )
+to print_automaton
+	initial_state
+python_exec
+	{ debug( ' Automaton:\n%s\n', shogun( initial_state ) ) }
 
-	# Names are effectively keywords.  Any time we see one of those, whatever shift state we are in, we leap to that name_state
-	debug_ppa( "  Connecting keywords" )
-	connect_keywords( initial_state, bound_symbols, bound_symbols.length, all_shift_states.first )
+to polymorphic_automaton
+	action_bindings
+do
+	set initial_state
+		Shift
+	set all_shift_states
+		ShiftStateCollector initial_state
+	set bound_symbols
+		all_fields action_bindings
+	make_branches
+		initial_state
+		bound_symbols
+		get bound_symbols length
+		all_shift_states
+	connect_keywords
+		initial_state
+		bound_symbols
+		get bound_symbols length
+		get all_shift_states first
+	put initial_state :EOF
+		Accept
+	print_automaton initial_state
 
-	# The accept state
-	initial_state[ ':EOF' ] = Accept()
-	debug_ppa( '  EOF => %s', initial_state[ ':EOF' ] )
 
-	#debug_ppa( ' Automaton:\n%s\n', initial_state._description( 1 ) )
-	#debug_ppa( ' Automaton:\n%s\n', shogun( initial_state ) )
-	#debug( ' Automaton again:\n%s\n', shogun( deshogun( shogun( initial_state ) ) ) )
-	return initial_state
+to make_branches
+	initial_state bound_symbols index=0 all_shift_states
+do
+
+to make_branches
+	initial_state bound_symbols index:INT all_shift_states
+do
+	set action_symbol_sharp
+		take bound_symbols sharp index
+	set action
+		take
+			get bound_symbols subject
+			action_symbol_sharp
+	set name
+		get action name
+	set tip
+		extend_branch
+			initial_state
+			get2 action formal_arg_types tail
+			all_shift_states
+	set reduce_state
+		Reduce0 action_symbol_sharp
+	set reduce_word_sharp
+		take
+			get action formal_arg_types
+			head#
+	give tip reduce_word_sharp
+		reduce_state
+	make_branches
+		initial_state
+		bound_symbols
+		- index 1
+		all_shift_states
+
+
+to extend_branch
+	state x:NULL all_shift_states
+do
+	state
+
+to extend_branch
+	state arg_types all_shift_states
+do
+	extend_one_step
+		extend_branch
+			state
+			get arg_types tail
+			all_shift_states
+		take arg_types head#
+		all_shift_states
+
+
+to extend_one_step
+	state arg_type_sharp all_shift_states
+do
+	extend_one_step2
+		state
+		arg_type_sharp
+		take state arg_type_sharp
+		all_shift_states
+
+to extend_one_step2
+	state arg_type_sharp x=TAKE_FAILED all_shift_states
+do
+	set result
+		Shift
+	put all_shift_states first
+		cons
+			result
+			get all_shift_states first
+	give state arg_type_sharp
+		result
+	result
+
+to extend_one_step2
+	state arg_type_sharp possible_match all_shift_states
+do
+	possible_match
+
+
+to connect_keywords
+	initial_state bound_symbols index x:NULL
+do
+
+to connect_keywords
+	initial_state bound_symbols index states:LIST
+do
+	connect_keywords_to_state
+		initial_state bound_symbols index
+		get states head
+	connect_keywords
+		initial_state bound_symbols index
+		get states tail
+
+
+to connect_keywords_to_state
+	initial_state bound_symbols index=0 shift_state
+do
+
+to connect_keywords_to_state
+	initial_state bound_symbols index shift_state
+do
+	set action
+		take
+			get bound_symbols subject
+			take
+				bound_symbols
+				sharp index
+	set name_sharp
+		take action name#
+	give shift_state name_sharp
+		take initial_state name_sharp
+	connect_keywords_to_state
+		initial_state
+		bound_symbols
+		- index 1
+		shift_state
+"""
+
+# parse_procedure
 
 def parse_procedure( name, library_text, script ):
 	env = ENVIRONMENT( null )
@@ -902,7 +1071,7 @@ def parse_procedure( name, library_text, script ):
 #
 # Some rules to make it look more like Sheppard code:
 #  - Procedures are only allowed one if statement sequence.  It must be at the
-#    top level, and must use is_a based on the arguments or compare the
+#    top level, and must use is_a based on one argument, or compare the
 #    argument against a specific symbol.  This represents sheppard
 #    automaton-based dispatch.  (For singletons like null and take_failed, we
 #    can compare against object identity for performance reasons.)
@@ -1046,7 +1215,7 @@ def process_reduce0( frame, state ):
 		debug2_reduce = silence
 	print_stuff( frame.thread )
 	#debug2_reduce( ">-- reduce0 %s --", state.action )
-	action = bound( take( state, 'action#' ), frame.scope ) # 'take' here just to get a sharp result
+	action = bound( take( state, 'action#' ), frame.action_bindings ) # 'take' here just to get a sharp result
 	#debug2_reduce( "  action: %r", action )
 	#if is_a( action, 'MACRO' ):
 	#	debug_reduce( "    %s", python_list( action.script ) )
@@ -1068,8 +1237,8 @@ process = {
 	'REDUCE0': process_reduce0,
 	}
 
-def execute( procedure, environment, scope ):
-	frame = ACTIVATION( DIGRESSION( procedure.script, environment, dial_tone ), null, LIST( procedure.dialect, null ), scope, null )
+def execute( procedure, environment, action_bindings ):
+	frame = ACTIVATION( DIGRESSION( procedure.script, environment, dial_tone ), null, LIST( procedure.dialect, null ), action_bindings, null )
 	global current_thread # Allow us to print debug info without passing this all over the place
 	current_thread = THREAD( frame, null )
 	frame[ 'thread' ] = current_thread # I don't love this back link, but it's really handy and efficient
@@ -1102,7 +1271,7 @@ python_eval
 	{ DIGRESSION(**dict( locals() )) }
 
 to Activation
-	cursor operands history scope caller
+	cursor operands history action_bindings caller
 python_eval
 	{ ACTIVATION(**dict( locals() )) }
 
@@ -1292,7 +1461,7 @@ do
 	set action
 		bound
 			take state action#
-			get frame scope  /* TODO: Does this make sense?  Should there be a specific action_bindings object? */
+			get frame action_bindings
 	set reduce_environment
 		Environment
 			get action environment
@@ -1326,7 +1495,7 @@ to print              obj                               python_exec { print str(
 
 
 to execute 
-	procedure environment scope
+	procedure environment action_bindings
 do
 	set frame
 		Activation
@@ -1338,7 +1507,7 @@ do
 			cons
 				get procedure dialect  /* Start state */
 				null
-			scope
+			action_bindings
 			null  /* No caller */
 	put frame thread  /* Putting a thread pointer in each frame seems wasteful, but it's handy */
 		Thread frame current_thread
