@@ -1654,3 +1654,16 @@ if False:
 else:
 	main()
 
+
+# Directions to pursue:
+#
+# Cleanup:
+# - Rename all fields/variables called "environment" to be more descriptive
+# - Change get/set/put so the only way to get a flat symbol on the operand stack is by calling "flat"
+# - Rearrange symbols so there are three kinds: names, numbers, and anonymous "fresh" symbols
+# - Figure out a way to have Sheppard procedures return a value.  Perhaps preserve the final operand stack when an Accept occurs.
+#
+# Possible:
+# - Write an SLR parser generator in python?
+# - Handle quasiquoting in python?  Then I could use it in Sheppard programs, so I could have if statements and foreach and loops.
+
