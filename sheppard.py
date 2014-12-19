@@ -119,6 +119,10 @@ class Object:
 			return self._name
 		except AttributeError:
 			pass
+		try:
+			return repr( self.value ) + "#"
+		except AttributeError:
+			pass
 		return "%s_%d" % ( self._tag, self._id )
 
 	def __str__( self ):
@@ -799,7 +803,7 @@ def bind_action( bindings, action ):
 		debug_parse( "Bound %r to %s", action_symbol, action )
 		return True
 
-debug_ppa = debug
+debug_ppa = silence
 
 # polymorphic_automaton
 
@@ -1238,7 +1242,7 @@ process = {
 	'REDUCE0': process_reduce0,
 	}
 
-def execute( procedure, action_bindings ):
+def execute( procedure, action_bindings ): # One day we can get partial evaluation by having static and dynamic action_bindings
 	frame = ACTIVATION( DIGRESSION( procedure.script, ENVIRONMENT( procedure.enclosing_scope ), dial_tone ), null, LIST( procedure.dialect, null ), action_bindings, null )
 	global current_thread # Allow us to print debug info without passing this all over the place
 	current_thread = THREAD( frame, null )
@@ -1565,12 +1569,12 @@ class Missed_Action_Word( BaseException ):
 
 class Unexpected_token( BaseException ):
 
-	def __init__( self, state, token ):
+	def __init__( self, state, token_sharp ):
 		self._state = state
-		self._token = token
+		self._token = token_sharp
 
 	def __str__( self ):
-		return "Unexpected token %r in state %s" % ( self._token, self._state )
+		return "Unexpected token %r in state %s" % ( flat( self._token ), self._state )
 
 fib_text = """
 to fib  n=0  do 1
