@@ -72,9 +72,17 @@ class Object:
 		for ( name, value ) in edges.iteritems():
 			setattr( _self, name, value )
 
-	# Allow map syntax for convenience
+	# Allow map syntax for convenience.
+	#
+	# NOTE: getattr and setattr are not implemented yet.  Setattr, in particular,
+	# won't behave the way it should: it won't add the new field to _fields.
+	# They're a little awkward to implement, so I just haven't bothered yet.
+	#
+	# Also note that this is not in sharp-land.  When we're doing python_eval or
+	# python_exec, the code needs to act like Python or it will be too confusing.
 
 	def __getitem__( self, key ):
+		#debug_object( "getitem %r[ %r ]", self, key )
 		try:
 			return getattr( self, key )
 		except AttributeError:
@@ -671,13 +679,16 @@ to sharp      symbol                       python_eval { sharp( symbol ) }
 /* This could really just be a binding */
 to current_environment th:THREAD   python_eval { th.activation.cursor.local_scope.digressor }
 
-to set 
+to set_slow
 	symbol:SYMBOL value
 do
 	put
 		get2 current_environment current_thread digressor bindings  /* Bindings at the point that 'set' was expanded */
 		symbol
 		value
+
+to set        symbol:SYMBOL value          do set2 symbol value current_thread
+to set2       symbol:SYMBOL value th       python_exec { th.activation.cursor.local_scope.digressor.bindings[ symbol ] = value }
 
 /* Math */
 to + a b   python_eval { a+b }
@@ -1171,10 +1182,18 @@ def perform( frame, action, reduce_environment ):
 		pass
 
 def perform_python_exec( frame, action, reduce_environment ):
-	exec action.statement in globals(), dict( reduce_environment.bindings )
+	try:
+		exec action.statement in globals(), dict( reduce_environment.bindings )
+	except:
+		print "\nError in exec:", action.statement
+		raise
 
 def perform_python_eval( frame, action, reduce_environment ):
-	result = eval( action.expression,  globals(), dict( reduce_environment.bindings ) )
+	try:
+		result = eval( action.expression,  globals(), dict( reduce_environment.bindings ) )
+	except:
+		print "\nError in eval:", action.expression
+		raise
 	end_digression_if_finished( frame, frame.cursor.tokens )
 	frame[ 'cursor' ] = DIGRESSION( List([ result ]), frame.cursor.local_scope, frame.cursor )
 
@@ -1667,9 +1686,15 @@ else:
 # Cleanup:
 # - Change get/set/put so the only way to get a flat symbol on the operand stack is by calling "flat"
 # - Rearrange symbols so there are three kinds: names, numbers, and anonymous "fresh" symbols
-# - Figure out a way to have Sheppard procedures return a value.  Perhaps preserve the final operand stack when an Accept occurs.
+# - Figure out a way to have Sheppard procedures return a value.  Currently, we only reach Accept on EOF, so the final crud pushed on the stack may not be parseable.
 #
 # Possible:
 # - Write an SLR parser generator in python?
 # - Handle quasiquoting in python?  Then I could use it in Sheppard programs, so I could have if statements and foreach and loops.
+#
+# Cleaning up get/put
+# - get should sharp its result, and put should take a sharp value.  Difference from give/take would be that get/put take un-sharped field symbols.
+# - getattr/setattr and getitem/setitem on Object probably should NOT sharp/flat things.  When we're in Python code, it should act like Python code, or it's too confusing.
+# - probably remove the _sharp suffixes everywhere because that can be taken for granted.
+# 
 
