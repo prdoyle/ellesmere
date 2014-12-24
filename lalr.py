@@ -149,6 +149,7 @@ class Symbol:
 	def __hash__( self ): return hash( self.name )
 	def __eq__( self, other ): return self.name == other.name
 
+# We put spaces on these just to make sure they don't collide with others
 accept_symbol = Symbol(" S' ")
 eof_symbol    = Symbol(" $ ")
 
@@ -521,8 +522,9 @@ def digraph( Xs, R, F_prime ):
 	"""
 	DeRemer & Penello p.625
 	R, F_prime are dicts.
-	Values flow from Y to X for Y in R( X ); in other words, R needs to give a
-	set of in-edges for vertex X in the flow graph, which is a bit counterintuitive.
+	Note: due to definition 4.1 on p.623, values flow from Y to X for Y in R(X).
+	In other words, in the graph defined by R, the values flow backward along
+	the edges, from head to tail, which is a little counterintuitive.
 	"""
 	debug_digraph = silence
 	F = {}
