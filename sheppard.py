@@ -1,4 +1,5 @@
-#! /usr/bin/python
+#! /usr/bin/python -O
+# vim: set fileencoding=utf-8 :
 
 import string, re, time, ast
 from sys import argv
@@ -521,6 +522,25 @@ dial_tone = Dial_tone()
 false = Object( 'FALSE' )
 true  = Object( 'TRUE' )
 
+# For nondeterministic automata
+#
+# The "eta" symbol η has the same meaning as "epsilon" ε when interpreting an NFA.
+# It exists in order to support efficient representation of mutable NFAs as
+# Sheppard object graphs, in which every state can have only one outgoing edge
+# for each symbol.  The η-transitions are interpreted to point at states that
+# are considered to have the same identity, so if you want to add a new transitions
+# to some state S, you can add the transition to any state S' such that S[η*] = S'.
+# This makes each state into a kind of linked list, where the "next" pointer is
+# the η-transition.  I've been calling the second and subsequent states the "cetera"
+# states (get it? eta-cetera), and the rule is that each "cetera" state has
+# exactly one incoming η-transition, and normal states have none.
+#
+# TODO: These two guys really need to be some kind of anonymous symbols, or
+# else we can't make NFAs to parse Greek text!
+#
+epsilon = 'ε'
+eta     = 'η'
+
 def ACTIVATION( cursor, operands, history, action_bindings, fallback, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, action_bindings=action_bindings, fallback=fallback, caller=caller )
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
 def DIALECT( initial_state, fallback ): return Object( 'DIALECT', initial_state=initial_state, fallback=fallback )
@@ -595,7 +615,7 @@ def give( obj, key_sharp, value_sharp ):
 	#debug( "--GIVE-- %r . %r = %r", obj, flat(key_sharp), flat(value_sharp) )
 	obj[ flat(key_sharp) ] = flat( value_sharp )
 
-take_failed = 'TAKE_FAILED'
+take_failed = 'TAKE_FAILED'  # TODO: Why is this uppercase if it's not a type?
 
 def take( obj, key_sharp ):
 	#debug( "--TAKE--    %r.take( %r )", obj, flat( key_sharp ) )
@@ -660,9 +680,13 @@ def add_predefined_bindings( bindings ):
 	bindings[ 'true' ] = true
 	bindings[ 'dial_tone' ] = dial_tone
 
+	bindings[ 'epsilon' ] = epsilon
+	bindings[ 'eta' ]     = eta
+
 def add_predefined_fallbacks( fallback ):
 	for x in [ 'MONIKER', 'INT' ]:
 		fallback[ x ] = 'SYMBOL'
+	fallback[ 'DIAL_TONE' ] = 'DIGRESSION'
 
 def define_builtins( action_bindings, enclosing_scope ):
 	name = 'current_thread'
