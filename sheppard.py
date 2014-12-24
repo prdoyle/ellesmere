@@ -523,6 +523,8 @@ true  = Object( 'TRUE' )
 
 def ACTIVATION( cursor, operands, history, action_bindings, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, action_bindings=action_bindings, caller=caller )
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
+def FALLBACK(): return Object( 'FALLBACK' )
+def DIALECT( initial_state, fallback_relation ): return Object( 'DIALECT', initial_state=initial_state, fallback_relation=fallback_relation )
 def PROCEDURE( name, script, dialect, enclosing_scope ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, enclosing_scope=enclosing_scope )
 
 def MACRO( name, script, formal_arg_names, formal_arg_types, enclosing_scope ):
@@ -546,7 +548,7 @@ def Shift( **edges ):
 			result[     name ] = value
 	return result
 
-def LIBRARY( name, dialect ): return Object( 'LIBRARY', name=name, dialect=dialect )
+def LIBRARY( name, initial_state ): return Object( 'LIBRARY', name=name, initial_state=initial_state )
 
 # A few functions to help with the Python / Sheppard impedance mismatch
 
@@ -705,7 +707,12 @@ to - a b   python_eval { a-b }
 debug_parse = silence
 
 def parse_library( name, string, action_bindings, enclosing_scope ):
-	debug_parse( "parse_library( %r, %r, %r, $r )", name, string, action_bindings, enclosing_scope )
+	"""
+	action_bindings needs to have any pre-defined actions because they can affect the resulting automaton.
+	This routine modifies action_bindings to include the actions declared by the library.
+	TODO: This seems weird.  The action bindings should probably go in the LIBRARY object.
+	"""
+	debug_parse( "parse_library( %r, %r, %r, %r )", name, string, action_bindings, enclosing_scope )
 	word_cursor = Object( 'WORD_CURSOR', current = library_words( string ) )
 	while bind_action( action_bindings, parse_action( word_cursor, enclosing_scope ) ):
 		pass
@@ -1067,7 +1074,7 @@ def parse_procedure( name, library_text, script ):
 	define_builtins( action_bindings, global_scope )
 	lib = parse_library( name, library_text, action_bindings, global_scope )
 	define_predefined_bindings( global_scope.bindings )
-	result = PROCEDURE( name, List( script ), lib.dialect, global_scope )
+	result = PROCEDURE( name, List( script ), DIALECT( lib.initial_state, FALLBACK() ), global_scope )
 	if False:
 		debug( "Procedure:\n%s\n", result._description( 1 ) )
 	if False:
@@ -1262,7 +1269,7 @@ process = {
 	}
 
 def execute( procedure, action_bindings ): # One day we can get partial evaluation by having static and dynamic action_bindings
-	frame = ACTIVATION( DIGRESSION( procedure.script, ENVIRONMENT( procedure.enclosing_scope ), dial_tone ), null, LIST( procedure.dialect, null ), action_bindings, null )
+	frame = ACTIVATION( DIGRESSION( procedure.script, ENVIRONMENT( procedure.enclosing_scope ), dial_tone ), null, LIST( procedure.dialect.initial_state, null ), action_bindings, null )
 	global current_thread # Allow us to print debug info without passing this all over the place
 	current_thread = THREAD( frame, null )
 	frame[ 'thread' ] = current_thread # I don't love this back link, but it's really handy and efficient
@@ -1284,11 +1291,6 @@ def execute2( frame, keep_going ):
 #
 
 meta_interpreter_text = """
-to Procedure
-	name script dialect enclosing_scope
-python_eval
-	{ PROCEDURE(**dict( locals() )) }
-
 to Digression
 	tokens local_scope resumption
 python_eval
@@ -1530,7 +1532,7 @@ do
 				dial_tone
 			null  /* Empty operand stack */
 			cons
-				get procedure dialect  /* Start state */
+				get2 procedure dialect initial_state
 				null
 			action_bindings
 			null  /* No caller */
@@ -1624,7 +1626,7 @@ def wrap_procedure( inner_procedure ):
 		define_predefined_bindings( global_scope.bindings )
 	bindings = global_scope.bindings
 	script = List([ 'execute', inner_procedure, inner_procedure.enclosing_scope ])
-	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, script, sheppard_interpreter_library.dialect, global_scope )
+	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, script, DIALECT( sheppard_interpreter_library.initial_state, FALLBACK() ), global_scope )
 	return outer_procedure
 
 def test( depth, plt ):
