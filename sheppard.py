@@ -70,7 +70,7 @@ class Object:
 		_self._id = object_counter
 		object_counter += 1
 		for ( name, value ) in edges.iteritems():
-			setattr( _self, name, value )
+			_self[ name ] = value
 
 	# Allow map syntax for convenience.
 	#
@@ -523,7 +523,7 @@ true  = Object( 'TRUE' )
 
 def ACTIVATION( cursor, operands, history, action_bindings, fallback, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, action_bindings=action_bindings, fallback=fallback, caller=caller )
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
-def FALLBACK(): return Object( 'FALLBACK' )
+def FALLBACK( **bindings ): return Object( 'FALLBACK', **bindings )
 def DIALECT( initial_state, fallback ): return Object( 'DIALECT', initial_state=initial_state, fallback=fallback )
 def PROCEDURE( name, script, dialect, enclosing_scope ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, enclosing_scope=enclosing_scope )
 
@@ -834,7 +834,7 @@ def polymorphic_automaton( action_bindings ):
 	global use_sheppard_text
 	if use_sheppard_text:
 		use_sheppard_text = False
-		procedure = parse_procedure( "polymorphic_automaton", prologue_text + polymorphic_automaton_text, [ "polymorphic_automaton", action_bindings ] )
+		procedure = parse_procedure( "polymorphic_automaton", prologue_text + polymorphic_automaton_text, [ "polymorphic_automaton", action_bindings ], FALLBACK() )
 		# TODO: This following line seems really redundant
 		execute( procedure, procedure.enclosing_scope )
 		# Uh, how do I get the result?
@@ -1068,13 +1068,13 @@ do
 
 # parse_procedure
 
-def parse_procedure( name, library_text, script ):
+def parse_procedure( name, library_text, script, fallback ):
 	global_scope = ENVIRONMENT( null )
 	action_bindings = global_scope.bindings # double-duty
 	define_builtins( action_bindings, global_scope )
 	lib = parse_library( name, library_text, action_bindings, global_scope )
 	define_predefined_bindings( global_scope.bindings )
-	result = PROCEDURE( name, List( script ), DIALECT( lib.initial_state, FALLBACK() ), global_scope )
+	result = PROCEDURE( name, List( script ), DIALECT( lib.initial_state, fallback ), global_scope )
 	if False:
 		debug( "Procedure:\n%s\n", result._description( 1 ) )
 	if False:
@@ -1633,7 +1633,9 @@ to print_result  n  python_exec { print "*** RESULT IS", n, "***" }
 """
 
 def fib_procedure():
-	return parse_procedure( "fib", fib_text, [ 'print_result', 'fib', 2 ] )
+	fallback = FALLBACK()
+	# fallback[ 0 ] = 1  # Just to test fallbacks
+	return parse_procedure( "fib", fib_text, [ 'print_result', 'fib', 2 ], fallback )
 
 sheppard_interpreter_library = None
 def wrap_procedure( inner_procedure ):
