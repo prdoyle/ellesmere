@@ -521,10 +521,10 @@ dial_tone = Dial_tone()
 false = Object( 'FALSE' )
 true  = Object( 'TRUE' )
 
-def ACTIVATION( cursor, operands, history, action_bindings, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, action_bindings=action_bindings, caller=caller )
+def ACTIVATION( cursor, operands, history, action_bindings, fallback, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, action_bindings=action_bindings, fallback=fallback, caller=caller )
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
 def FALLBACK(): return Object( 'FALLBACK' )
-def DIALECT( initial_state, fallback_relation ): return Object( 'DIALECT', initial_state=initial_state, fallback_relation=fallback_relation )
+def DIALECT( initial_state, fallback ): return Object( 'DIALECT', initial_state=initial_state, fallback=fallback )
 def PROCEDURE( name, script, dialect, enclosing_scope ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, enclosing_scope=enclosing_scope )
 
 def MACRO( name, script, formal_arg_names, formal_arg_types, enclosing_scope ):
@@ -1151,31 +1151,39 @@ def bound2( obj_sharp, environment, possible_match ):
 	else:
 		return possible_match
 
-def next_state( state, obj_sharp ):
+def next_state( state, obj_sharp, fallback, original_obj_for_error_reporting ):
 	# First we check if the object is itself a symbol that has an edge from this
 	# state (ie. it's acting as a keyword).  Failing that, we check the object's
-	# "tag edge symbol" to see if the object is of a type that has an edge.  If
-	# that also fails, we default to the ":ANY" edge.  (This is where we should
-	# be doing something smart for inheritance.)  These successive checks
-	# necessitate not just one next_state2 routine, but another next_state3
-	# routine too.
-	return next_state2( state, obj_sharp, take( state, obj_sharp ) )
+	# "tag edge symbol" to see if the object is of a type that has an edge.
+	# If that also fails, we recurse over the whole process using the symbol
+	# indicated by the fallback relation.  These successive checks necessitate
+	# not just one next_state2 routine, but another next_state3 routine too.
+	if obj_sharp is take_failed:
+		raise Unexpected_token( state, original_obj_for_error_reporting )
+	else:
+		return next_state2( state, obj_sharp, take( state, obj_sharp ), fallback, original_obj_for_error_reporting )
 
-def next_state2( state, obj_sharp, possible_match ):
+def next_state2( state, obj_sharp, possible_match, fallback, original_obj_for_error_reporting ):
 	if possible_match is take_failed:
-		return next_state3( state, obj_sharp, take( state, tag_edge_symbol(obj_sharp) ) )
+		return next_state3( state, obj_sharp, take( state, tag_edge_symbol(obj_sharp) ), fallback, original_obj_for_error_reporting )
 	else:
 		return possible_match
 
-def next_state3( state, obj_sharp, possible_match ):
+def next_state3( state, obj_sharp, possible_match, fallback, original_obj_for_error_reporting ):
 	if possible_match is take_failed:
-		try:
-			return state[ ':ANY' ]
-		except KeyError:
-			# Raise a more descriptive Sheppard error
-			raise Unexpected_token( state, obj_sharp )
+		return next_state( state, get_fallback( fallback, obj_sharp, take( fallback, obj_sharp ) ), fallback, original_obj_for_error_reporting )
 	else:
 		return possible_match
+
+def get_fallback( fallback, obj_sharp, possible_result ):
+	silence( "get_fallback( %s, %r, %r )", fallback, obj_sharp, possible_result )
+	if possible_result is take_failed:
+		if obj_sharp == ":ANY#":
+			return take_failed
+		else:
+			return ":ANY#"
+	else:
+		return possible_result
 
 
 def perform( frame, action, reduce_environment ):
@@ -1231,7 +1239,7 @@ def process_shift( frame, state ):
 	end_digression_if_finished( frame, frame.cursor.tokens )
 	#debug_shift( "    value: %r", flat( token_sharp ) )
 	frame[ 'operands' ] = cons( token_sharp, frame.operands )
-	frame[ 'history' ] = cons( next_state( state, token_sharp ), frame.history )
+	frame[ 'history' ] = cons( next_state( state, token_sharp, frame.fallback, token_sharp ), frame.history )
 	#debug_shift( "  new_state: %r", state )
 	if list_length( frame.operands ) > 50:
 		error( RuntimeError( "Operand stack overflow" ) )
@@ -1269,7 +1277,7 @@ process = {
 	}
 
 def execute( procedure, action_bindings ): # One day we can get partial evaluation by having static and dynamic action_bindings
-	frame = ACTIVATION( DIGRESSION( procedure.script, ENVIRONMENT( procedure.enclosing_scope ), dial_tone ), null, LIST( procedure.dialect.initial_state, null ), action_bindings, null )
+	frame = ACTIVATION( DIGRESSION( procedure.script, ENVIRONMENT( procedure.enclosing_scope ), dial_tone ), null, LIST( procedure.dialect.initial_state, null ), action_bindings, procedure.dialect.fallback, null )
 	global current_thread # Allow us to print debug info without passing this all over the place
 	current_thread = THREAD( frame, null )
 	frame[ 'thread' ] = current_thread # I don't love this back link, but it's really handy and efficient
@@ -1297,7 +1305,7 @@ python_eval
 	{ DIGRESSION(**dict( locals() )) }
 
 to Activation
-	cursor operands history action_bindings caller
+	cursor operands history action_bindings fallback caller
 python_eval
 	{ ACTIVATION(**dict( locals() )) }
 
@@ -1312,9 +1320,9 @@ python_eval
 	{ ENVIRONMENT(**dict( locals() )) }
 
 to tag_edge_symbol
-	obj
+	obj_sharp
 python_eval
-	{ ':' + tag( obj ) + '#' }
+	{ ':' + tag( flat( obj_sharp ) ) + '#' }
 
 to pop_list 
 	base field_symbol_sharp:SYMBOL
@@ -1392,21 +1400,28 @@ do
 
 
 to next_state 
-	state obj_sharp
+	state obj_sharp fallback original_obj_for_error_reporting
 do
 	next_state2
 		state
 		obj_sharp
 		take state obj_sharp
+		fallback
+		original_obj_for_error_reporting
+
+to next_state 
+	state x=TAKE_FAILED fallback original_obj_for_error_reporting
+python_exec
+	{ raise Unexpected_token( state, original_obj_for_error_reporting ) }
 
 
 to next_state2 
-	state obj_sharp possible_match
+	state obj_sharp possible_match fallback original_obj_for_error_reporting
 do
 	possible_match
 
 to next_state2 
-	state obj_sharp x=TAKE_FAILED
+	state obj_sharp x=TAKE_FAILED fallback original_obj_for_error_reporting
 do
 	next_state3
 		state
@@ -1414,38 +1429,38 @@ do
 		take
 			state
 			tag_edge_symbol obj_sharp
+		fallback
+		original_obj_for_error_reporting
 
 
 to next_state3 
-	state obj_sharp possible_match
+	state obj_sharp possible_match fallback original_obj_for_error_reporting
 do
 	possible_match
 
 to next_state3 
-	state obj_sharp x=TAKE_FAILED
+	state obj_sharp x=TAKE_FAILED fallback original_obj_for_error_reporting
 do
-	get state :ANY
+	next_state
+		state
+		get_fallback
+			fallback
+			obj_sharp
+			take fallback obj_sharp
+		fallback
+		original_obj_for_error_reporting
 
 
-to perform 
-	frame action:PYTHON_EXEC reduce_environment
-python_exec
-	{ perform_python_exec( frame, action, reduce_environment ) }
+to get_fallback  fallback obj_sharp       possible_result              do possible_result
+to get_fallback  fallback obj_sharp       possible_result=TAKE_FAILED  do :ANY#
+to get_fallback  fallback obj_sharp=:ANY# possible_result=TAKE_FAILED  do TAKE_FAILED  /* Holy double dispatch, Batman */
 
-to perform 
-	frame action:PYTHON_EVAL reduce_environment
-python_exec
-	{ perform_python_eval( frame, action, reduce_environment ) }
 
-to perform 
-	frame action:CURRENT_THREAD reduce_environment
-python_exec
-	{ perform_current_thread( frame, action, reduce_environment ) }
+to perform  frame action:PYTHON_EXEC    reduce_environment  python_exec { perform_python_exec( frame, action, reduce_environment ) }
+to perform  frame action:PYTHON_EVAL    reduce_environment  python_exec { perform_python_eval( frame, action, reduce_environment ) }
+to perform  frame action:CURRENT_THREAD reduce_environment  python_exec { perform_current_thread( frame, action, reduce_environment ) }
+to perform  frame action:MACRO          reduce_environment  do          /* Macros just expand into a digression, and that's it. */
 
-to perform 
-	frame action:MACRO reduce_environment
-do
-	/* Macros just expand into a digression, and that's it. */
 
 /* Behave as though every token list ends with an infinite sequence of eofs */
 to get_token possible_token do possible_token
@@ -1476,7 +1491,11 @@ do
 			get frame operands
 	put frame history
 		cons
-			next_state state token_sharp
+			next_state
+				state
+				token_sharp
+				get frame fallback
+				token_sharp
 			get frame history
 	true
 
@@ -1535,6 +1554,7 @@ do
 				get2 procedure dialect initial_state
 				null
 			action_bindings
+			get2 procedure dialect fallback
 			null  /* No caller */
 	put frame thread  /* Putting a thread pointer in each frame seems wasteful, but it's handy */
 		Thread frame current_thread
