@@ -1,9 +1,9 @@
-#! /usr/bin/python -O
+#! /usr/bin/python
 
 import string, re, time, ast
 from sys import argv
 
-# I've adopted a convention that strings used as Sheppard symbols (or parts
+# I've adopted a convention that strings used as Sheppard monikers (or parts
 # thereof) have single-quotes, and ordinary Python strings have double-quotes.
 # Since Python sees no difference between these, there's no way to enforce this
 # rule, so you may find some unintentional inconsistencies.
@@ -214,12 +214,12 @@ class Null( Object ): # Just to make debugging messages more informative
 null = Null()  # The very first object!  It gets _id=0
 
 # These need to be disembodied functions.  They can't be methods, because some
-# Python objects like symbols are represented by plain old Python objects like
+# Sheppard objects like monikers are represented by plain old Python objects like
 # strings that have no such methods.
 # Also, methods of Object can confuse __getattr__ and end up trying to call Sheppard objects.
 
-def is_int( obj ):    return isinstance( obj, int ) # Sheppard integers are represented by Python ints
-def is_symbol( obj ): return isinstance( obj, str ) # Sheppard symbols are represented by Python strs
+def is_int( obj ):     return isinstance( obj, int ) # Sheppard integers are represented by Python ints
+def is_moniker( obj ): return isinstance( obj, str ) # Sheppard monikers are represented by Python strs
 # TODO: What about the fact that I'm now considering ints to be symbols?
 
 def all_fields( obj ):
@@ -240,8 +240,8 @@ def tag( obj ):
 	try:
 		return obj._tag
 	except AttributeError:
-		if isinstance( obj, str ): #is_symbol( obj ):
-			result = 'SYMBOL'
+		if isinstance( obj, str ): #is_moniker( obj ):
+			result = 'MONIKER'
 		elif isinstance( obj, int ): #is_int( obj ):
 			result = 'INT'
 		else: # All other Sheppard objects are represented by instances of Object
@@ -259,7 +259,7 @@ def sharp( arg ):
 
 	Invariant: flat(sharp( X )) is x
 	"""
-	if isinstance( arg, str ): #if is_a( arg, 'SYMBOL' ):
+	if isinstance( arg, str ): #if is_a( arg, 'MONIKER' ):
 		# I like putting the sharp at the end, because it reads nicely, like
 		# 'foo#' as "foo sharp".  However, the ordering becomes ambiguous when we
 		# add other symbol prefixes like ':'.  A symbol like ':INT#' might mean
@@ -272,12 +272,12 @@ def sharp( arg ):
 		# a use for ':#INT' yet.  Maybe we never will?
 		return arg + '#'
 	elif is_a( arg, 'INT' ):
-		return Object( 'INT', value=arg ) # Wrap arg (which may be a python int) in an Object of type INT
+		return Object( 'INT', value=arg ) # Wrap arg (which may be a python int) in an Object of type INT; TODO: INT is the wrong type here.  Should be SHARP_INT or something.
 	else:
 		return arg
 
 def flat( arg ):
-	if isinstance( arg, str ): #if is_a( arg, 'SYMBOL' ):
+	if isinstance( arg, str ): #if is_a( arg, 'MONIKER' ):
 		assert( arg[-1] == '#' )
 		return arg[:-1]
 	elif is_a( arg, 'INT' ):
@@ -386,7 +386,7 @@ def deshogun( text ):
 	# with multiple instances of NULL floating around.
 	#
 	# HOWEVER, this is not sufficient.  Other singletons (notably those from
-	# define_predefined_bindings) might need the same treatment, and I'm not
+	# add_predefined_bindings) might need the same treatment, and I'm not
 	# sure what else.
 	#
 	dictionary = { 0:null }
@@ -523,9 +523,13 @@ true  = Object( 'TRUE' )
 
 def ACTIVATION( cursor, operands, history, action_bindings, fallback, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, action_bindings=action_bindings, fallback=fallback, caller=caller )
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
-def FALLBACK( **bindings ): return Object( 'FALLBACK', **bindings )
 def DIALECT( initial_state, fallback ): return Object( 'DIALECT', initial_state=initial_state, fallback=fallback )
 def PROCEDURE( name, script, dialect, enclosing_scope ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, enclosing_scope=enclosing_scope )
+
+def FALLBACK( **bindings ):
+	result = Object( 'FALLBACK', **bindings )
+	add_predefined_fallbacks( result )
+	return result
 
 def MACRO( name, script, formal_arg_names, formal_arg_types, enclosing_scope ):
 	return Object( 'MACRO', name=name, script=script, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, enclosing_scope=enclosing_scope )
@@ -581,8 +585,8 @@ def meta_level( th ):
 	else:
 		return 1 + meta_level( th.meta_thread )
 
-def tag_edge_symbol( obj ):
-	return ':' + tag( obj ) + '#'
+def tag_edge_symbol( tag_sharp ):
+	return ':' + tag_sharp
 
 # These functions operate in sharp-land, so they're safe to call directly from
 # a Sheppard program without interfering with the automaton
@@ -646,7 +650,7 @@ def print_backtrace( th ):
 
 # Sheppard builtins
 
-def define_predefined_bindings( bindings ):
+def add_predefined_bindings( bindings ):
 	# Note: You usually want to add these after calling
 	# polymorphic_automaton, because that routine expects all bindings
 	# to be for actions only.
@@ -655,6 +659,10 @@ def define_predefined_bindings( bindings ):
 	bindings[ 'false' ] = false
 	bindings[ 'true' ] = true
 	bindings[ 'dial_tone' ] = dial_tone
+
+def add_predefined_fallbacks( fallback ):
+	for x in [ 'MONIKER', 'INT' ]:
+		fallback[ x ] = 'SYMBOL'
 
 def define_builtins( action_bindings, enclosing_scope ):
 	name = 'current_thread'
@@ -671,26 +679,27 @@ def define_builtins( action_bindings, enclosing_scope ):
 prologue_text = """
 to take       base key_sharp               python_eval { take( base, key_sharp ) }
 to give       base key_sharp value_sharp   python_exec { give( base, key_sharp, value_sharp ) }
-to get        base key                     python_eval { base[ key ] } /* key can be an int */
+to get        base key:SYMBOL              python_eval { base[ key ] } /* key can be an int */
 to get2       base f1 f2                   python_eval { base[ f1 ][ f2 ] }
-to put        base key:SYMBOL value        python_exec { base[ key ] = value }
+to put        base key:MONIKER value       python_exec { base[ key ] = value }
 to cons       head_sharp tail              python_eval { cons( head_sharp, tail ) }
 to all_fields obj                          python_eval { all_fields( obj ) }
 to sharp      symbol                       python_eval { sharp( symbol ) }
+to tag        obj_sharp                    python_eval { sharp( tag( flat( obj_sharp ) ) ) }
 
 /* This could really just be a binding */
 to current_environment th:THREAD   python_eval { th.activation.cursor.local_scope.digressor }
 
 to set_slow
-	symbol:SYMBOL value
+	symbol:MONIKER value
 do
 	put
 		get2 current_environment current_thread digressor bindings  /* Bindings at the point that 'set' was expanded */
 		symbol
 		value
 
-to set        symbol:SYMBOL value          do set2 symbol value current_thread
-to set2       symbol:SYMBOL value th       python_exec { th.activation.cursor.local_scope.digressor.bindings[ symbol ] = value }
+to set        symbol:MONIKER value          do set2 symbol value current_thread
+to set2       symbol:MONIKER value th       python_exec { th.activation.cursor.local_scope.digressor.bindings[ symbol ] = value }
 
 /* Math */
 to + a b   python_eval { a+b }
@@ -719,27 +728,31 @@ def parse_library( name, string, action_bindings, enclosing_scope ):
 	automaton = polymorphic_automaton( action_bindings )
 	return LIBRARY( name, automaton )
 
-def maybe_int( symbol ):
+def maybe_int( word ):
 	try:
-		return int( symbol, 0 )
+		return int( word, 0 )
 	except( TypeError, ValueError ):
-		return symbol
+		return word
 
-def unpack_symbol( symbol ):
-	if symbol[0] == '{':
-		return maybe_int( symbol[1:-1] )
+def unpack_word( word ):
+	if word[0] == '{':
+		return maybe_int( word[1:-1] )
 	else:
-		return maybe_int( symbol )
+		return maybe_int( word )
 
 def library_words( library_text ):
 	raw_words = re.findall( r'/\*.*?\*/|\{[^}]*\}|\S+(?:/:?\w+#*)?', library_text )
-	words = map( unpack_symbol, filter( lambda s: s[0:2] != '/*', raw_words ) )
+	words = map( unpack_word, filter( lambda s: s[0:2] != '/*', raw_words ) )
 	return List( words )
 
 def FORMAL_ARG( name, symbol ): return Object( 'FORMAL_ARG', name=name, symbol=symbol )
 
 def take_word( word_cursor ):
-	return pop_list( word_cursor, 'current#' )
+	if word_cursor.current is null:
+		return take_failed
+	result = pop_list( word_cursor, 'current#' )
+	#debug( "take_word: %r", result )
+	return result
 
 def parse_arg_list( word_cursor ):
 	return parse_arg_list2( take( word_cursor.current, 'head#' ), word_cursor )
@@ -834,7 +847,8 @@ def polymorphic_automaton( action_bindings ):
 	global use_sheppard_text
 	if use_sheppard_text:
 		use_sheppard_text = False
-		procedure = parse_procedure( "polymorphic_automaton", prologue_text + polymorphic_automaton_text, [ "polymorphic_automaton", action_bindings ], FALLBACK() )
+		fallback = FALLBACK()
+		procedure = parse_procedure( "polymorphic_automaton", prologue_text + polymorphic_automaton_text, [ "polymorphic_automaton", action_bindings ], fallback )
 		# TODO: This following line seems really redundant
 		execute( procedure, procedure.enclosing_scope )
 		# Uh, how do I get the result?
@@ -1073,7 +1087,7 @@ def parse_procedure( name, library_text, script, fallback ):
 	action_bindings = global_scope.bindings # double-duty
 	define_builtins( action_bindings, global_scope )
 	lib = parse_library( name, library_text, action_bindings, global_scope )
-	define_predefined_bindings( global_scope.bindings )
+	add_predefined_bindings( global_scope.bindings )
 	result = PROCEDURE( name, List( script ), DIALECT( lib.initial_state, fallback ), global_scope )
 	if False:
 		debug( "Procedure:\n%s\n", result._description( 1 ) )
@@ -1127,7 +1141,7 @@ def bind_arg( arg_bindings, arg_symbol_sharp, arg_value_sharp ):
 		#debug_bind( "    pop %r", flat( arg_value_sharp ) )
 		pass
 	else:
-		assert( is_a( arg_symbol_sharp, 'SYMBOL' ) )
+		assert( is_a( arg_symbol_sharp, 'MONIKER' ) )
 		give( arg_bindings, arg_symbol_sharp, arg_value_sharp )
 		#debug_bind( "    %s=%r", flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
 
@@ -1152,36 +1166,47 @@ def bound2( obj_sharp, environment, possible_match ):
 		return possible_match
 
 def next_state( state, obj_sharp, fallback, original_obj_for_error_reporting ):
-	# First we check if the object is itself a symbol that has an edge from this
-	# state (ie. it's acting as a keyword).  Failing that, we check the object's
-	# "tag edge symbol" to see if the object is of a type that has an edge.
-	# If that also fails, we recurse over the whole process using the symbol
-	# indicated by the fallback relation.  These successive checks necessitate
-	# not just one next_state2 routine, but another next_state3 routine too.
-	if obj_sharp is take_failed:
-		raise Unexpected_token( state, original_obj_for_error_reporting )
-	else:
-		return next_state2( state, obj_sharp, take( state, obj_sharp ), fallback, original_obj_for_error_reporting )
+	# Pseudocode:
+	#
+	# if take( state, obj_sharp ):
+	#    return that
+	# else:
+	#    t = tag_sharp( obj_sharp )
+	#    while t is not take_failed:
+	#       if take( state, tag_edge_symbol( t ) )
+	#          return that
+	#       else:
+	#          t = fallback[ t ]
+	# raise Unexpected_token
+	#
+	return next_state2( state, obj_sharp, take( state, obj_sharp ), fallback, original_obj_for_error_reporting )
 
 def next_state2( state, obj_sharp, possible_match, fallback, original_obj_for_error_reporting ):
 	if possible_match is take_failed:
-		return next_state3( state, obj_sharp, take( state, tag_edge_symbol(obj_sharp) ), fallback, original_obj_for_error_reporting )
+		tag_sharp = sharp( tag( obj_sharp ) )
+		return next_state_by_tag( state, tag_sharp, fallback, original_obj_for_error_reporting )
 	else:
 		return possible_match
 
-def next_state3( state, obj_sharp, possible_match, fallback, original_obj_for_error_reporting ):
-	if possible_match is take_failed:
-		return next_state( state, get_fallback( fallback, obj_sharp, take( fallback, obj_sharp ) ), fallback, original_obj_for_error_reporting )
+def next_state_by_tag( state, tag_sharp, fallback, original_obj_for_error_reporting ):
+	if tag_sharp is take_failed:
+		raise Unexpected_token( state, original_obj_for_error_reporting )
 	else:
-		return possible_match
+		return next_state_by_tag2( state, tag_sharp, take( state, tag_edge_symbol( tag_sharp ) ), fallback, original_obj_for_error_reporting )
+
+def next_state_by_tag2( state, tag_sharp, possible_next_state, fallback, original_obj_for_error_reporting ):
+	if possible_next_state is take_failed:
+		return next_state_by_tag( state, get_fallback( fallback, tag_sharp, take( fallback, tag_sharp ) ), fallback, original_obj_for_error_reporting )
+	else:
+		return possible_next_state
 
 def get_fallback( fallback, obj_sharp, possible_result ):
 	silence( "get_fallback( %s, %r, %r )", fallback, obj_sharp, possible_result )
 	if possible_result is take_failed:
-		if obj_sharp == ":ANY#":
+		if obj_sharp == "ANY#":
 			return take_failed
 		else:
-			return ":ANY#"
+			return "ANY#"
 	else:
 		return possible_result
 
@@ -1320,12 +1345,12 @@ python_eval
 	{ ENVIRONMENT(**dict( locals() )) }
 
 to tag_edge_symbol
-	obj_sharp
+	tag_sharp
 python_eval
-	{ ':' + tag( flat( obj_sharp ) ) + '#' }
+	{ ':' + tag_sharp }
 
 to pop_list 
-	base field_symbol_sharp:SYMBOL
+	base field_symbol_sharp:MONIKER
 python_eval
 	{ pop_list( base, field_symbol_sharp ) }
 
@@ -1346,7 +1371,7 @@ to bind_arg
 do
 
 to bind_arg 
-	arg_bindings arg_symbol_sharp:SYMBOL arg_value_sharp
+	arg_bindings arg_symbol_sharp:MONIKER arg_value_sharp
 do
 	give arg_bindings arg_symbol_sharp arg_value_sharp
 
@@ -1409,51 +1434,62 @@ do
 		fallback
 		original_obj_for_error_reporting
 
-to next_state 
-	state x=TAKE_FAILED fallback original_obj_for_error_reporting
+
+to next_state2 
+	state obj_sharp possible_match fallback original_obj_for_error_reporting
+do
+	possible_match
+
+to next_state2 
+	state obj_sharp x=TAKE_FAILED fallback original_obj_for_error_reporting
+do
+	set tag_sharp
+		tag obj_sharp
+	next_state_by_tag
+		state
+		tag_sharp
+		fallback
+		original_obj_for_error_reporting
+
+
+to next_state_by_tag
+	state tag_sharp=TAKE_FAILED fallback original_obj_for_error_reporting
 python_exec
 	{ raise Unexpected_token( state, original_obj_for_error_reporting ) }
 
-
-to next_state2 
-	state obj_sharp possible_match fallback original_obj_for_error_reporting
+to next_state_by_tag
+	state tag_sharp fallback original_obj_for_error_reporting
 do
-	possible_match
-
-to next_state2 
-	state obj_sharp x=TAKE_FAILED fallback original_obj_for_error_reporting
-do
-	next_state3
+	next_state_by_tag2
 		state
-		obj_sharp
+		tag_sharp
 		take
 			state
-			tag_edge_symbol obj_sharp
+			tag_edge_symbol tag_sharp
 		fallback
 		original_obj_for_error_reporting
 
-
-to next_state3 
-	state obj_sharp possible_match fallback original_obj_for_error_reporting
+to next_state_by_tag2
+	state tag_sharp possible_next_state fallback original_obj_for_error_reporting
 do
-	possible_match
+	possible_next_state
 
-to next_state3 
-	state obj_sharp x=TAKE_FAILED fallback original_obj_for_error_reporting
+to next_state_by_tag2
+	state tag_sharp x=TAKE_FAILED fallback original_obj_for_error_reporting
 do
-	next_state
+	next_state_by_tag
 		state
 		get_fallback
 			fallback
-			obj_sharp
-			take fallback obj_sharp
+			tag_sharp
+			take fallback tag_sharp
 		fallback
 		original_obj_for_error_reporting
 
 
-to get_fallback  fallback obj_sharp       possible_result              do possible_result
-to get_fallback  fallback obj_sharp       possible_result=TAKE_FAILED  do :ANY#
-to get_fallback  fallback obj_sharp=:ANY# possible_result=TAKE_FAILED  do TAKE_FAILED  /* Holy double dispatch, Batman */
+to get_fallback  fallback obj_sharp      possible_result              do possible_result
+to get_fallback  fallback obj_sharp      possible_result=TAKE_FAILED  do ANY#
+to get_fallback  fallback obj_sharp=ANY# possible_result=TAKE_FAILED  do TAKE_FAILED  /* Holy double dispatch, Batman */
 
 
 to perform  frame action:PYTHON_EXEC    reduce_environment  python_exec { perform_python_exec( frame, action, reduce_environment ) }
@@ -1645,7 +1681,7 @@ def wrap_procedure( inner_procedure ):
 		action_bindings = global_scope.bindings # double-duty
 		define_builtins( action_bindings, global_scope )
 		sheppard_interpreter_library = parse_library( "sheppard_interpreter", prologue_text + meta_interpreter_text, action_bindings, global_scope )
-		define_predefined_bindings( global_scope.bindings )
+		add_predefined_bindings( global_scope.bindings )
 	bindings = global_scope.bindings
 	script = List([ 'execute', inner_procedure, inner_procedure.enclosing_scope ])
 	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, script, DIALECT( sheppard_interpreter_library.initial_state, FALLBACK() ), global_scope )
