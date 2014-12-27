@@ -701,18 +701,18 @@ def define_builtins( action_bindings, enclosing_scope ):
 		enclosing_scope=enclosing_scope )
 
 prologue_text = """
-to take       base key_sharp               python_eval { take( base, key_sharp ) }
-to give       base key_sharp value_sharp   python_exec { give( base, key_sharp, value_sharp ) }
-to get        base key:SYMBOL              python_eval { base[ key ] } /* key can be an int */
-to get2       base f1 f2                   python_eval { base[ f1 ][ f2 ] }
-to put        base key:MONIKER value       python_exec { base[ key ] = value }
-to cons       head_sharp tail              python_eval { cons( head_sharp, tail ) }
-to all_fields obj                          python_eval { all_fields( obj ) }
-to sharp      symbol                       python_eval { sharp( symbol ) }
-to tag        obj_sharp                    python_eval { sharp( tag( flat( obj_sharp ) ) ) }
+to take       base key_sharp               python_eval << take( base, key_sharp ) >>
+to give       base key_sharp value_sharp   python_exec << give( base, key_sharp, value_sharp ) >>
+to get        base key:SYMBOL              python_eval << base[ key ] >> /* key can be an int */
+to get2       base f1 f2                   python_eval << base[ f1 ][ f2 ] >>
+to put        base key:MONIKER value       python_exec << base[ key ] = value >>
+to cons       head_sharp tail              python_eval << cons( head_sharp, tail ) >>
+to all_fields obj                          python_eval << all_fields( obj ) >>
+to sharp      symbol                       python_eval << sharp( symbol ) >>
+to tag        obj_sharp                    python_eval << sharp( tag( flat( obj_sharp ) ) ) >>
 
 /* This could really just be a binding */
-to current_environment th:THREAD   python_eval { th.activation.cursor.local_scope.digressor }
+to current_environment th:THREAD   python_eval << th.activation.cursor.local_scope.digressor >>
 
 to set_slow
 	symbol:MONIKER value
@@ -723,11 +723,11 @@ do
 		value
 
 to set        symbol:MONIKER value          do set2 symbol value current_thread
-to set2       symbol:MONIKER value th       python_exec { th.activation.cursor.local_scope.digressor.bindings[ symbol ] = value }
+to set2       symbol:MONIKER value th       python_exec << th.activation.cursor.local_scope.digressor.bindings[ symbol ] = value >>
 
 /* Math */
-to + a b   python_eval { a+b }
-to - a b   python_eval { a-b }
+to + a b   python_eval << a+b >>
+to - a b   python_eval << a-b >>
 
 """
 
@@ -759,13 +759,13 @@ def maybe_int( word ):
 		return word
 
 def unpack_word( word ):
-	if word[0] == '{':
-		return maybe_int( word[1:-1] )
+	if word.startswith( "<<" ):
+		return maybe_int( word[2:-2] )
 	else:
 		return maybe_int( word )
 
 def library_words( library_text ):
-	raw_words = re.findall( r'/\*.*?\*/|\{[^}]*\}|\S+(?:/:?\w+#*)?', library_text )
+	raw_words = re.findall( r'/\*.*?\*/|<<.*>>|\S+(?:/:?\w+#*)?', library_text )
 	words = map( unpack_word, filter( lambda s: s[0:2] != '/*', raw_words ) )
 	return List( words )
 
@@ -951,15 +951,15 @@ def connect_keywords_to_state( initial_state, bound_symbols, index, shift_state 
 		connect_keywords_to_state( initial_state, bound_symbols, index-1, shift_state )
 
 polymorphic_automaton_text = r"""
-to Shift                          python_eval { Shift() }
-to Reduce0  action_symbol_sharp   python_eval { Reduce0( flat( action_symbol_sharp ) ) }
-to Accept                         python_eval { Accept() }
-to ShiftStateCollector state      python_eval { Object( 'SHIFT_STATE_COLLECTOR', first = cons( state, null ) ) }
+to Shift                          python_eval << Shift() >>
+to Reduce0  action_symbol_sharp   python_eval << Reduce0( flat( action_symbol_sharp ) ) >>
+to Accept                         python_eval << Accept() >>
+to ShiftStateCollector state      python_eval << Object( 'SHIFT_STATE_COLLECTOR', first = cons( state, null ) ) >>
 
 to print_automaton
 	initial_state
 python_exec
-	{ debug( ' Automaton:\n%s\n', shogun( initial_state ) ) }
+	<< debug( ' Automaton:\n%s\n', shogun( initial_state ) ) >>
 
 to polymorphic_automaton
 	action_bindings
@@ -1351,32 +1351,32 @@ meta_interpreter_text = """
 to Digression
 	tokens local_scope resumption
 python_eval
-	{ DIGRESSION(**dict( locals() )) }
+	<< DIGRESSION(**dict( locals() )) >>
 
 to Activation
 	cursor operands history action_bindings fallback caller
 python_eval
-	{ ACTIVATION(**dict( locals() )) }
+	<< ACTIVATION(**dict( locals() )) >>
 
 to Thread
 	activation meta_thread
 python_eval
-	{ THREAD(**dict( locals() )) }
+	<< THREAD(**dict( locals() )) >>
 
 to Environment
 	outer
 python_eval
-	{ ENVIRONMENT(**dict( locals() )) }
+	<< ENVIRONMENT(**dict( locals() )) >>
 
 to tag_edge_symbol
 	tag_sharp
 python_eval
-	{ ':' + tag_sharp }
+	<< ':' + tag_sharp >>
 
 to pop_list 
 	base field_symbol_sharp:MONIKER
 python_eval
-	{ pop_list( base, field_symbol_sharp ) }
+	<< pop_list( base, field_symbol_sharp ) >>
 
 
 to end_digression_if_finished 
@@ -1479,7 +1479,7 @@ do
 to next_state_by_tag
 	state tag_sharp=TAKE_FAILED fallback original_obj_for_error_reporting
 python_exec
-	{ raise Unexpected_token( state, original_obj_for_error_reporting ) }
+	<< raise Unexpected_token( state, original_obj_for_error_reporting ) >>
 
 to next_state_by_tag
 	state tag_sharp fallback original_obj_for_error_reporting
@@ -1516,9 +1516,9 @@ to get_fallback  fallback obj_sharp      possible_result=TAKE_FAILED  do ANY#
 to get_fallback  fallback obj_sharp=ANY# possible_result=TAKE_FAILED  do TAKE_FAILED  /* Holy double dispatch, Batman */
 
 
-to perform  frame action:PYTHON_EXEC    reduce_environment  python_exec { perform_python_exec( frame, action, reduce_environment ) }
-to perform  frame action:PYTHON_EVAL    reduce_environment  python_exec { perform_python_eval( frame, action, reduce_environment ) }
-to perform  frame action:CURRENT_THREAD reduce_environment  python_exec { perform_current_thread( frame, action, reduce_environment ) }
+to perform  frame action:PYTHON_EXEC    reduce_environment  python_exec << perform_python_exec( frame, action, reduce_environment ) >>
+to perform  frame action:PYTHON_EVAL    reduce_environment  python_exec << perform_python_eval( frame, action, reduce_environment ) >>
+to perform  frame action:CURRENT_THREAD reduce_environment  python_exec << perform_current_thread( frame, action, reduce_environment ) >>
 to perform  frame action:MACRO          reduce_environment  do          /* Macros just expand into a digression, and that's it. */
 
 
@@ -1593,10 +1593,10 @@ do
 	true
 
 
-to print_stuff        frame                             python_exec { print_stuff( frame.thread ) }
-to print_reduce_stuff frame action reduce_environment   python_exec { print_reduce_stuff( frame.thread, action, reduce_environment ) }
-to print_program      frame                             python_exec { print_program( frame.thread ) }
-to print              obj                               python_exec { print str( obj ) }
+to print_stuff        frame                             python_exec << print_stuff( frame.thread ) >>
+to print_reduce_stuff frame action reduce_environment   python_exec << print_reduce_stuff( frame.thread, action, reduce_environment ) >>
+to print_program      frame                             python_exec << print_program( frame.thread ) >>
+to print              obj                               python_exec << print str( obj ) >>
 
 
 to execute 
@@ -1652,6 +1652,17 @@ do
 	give base field_symbol_sharp
 		take current tail#
 	result
+
+to print_fields
+	obj
+do
+	for each field in obj
+		/* Hypothetical quasiquote syntax, with obj inserted into the list */
+		do { print get ${ obj } field }
+		/* Without unquoting, with the symbol "obj" inserted.  This may be equivalent depending on binding rules. */
+		do { print get obj field }
+	if x then { print hello }
+
 """
 
 
@@ -1686,10 +1697,10 @@ to fib  n  do
 		fib - n 1
 		fib - n 2
 
-to + a b   python_eval { a+b }
-to - a b   python_eval { a-b }
+to + a b   python_eval << a+b >>
+to - a b   python_eval << a-b >>
 
-to print_result  n  python_exec { print "*** RESULT IS", n, "***" }
+to print_result  n  python_exec << print "*** RESULT IS", n, "***" >>
 """
 
 def fib_procedure():
