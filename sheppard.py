@@ -201,6 +201,18 @@ class Object:
 
 	def __nonzero__( self ): return self != 0 and self != null
 
+	# Most Sheppard objects can't be dict keys (i.e. they are not symbols)
+
+	def __hash__( self ):
+		# Prevent most Sheppard objects from being hashed.  We raise KeyError to
+		# make getitem and setitem act like they don't have data for the given
+		# (illegal) "key" object, which I think is usually how we want them to behave.
+		raise KeyError( '%r is not a symbol' % self )
+
+	# Note: I'd also like to un-define __eq__ because I think having __eq__
+	# default to identity comparison may be unwise.  However, it's so damn handy
+	# in Python that un-defining __eq__ would cause undue hardship.
+
 class Null( Object ): # Just to make debugging messages more informative
 
 	def __init__( self ):
@@ -213,6 +225,19 @@ class Null( Object ): # Just to make debugging messages more informative
 		return "null"
 
 null = Null()  # The very first object!  It gets _id=0
+
+class Anonymous_symbol( Object ):
+
+	def __init__( self, prefix=None ):
+		Object.__init__( self, "ANON" )
+		if prefix is not None:
+			self._name = "%s#%d" % ( prefix, self._id )
+
+	def __hash__( self ): return id( self )
+
+	def __eq__( self, other ): return self is other
+
+def ANON( prefix=None ): return Anonymous_symbol( prefix )
 
 # These need to be disembodied functions.  They can't be methods, because some
 # Sheppard objects like monikers are represented by plain old Python objects like
@@ -271,9 +296,9 @@ def sharp( arg ):
 		# ambiguity for now by considering colons to bind more tightly than
 		# sharps, so ':INT#' is '#:INT' in prefix notation; seems we haven't had
 		# a use for ':#INT' yet.  Maybe we never will?
-		return arg + '#'
-	elif is_a( arg, 'INT' ):
-		return Object( 'INT', value=arg ) # Wrap arg (which may be a python int) in an Object of type INT; TODO: INT is the wrong type here.  Should be SHARP_INT or something.
+		return arg + '#'  # Hmm, should this be considered a SHARPED_SYMBOL?  Right now it would just be another MONIKER.  I guess that's a job for is_a once it handles inheritance.
+	elif is_a( arg, 'INT' ) or is_a( arg, 'ANON' ):
+		return Object( 'SHARPED_SYMBOL', value=arg )
 	else:
 		return arg
 
@@ -281,7 +306,7 @@ def flat( arg ):
 	if isinstance( arg, str ): #if is_a( arg, 'MONIKER' ):
 		assert( arg[-1] == '#' )
 		return arg[:-1]
-	elif is_a( arg, 'INT' ):
+	elif is_a( arg, 'SHARPED_SYMBOL' ):
 		#debug( "flat( %s ) = %s", arg, arg.value )
 		return arg.value
 	else:
@@ -684,7 +709,7 @@ def add_predefined_bindings( bindings ):
 	bindings[ 'eta' ]     = eta
 
 def add_predefined_fallbacks( fallback ):
-	for x in [ 'MONIKER', 'INT' ]:
+	for x in [ 'MONIKER', 'INT', 'ANON', 'SHARPED_SYMBOL' ]:
 		fallback[ x ] = 'SYMBOL'
 	fallback[ 'DIAL_TONE' ] = 'DIGRESSION'
 
@@ -703,7 +728,7 @@ def define_builtins( action_bindings, enclosing_scope ):
 prologue_text = """
 to take       base key_sharp               python_eval << take( base, key_sharp ) >>
 to give       base key_sharp value_sharp   python_exec << give( base, key_sharp, value_sharp ) >>
-to get        base key:SYMBOL              python_eval << base[ key ] >> /* key can be an int */
+to get        base key:SYMBOL              python_eval << base[ key ] >>
 to get2       base f1 f2                   python_eval << base[ f1 ][ f2 ] >>
 to put        base key:MONIKER value       python_exec << base[ key ] = value >>
 to cons       head_sharp tail              python_eval << cons( head_sharp, tail ) >>
