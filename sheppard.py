@@ -583,9 +583,7 @@ def PYTHON_EVAL( name, expression, formal_arg_names, formal_arg_types, enclosing
 def PYTHON_EXEC( name, statement, formal_arg_names, formal_arg_types, enclosing_scope ):
 	return Object( 'PYTHON_EXEC', name=name, script=null, statement=statement, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, enclosing_scope=enclosing_scope )
 
-def PRODUCTION( lhs, rhs, action ): return Object( 'PRODUCTION', lhs=lhs, rhs=rhs, action=action )
-
-def Reduce0( action ): return Object( 'REDUCE0', action=action )
+def Reduce0( action_symbol ): return Object( 'REDUCE0', action_symbol=action_symbol )
 def Accept(): return Object( 'ACCEPT' )
 def Shift( **edges ):
 	# For convenience, we stick a colon on the front of each uppercase field name because that's probably what you want
@@ -898,7 +896,6 @@ def polymorphic_automaton( action_bindings ):
 		use_sheppard_text = False
 		fallback = FALLBACK()
 		procedure = parse_procedure( "polymorphic_automaton", prologue_text + polymorphic_automaton_text, [ "polymorphic_automaton", action_bindings ], fallback )
-		# TODO: This following line seems really redundant
 		execute( procedure, procedure.enclosing_scope )
 		# Uh, how do I get the result?
 	if True:
@@ -911,13 +908,12 @@ def polymorphic_automaton( action_bindings ):
 		bound_symbols = all_fields( action_bindings )
 		debug_ppa( "    Bound symbols: %s", bound_symbols )
 		make_branches( initial_state, bound_symbols, bound_symbols.length, all_shift_states )
-		# Names are effectively keywords.  Any time we see one of those, whatever shift state we are in, we leap to that name_state
+		# Names are effectively keywords.  Any time we see one of those, whatever shift state we are in, we leap to that name's state.
 		debug_ppa( "  Connecting keywords" )
 		connect_keywords( initial_state, bound_symbols, bound_symbols.length, all_shift_states.first )
 		# The accept state
 		initial_state[ ':EOF' ] = Accept()
 		debug_ppa( '  EOF => %s', initial_state[ ':EOF' ] )
-		#debug_ppa( ' Automaton:\n%s\n', initial_state._description( 1 ) )
 		debug_ppa( ' Automaton:\n%s\n', shogun( initial_state ) )
 		#debug( ' Automaton again:\n%s\n', shogun( deshogun( shogun( initial_state ) ) ) )
 		return initial_state
@@ -928,7 +924,6 @@ def make_branches( initial_state, bound_symbols, index, all_shift_states ):
 	else:
 		action_symbol_sharp = take( bound_symbols, sharp( index ) )
 		action = take( bound_symbols.subject, action_symbol_sharp )
-		name = action.name
 		tip = extend_branch( initial_state, action.formal_arg_types.tail, all_shift_states )
 		reduce_state = Reduce0( flat( action_symbol_sharp ) )
 		reduce_word_sharp = take( action.formal_arg_types, 'head#' )
@@ -1023,8 +1018,6 @@ do
 		take
 			get bound_symbols subject
 			action_symbol_sharp
-	set name
-		get action name
 	set tip
 		extend_branch
 			initial_state
@@ -1148,9 +1141,9 @@ def parse_procedure( name, library_text, script, fallback ):
 # Proper parser generator.
 #
 
-class Grammar:
-	pass
-	# TODO: productions, nullable_symbols
+def PRODUCTION( lhs, rhs, action_symbol ): return Object( 'PRODUCTION', lhs=lhs, rhs=rhs, action_symbol=action_symbol )
+
+def GRAMMAR( goal_symbol, productions ): return Object( 'GRAMMAR', goal_symbol=goal_symbol, productions=productions )
 
 def or_changed( target, source ):
 	if target >= source:
@@ -1159,7 +1152,31 @@ def or_changed( target, source ):
 		target |= source
 		return True
 
-def first_sets( grammar ):
+def nullable_symbols( grammar ):
+	result = set()
+	while add_nullable_symbols( result, grammar.productions ):
+		pass
+	return result
+
+def add_nullable_symbols( result, productions ):
+	something_changed = False
+	while productions is not null:
+		production = productions.head
+		if production.lhs not in result and are_all_nullable( production.rhs, result ):
+			result.add( productions.lhs )
+			something_changed = True
+		productions = productions.tail
+	return something_changed
+
+def are_all_nullable( symbols, nullable_symbols ):
+	while symbols is not null:
+		if symbols.head in nullable_symbols:
+			symbols = symbols.tail
+		else:
+			return False
+	return True
+
+def first_sets( grammar, nullable_symbols ):
 	first_by_symbol = {}
 	def first( symbol ):
 		try:
@@ -1174,11 +1191,11 @@ def first_sets( grammar ):
 			lhs = production.lhs
 			for symbol in production.rhs:
 				something_changed |= or_changed( first(lhs), first(symbol) )
-				if symbol in grammar.nullable_symbols:
+				if symbol in nullable_symbols:
 					break
 	return first_by_symbol
 
-def follow_sets( grammar, first_by_symbol ):
+def follow_sets( grammar, nullable_symbols, first_by_symbol ):
 	follow_by_symbol = {}
 	def follow( symbol ):
 		try:
@@ -1197,7 +1214,7 @@ def follow_sets( grammar, first_by_symbol ):
 				for ( i, symbol ) in reversed(list(enumerate( production.rhs[:-1] ))):
 					next_symbol = production.rhs[ i+1 ]
 					something_changed |= or_changed( follow( symbol ), first( next_symbol ) )
-					if next_symbol in grammar.nullable_symbols:
+					if next_symbol in nullable_symbols:
 						something_changed |= or_changed( follow( symbol ), follow( next_symbol ) )
 	return follow_by_symbol
 
@@ -1383,8 +1400,8 @@ def process_reduce0( frame, state ):
 		debug_reduce = silence
 		debug2_reduce = silence
 	print_stuff( frame.thread )
-	#debug2_reduce( ">-- reduce0 %s --", state.action )
-	action = bound( take( state, 'action#' ), frame.action_bindings ) # 'take' here just to get a sharp result
+	#debug2_reduce( ">-- reduce0 %s --", state.action_symbol )
+	action = bound( take( state, 'action_symbol#' ), frame.action_bindings ) # 'take' here just to get a sharp result
 	#debug2_reduce( "  action: %r", action )
 	#if is_a( action, 'MACRO' ):
 	#	debug_reduce( "    %s", python_list( action.script ) )
@@ -1646,7 +1663,7 @@ do
 	print_stuff frame
 	set action
 		bound
-			take state action#
+			take state action_symbol#
 			get frame action_bindings
 	set reduce_environment
 		Environment
