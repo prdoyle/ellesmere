@@ -1129,8 +1129,6 @@ do
 		shift_state
 """
 
-# parse_procedure
-
 def parse_procedure( name, library_text, script, fallback ):
 	global_scope = ENVIRONMENT( null )
 	action_bindings = global_scope.bindings # double-duty
@@ -1144,6 +1142,64 @@ def parse_procedure( name, library_text, script, fallback ):
 		debug( "Procedure:\n%s\n", shogun( result ) )
 	return result
 
+
+#####################################
+#
+# Proper parser generator.
+#
+
+class Grammar:
+	pass
+	# TODO: productions, nullable_symbols
+
+def or_changed( target, source ):
+	if target >= source:
+		return False
+	else:
+		target |= source
+		return True
+
+def first_sets( grammar ):
+	first_by_symbol = {}
+	def first( symbol ):
+		try:
+			return first_by_symbol[ symbol ]
+		except KeyError:
+			first_by_symbol[ symbol ] = set()
+			return first( symbol )
+	something_changed = True
+	while something_changed:
+		something_changed = False
+		for production in grammar.productions:
+			lhs = production.lhs
+			for symbol in production.rhs:
+				something_changed |= or_changed( first(lhs), first(symbol) )
+				if symbol in grammar.nullable_symbols:
+					break
+	return first_by_symbol
+
+def follow_sets( grammar, first_by_symbol ):
+	follow_by_symbol = {}
+	def follow( symbol ):
+		try:
+			return follow_by_symbol[ symbol ]
+		except KeyError:
+			follow_by_symbol[ symbol ] = set()
+			return follow( symbol )
+	something_changed = True
+	while something_changed:
+		something_changed = False
+		for production in grammar.productions:
+			lhs = production.lhs
+			rhs = production.rhs
+			if len( rhs ) >= 1:
+				something_changed != or_changed( follow( rhs[-1] ), follow( lhs ) )
+				for ( i, symbol ) in reversed(list(enumerate( production.rhs[:-1] ))):
+					next_symbol = production.rhs[ i+1 ]
+					something_changed |= or_changed( follow( symbol ), first( next_symbol ) )
+					if next_symbol in grammar.nullable_symbols:
+						something_changed |= or_changed( follow( symbol ), follow( next_symbol ) )
+	return follow_by_symbol
 
 #####################################
 #
