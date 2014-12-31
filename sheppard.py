@@ -96,6 +96,8 @@ class Object:
 		#debug_object( "setitem %r[ %r ] = %r", self, key, value )
 		try:
 			setattr( self, key, value )
+			if key[0] == '_':
+				raise KeyError
 			if not key in self._fields:
 				self._fields.append( key )
 		except TypeError:
@@ -329,7 +331,8 @@ def get_index( obj, obj_list ):
 		return len( obj_list ) - 1
 
 def shogun( obj ):
-	"""SHeppard Object Graph Unicode Notation"""
+	"""Sheppard Object Graph Unicode Notation"""
+	debug_shogun( "shogun( %r )", obj )
 	objects = [ null, obj ]
 	result = "{\n"
 	i = 1
@@ -366,10 +369,12 @@ def shogun_list_elements( obj, objects, length_limit ):
 	elif tag( obj ) == 'LIST':
 		try:
 			# Can't do relocations in here yet, so we don't want "@" references, so pass None as the objects list
+			debug_shogun( "  Checking for %r.head", obj )
 			value_str = shogun_value( obj.head, None )
+			debug_shogun( "  Recursing for %r.tail", obj )
+			return [ value_str ] + shogun_list_elements( obj.tail, objects, length_limit-1 )
 		except AttributeError:
 			raise NotAListError
-		return [ value_str ] + shogun_list_elements( obj.tail, objects, length_limit-1 )
 	else:
 		raise NotAListError
 
@@ -498,7 +503,11 @@ def pop_list_words( words, depth=1 ):
 
 # Object constructors
 
-def LIST( head, tail ): return Object( 'LIST', head=head, tail=tail, _fields=['head','tail'] )
+def LIST( head, tail ):
+	result = Object( 'LIST', head=head, tail=tail )
+	result._fields = ['head','tail'] # We want them in this order just for readability
+	return result
+
 def List( items ):
 	if items:
 		return LIST( items[0], List( items[1:] ) )
