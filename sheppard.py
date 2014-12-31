@@ -568,7 +568,7 @@ eta     = 'η'
 
 def ACTIVATION( cursor, operands, history, action_bindings, fallback, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, action_bindings=action_bindings, fallback=fallback, caller=caller )
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
-def DIALECT( initial_state, fallback ): return Object( 'DIALECT', initial_state=initial_state, fallback=fallback )
+def AUTOMATON( initial_state, fallback ): return Object( 'AUTOMATON', initial_state=initial_state, fallback=fallback )
 def PROCEDURE( name, script, dialect, enclosing_scope ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, enclosing_scope=enclosing_scope )
 
 def FALLBACK( **bindings ):
@@ -595,7 +595,7 @@ def Shift( **edges ):
 			result[     name ] = value
 	return result
 
-def LIBRARY( name, initial_state ): return Object( 'LIBRARY', name=name, initial_state=initial_state )
+def LIBRARY( name, automaton ): return Object( 'LIBRARY', name=name, automaton=automaton ) # TODO: LIBRARY should be ( grammar, action_bindings )
 
 # A few functions to help with the Python / Sheppard impedance mismatch
 
@@ -632,7 +632,7 @@ def tag_edge_symbol( tag_sharp ):
 	return ':' + tag_sharp
 
 # These functions operate in sharp-land, so they're safe to call directly from
-# a Sheppard program without interfering with the automaton
+# a Sheppard program without interfering with the execution of the automaton
 
 def give( obj, key_sharp, value_sharp ):
 	#debug( "--GIVE-- %r . %r = %r", obj, flat(key_sharp), flat(value_sharp) )
@@ -894,8 +894,7 @@ def polymorphic_automaton( action_bindings ):
 	global use_sheppard_text
 	if use_sheppard_text:
 		use_sheppard_text = False
-		fallback = FALLBACK()
-		procedure = parse_procedure( "polymorphic_automaton", prologue_text + polymorphic_automaton_text, [ "polymorphic_automaton", action_bindings ], fallback )
+		procedure = parse_procedure( "polymorphic_automaton", prologue_text + polymorphic_automaton_text, [ "polymorphic_automaton", action_bindings ] )
 		execute( procedure, procedure.enclosing_scope )
 		# Uh, how do I get the result?
 	if True:
@@ -916,7 +915,7 @@ def polymorphic_automaton( action_bindings ):
 		debug_ppa( '  EOF => %s', initial_state[ ':EOF' ] )
 		debug_ppa( ' Automaton:\n%s\n', shogun( initial_state ) )
 		#debug( ' Automaton again:\n%s\n', shogun( deshogun( shogun( initial_state ) ) ) )
-		return initial_state
+		return AUTOMATON( initial_state, FALLBACK() )
 
 def make_branches( initial_state, bound_symbols, index, all_shift_states ):
 	if index == 0:
@@ -971,10 +970,11 @@ def connect_keywords_to_state( initial_state, bound_symbols, index, shift_state 
 		connect_keywords_to_state( initial_state, bound_symbols, index-1, shift_state )
 
 polymorphic_automaton_text = r"""
-to Shift                          python_eval << Shift() >>
-to Reduce0  action_symbol_sharp   python_eval << Reduce0( flat( action_symbol_sharp ) ) >>
-to Accept                         python_eval << Accept() >>
-to ShiftStateCollector state      python_eval << Object( 'SHIFT_STATE_COLLECTOR', first = cons( state, null ) ) >>
+to Shift                              python_eval << Shift() >>
+to Reduce0  action_symbol_sharp       python_eval << Reduce0( flat( action_symbol_sharp ) ) >>
+to Accept                             python_eval << Accept() >>
+to ShiftStateCollector  state         python_eval << Object( 'SHIFT_STATE_COLLECTOR', first = cons( state, null ) ) >>
+to Automaton  initial_state           python_eval << Automaton( initial_state, FALLBACK() ) >>
 
 to print_automaton
 	initial_state
@@ -1002,7 +1002,7 @@ do
 		get all_shift_states first
 	put initial_state :EOF
 		Accept
-	print_automaton initial_state
+	print_automaton Automaton initial_state
 
 
 to make_branches
@@ -1122,13 +1122,13 @@ do
 		shift_state
 """
 
-def parse_procedure( name, library_text, script, fallback ):
+def parse_procedure( name, library_text, script ):
 	global_scope = ENVIRONMENT( null )
 	action_bindings = global_scope.bindings # double-duty
 	define_builtins( action_bindings, global_scope )
 	lib = parse_library( name, library_text, action_bindings, global_scope )
 	add_predefined_bindings( global_scope.bindings )
-	result = PROCEDURE( name, List( script ), DIALECT( lib.initial_state, fallback ), global_scope )
+	result = PROCEDURE( name, List( script ), lib.automaton, global_scope )
 	if False:
 		debug( "Procedure:\n%s\n", result._description( 1 ) )
 	if False:
@@ -1802,9 +1802,7 @@ to print_result  n  python_exec << print "*** RESULT IS", n, "***" >>
 """
 
 def fib_procedure():
-	fallback = FALLBACK()
-	# fallback[ 0 ] = 1  # Just to test fallbacks
-	return parse_procedure( "fib", fib_text, [ 'print_result', 'fib', 2 ], fallback )
+	return parse_procedure( "fib", fib_text, [ 'print_result', 'fib', 2 ] )
 
 sheppard_interpreter_library = None
 def wrap_procedure( inner_procedure ):
@@ -1817,7 +1815,7 @@ def wrap_procedure( inner_procedure ):
 		add_predefined_bindings( global_scope.bindings )
 	bindings = global_scope.bindings
 	script = List([ 'execute', inner_procedure, inner_procedure.enclosing_scope ])
-	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, script, DIALECT( sheppard_interpreter_library.initial_state, FALLBACK() ), global_scope )
+	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, script, sheppard_interpreter_library.automaton, global_scope )
 	return outer_procedure
 
 def test( depth, plt ):
@@ -1878,7 +1876,6 @@ else:
 #
 # Cleanup:
 # - Change get/set/put so the only way to get a flat symbol on the operand stack is by calling "flat"
-# - Rearrange symbols so there are three kinds: names, numbers, and anonymous "fresh" symbols
 # - Figure out a way to have Sheppard procedures return a value.  Currently, we only reach Accept on EOF, so the final crud pushed on the stack may not be parseable.
 #
 # Possible:
@@ -1889,5 +1886,8 @@ else:
 # - get should sharp its result, and put should take a sharp value.  Difference from give/take would be that get/put take un-sharped field symbols.
 # - getattr/setattr and getitem/setitem on Object probably should NOT sharp/flat things.  When we're in Python code, it should act like Python code, or it's too confusing.
 # - probably remove the _sharp suffixes everywhere because that can be taken for granted.
-# 
+#
+# Libraries, grammars, procedures, etc.
+# - LIBRARY can be ( productions, action_bindings ).  Automaton can be done separately from the productions.
+#
 
