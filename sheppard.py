@@ -580,7 +580,7 @@ eta     = 'η'
 def ACTIVATION( cursor, operands, history, action_bindings, fallback, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, action_bindings=action_bindings, fallback=fallback, caller=caller )
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
 def AUTOMATON( initial_state, fallback ): return Object( 'AUTOMATON', initial_state=initial_state, fallback=fallback )
-def PROCEDURE( name, script, dialect, enclosing_scope ): return Object( 'PROCEDURE', name=name, script=script, dialect=dialect, enclosing_scope=enclosing_scope )
+def PROCEDURE( name, script, automaton, enclosing_scope ): return Object( 'PROCEDURE', name=name, script=script, automaton=automaton, enclosing_scope=enclosing_scope )
 
 def FALLBACK( **bindings ):
 	result = Object( 'FALLBACK', **bindings )
@@ -590,9 +590,9 @@ def FALLBACK( **bindings ):
 def MACRO( name, script, formal_arg_names, formal_arg_types, enclosing_scope ):
 	return Object( 'MACRO', name=name, script=script, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, enclosing_scope=enclosing_scope )
 def PYTHON_EVAL( name, expression, formal_arg_names, formal_arg_types, enclosing_scope ):
-	return Object( 'PYTHON_EVAL', name=name, script=null, expression=expression, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, enclosing_scope=enclosing_scope )
+	return Object( 'PYTHON_EVAL', name=name, expression=expression, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, enclosing_scope=enclosing_scope )
 def PYTHON_EXEC( name, statement, formal_arg_names, formal_arg_types, enclosing_scope ):
-	return Object( 'PYTHON_EXEC', name=name, script=null, statement=statement, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, enclosing_scope=enclosing_scope )
+	return Object( 'PYTHON_EXEC', name=name, statement=statement, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, enclosing_scope=enclosing_scope )
 
 def Reduce0( action_symbol ): return Object( 'REDUCE0', action_symbol=action_symbol )
 def Accept(): return Object( 'ACCEPT' )
@@ -729,7 +729,6 @@ def define_builtins( action_bindings, enclosing_scope ):
 	action_bindings[ 'ACTION_current_thread' ] = Object(
 		'CURRENT_THREAD',
 		name=name,
-		script=null,
 		formal_arg_names=arg_name_stack,
 		formal_arg_types=arg_type_stack,
 		enclosing_scope=enclosing_scope )
@@ -1345,7 +1344,7 @@ def perform( frame, action, reduce_environment ):
 	elif is_a( action, 'CURRENT_THREAD' ):
 		perform_current_thread( frame, action, reduce_environment )
 	else:
-		# MACRO
+		assert( is_a( action, 'MACRO' ) )
 		frame[ 'cursor' ] = DIGRESSION( action.script, reduce_environment, frame.cursor )
 
 def perform_python_exec( frame, action, reduce_environment ):
@@ -1408,8 +1407,8 @@ def process_reduce0( frame, state ):
 	#debug2_reduce( ">-- reduce0 %s --", state.action_symbol )
 	action = bound( take( state, 'action_symbol#' ), frame.action_bindings ) # 'take' here just to get a sharp result
 	#debug2_reduce( "  action: %s", action )
-	if is_a( action, 'MACRO' ):
-		debug_reduce( "    %s", python_list( action.script ) )
+	#if is_a( action, 'MACRO' ):
+	#	debug_reduce( "    %s", python_list( action.script ) )
 	reduce_environment = ENVIRONMENT( action.enclosing_scope )
 	#debug2_reduce( "  environment1: %s with %s", reduce_environment, reduce_environment.bindings )
 	bind_args( frame, reduce_environment.bindings, action.formal_arg_names )
@@ -1429,7 +1428,7 @@ process = {
 	}
 
 def execute( procedure, action_bindings ): # One day we can get partial evaluation by having static and dynamic action_bindings
-	frame = ACTIVATION( DIGRESSION( procedure.script, ENVIRONMENT( procedure.enclosing_scope ), dial_tone ), null, LIST( procedure.dialect.initial_state, null ), action_bindings, procedure.dialect.fallback, null )
+	frame = ACTIVATION( DIGRESSION( procedure.script, ENVIRONMENT( procedure.enclosing_scope ), dial_tone ), null, LIST( procedure.automaton.initial_state, null ), action_bindings, procedure.automaton.fallback, null )
 	global current_thread # Allow us to print debug info without passing this all over the place
 	current_thread = THREAD( frame, null )
 	frame[ 'thread' ] = current_thread # I don't love this back link, but it's really handy and efficient
@@ -1715,10 +1714,10 @@ do
 				dial_tone
 			null  /* Empty operand stack */
 			cons
-				get2 procedure dialect initial_state
+				get2 procedure automaton initial_state
 				null
 			action_bindings
-			get2 procedure dialect fallback
+			get2 procedure automaton fallback
 			null  /* No caller */
 	put frame thread  /* Putting a thread pointer in each frame seems wasteful, but it's handy */
 		Thread frame current_thread
@@ -1835,7 +1834,7 @@ def test( depth, plt ):
 		debug( "procedure: %s", str( procedure ) )
 		debug( "   script: %s", str( procedure.script ) )
 		debug( " bindings: %s", str( procedure.enclosing_scope.bindings ) )
-		#debug( "  dialect: %s", procedure.dialect._description() )
+		#debug( "automaton: %s", procedure.automaton._description() )
 	if False:
 		s1 = shogun( procedure )
 		file("s1.txt", "w").write(s1)
