@@ -130,10 +130,12 @@ class Object:
 			return self._name
 		except AttributeError:
 			pass
-		try:
-			return repr( self.value ) + "#"
-		except AttributeError:
-			pass
+		if is_a( self, 'SHARPED_SYMBOL' ):
+			try:
+				return repr( self.value ) + "#"
+			except AttributeError:
+				# This can happen if we have debug output enabled during the construction of a SHARPED_SYMBOL
+				pass
 		return "%s_%d" % ( self._tag, self._id )
 
 	def __str__( self ):
@@ -644,7 +646,7 @@ def tag_edge_symbol( tag_sharp ):
 # a Sheppard program without interfering with the execution of the automaton
 
 def give( obj, key_sharp, value_sharp ):
-	#debug( "--GIVE-- %r . %r = %r", obj, flat(key_sharp), flat(value_sharp) )
+	#debug( "--GIVE-- %d %r . %r = %r", id(obj), obj, flat(key_sharp), flat(value_sharp) )
 	obj[ flat(key_sharp) ] = flat( value_sharp )
 
 take_failed = 'TAKE_FAILED'  # TODO: Why is this uppercase if it's not a type?
@@ -744,18 +746,10 @@ to sharp      symbol                       python_eval << sharp( symbol ) >>
 to tag        obj_sharp                    python_eval << sharp( tag( flat( obj_sharp ) ) ) >>
 
 /* This could really just be a binding */
-to current_environment th:THREAD   python_eval << th.activation.cursor.local_scope.digressor >>
-
-to set_slow
-	symbol:MONIKER value
-do
-	put
-		get2 current_environment current_thread digressor bindings  /* Bindings at the point that 'set' was expanded */
-		symbol
-		value
+to current_environment th:THREAD   python_eval << th.activation.cursor.local_scope >>
 
 to set        symbol:MONIKER value          do set2 symbol value current_thread
-to set2       symbol:MONIKER value th       python_exec << th.activation.cursor.local_scope.digressor.bindings[ symbol ] = value >>
+to set2       symbol:MONIKER value th       python_exec << th.activation.cursor.local_scope.bindings[ symbol ] = value >>
 
 /* Math */
 to + a b   python_eval << a+b >>
@@ -1268,13 +1262,14 @@ def end_digression_if_finished( frame, remaining_tokens ):
 
 def bind_arg( arg_bindings, arg_symbol_sharp, arg_value_sharp ):
 	debug_bind = silence
+	#debug_bind( "  bind_arg( %r, %r, %r )", arg_bindings, flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
 	if arg_symbol_sharp is null: # is_a( arg_symbol_sharp, 'NULL' )
 		#debug_bind( "    pop %r", flat( arg_value_sharp ) )
 		pass
 	else:
 		assert( is_a( arg_symbol_sharp, 'MONIKER' ) )
 		give( arg_bindings, arg_symbol_sharp, arg_value_sharp )
-		#debug_bind( "    %s=%r", flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
+		#debug_bind( "    %r.%s=%r", arg_bindings, flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
 
 def bind_args( frame, arg_bindings, formal_arg_names ):
 	if formal_arg_names is null:
@@ -1350,20 +1345,21 @@ def perform( frame, action, reduce_environment ):
 	elif is_a( action, 'CURRENT_THREAD' ):
 		perform_current_thread( frame, action, reduce_environment )
 	else:
-		pass
+		# MACRO
+		frame[ 'cursor' ] = DIGRESSION( action.script, reduce_environment, frame.cursor )
 
 def perform_python_exec( frame, action, reduce_environment ):
 	try:
 		exec action.statement in globals(), dict( reduce_environment.bindings )
 	except:
-		print "\nError in exec:", action.statement
+		print "\nError in exec:", action.statement, "with", reduce_environment.bindings
 		raise
 
 def perform_python_eval( frame, action, reduce_environment ):
 	try:
 		result = eval( action.expression,  globals(), dict( reduce_environment.bindings ) )
 	except:
-		print "\nError in eval:", action.expression
+		print "\nError in eval:", action.expression, "with", reduce_environment.bindings
 		raise
 	end_digression_if_finished( frame, frame.cursor.tokens )
 	frame[ 'cursor' ] = DIGRESSION( List([ result ]), frame.cursor.local_scope, frame.cursor )
@@ -1411,16 +1407,16 @@ def process_reduce0( frame, state ):
 	print_stuff( frame.thread )
 	#debug2_reduce( ">-- reduce0 %s --", state.action_symbol )
 	action = bound( take( state, 'action_symbol#' ), frame.action_bindings ) # 'take' here just to get a sharp result
-	#debug2_reduce( "  action: %r", action )
-	#if is_a( action, 'MACRO' ):
-	#	debug_reduce( "    %s", python_list( action.script ) )
+	#debug2_reduce( "  action: %s", action )
+	if is_a( action, 'MACRO' ):
+		debug_reduce( "    %s", python_list( action.script ) )
 	reduce_environment = ENVIRONMENT( action.enclosing_scope )
-	reduce_environment[ 'digressor' ] = frame.cursor.local_scope  # Need this in order to make 'set' a macro, or else I can't access the environment I'm trying to bind
+	#debug2_reduce( "  environment1: %s with %s", reduce_environment, reduce_environment.bindings )
 	bind_args( frame, reduce_environment.bindings, action.formal_arg_names )
+	debug2_reduce( "  environment2: %s with %s", reduce_environment, reduce_environment.bindings )
 	print_reduce_stuff( frame.thread, action, reduce_environment )
-	#debug2_reduce( "  environment: %s", reduce_environment )
-	#debug2_reduce( "    based on: %s", frame.cursor )
-	frame[ 'cursor' ] = DIGRESSION( action.script, reduce_environment, frame.cursor )
+	#debug2_reduce( "  environment: %s with %s", reduce_environment, reduce_environment.bindings )
+	#debug2_reduce( "    based on: %s", action.enclosing_scope )
 	perform( frame, action, reduce_environment )
 	end_digression_if_finished( frame, frame.cursor.tokens )
 	print_program( frame.thread )
@@ -1468,12 +1464,12 @@ python_eval
 to Thread
 	activation meta_thread
 python_eval
-	<< THREAD(**dict( locals() )) >>
+	<< THREAD( activation, meta_thread ) >>
 
 to Environment
 	outer
 python_eval
-	<< ENVIRONMENT(**dict( locals() )) >>
+	<< ENVIRONMENT( outer ) >>
 
 to tag_edge_symbol
 	tag_sharp
@@ -1626,7 +1622,15 @@ to get_fallback  fallback obj_sharp=ANY# possible_result=TAKE_FAILED  do TAKE_FA
 to perform  frame action:PYTHON_EXEC    reduce_environment  python_exec << perform_python_exec( frame, action, reduce_environment ) >>
 to perform  frame action:PYTHON_EVAL    reduce_environment  python_exec << perform_python_eval( frame, action, reduce_environment ) >>
 to perform  frame action:CURRENT_THREAD reduce_environment  python_exec << perform_current_thread( frame, action, reduce_environment ) >>
-to perform  frame action:MACRO          reduce_environment  do          /* Macros just expand into a digression, and that's it. */
+
+to perform
+	frame action:MACRO reduce_environment
+do
+	put frame cursor
+		Digression
+			get action script
+			reduce_environment
+			get frame cursor
 
 
 /* Behave as though every token list ends with an infinite sequence of eofs */
@@ -1677,18 +1681,11 @@ do
 	set reduce_environment
 		Environment
 			get action enclosing_scope
-	put reduce_environment digressor
-		get2 frame cursor local_scope
 	bind_args
 		frame
 		get reduce_environment bindings
 		get action formal_arg_names
 	print_reduce_stuff frame action reduce_environment
-	put frame cursor
-		Digression
-			get action script
-			reduce_environment
-			get frame cursor
 	perform
 		frame
 		action
