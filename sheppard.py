@@ -577,13 +577,13 @@ true  = Object( 'TRUE' )
 epsilon = 'ε'
 eta     = 'η'
 
-def ACTIVATION( cursor, operands, history, action_bindings, fallback, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, action_bindings=action_bindings, fallback=fallback, caller=caller )
+def ACTIVATION( cursor, operands, history, action_bindings, fallback_function, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, action_bindings=action_bindings, fallback_function=fallback_function, caller=caller )
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
-def AUTOMATON( initial_state, fallback ): return Object( 'AUTOMATON', initial_state=initial_state, fallback=fallback )
+def AUTOMATON( initial_state, fallback_function ): return Object( 'AUTOMATON', initial_state=initial_state, fallback_function=fallback_function )
 def PROCEDURE( name, script, automaton, enclosing_scope ): return Object( 'PROCEDURE', name=name, script=script, automaton=automaton, enclosing_scope=enclosing_scope )
 
-def FALLBACK( **bindings ):
-	result = Object( 'FALLBACK', **bindings )
+def FALLBACK_FUNCTION( **bindings ):
+	result = Object( 'FALLBACK_FUNCTION', **bindings )
 	add_predefined_fallbacks( result )
 	return result
 
@@ -717,10 +717,10 @@ def add_predefined_bindings( bindings ):
 	bindings[ 'epsilon' ] = epsilon
 	bindings[ 'eta' ]     = eta
 
-def add_predefined_fallbacks( fallback ):
+def add_predefined_fallbacks( fallback_function ):
 	for x in [ 'MONIKER', 'INT', 'ANON', 'SHARPED_SYMBOL' ]:
-		fallback[ x ] = 'SYMBOL'
-	fallback[ 'DIAL_TONE' ] = 'DIGRESSION'
+		fallback_function[ x ] = 'SYMBOL'
+	fallback_function[ 'DIAL_TONE' ] = 'DIGRESSION'
 
 def define_builtins( action_bindings, enclosing_scope ):
 	name = 'current_thread'
@@ -917,7 +917,7 @@ def polymorphic_automaton( action_bindings ):
 		debug_ppa( '  EOF => %s', initial_state[ ':EOF' ] )
 		debug_ppa( ' Automaton:\n%s\n', shogun( initial_state ) )
 		#debug( ' Automaton again:\n%s\n', shogun( deshogun( shogun( initial_state ) ) ) )
-		return AUTOMATON( initial_state, FALLBACK() )
+		return AUTOMATON( initial_state, FALLBACK_FUNCTION() )
 
 def make_branches( initial_state, bound_symbols, index, all_shift_states ):
 	if index == 0:
@@ -976,7 +976,7 @@ to Shift                              python_eval << Shift() >>
 to Reduce0  action_symbol_sharp       python_eval << Reduce0( flat( action_symbol_sharp ) ) >>
 to Accept                             python_eval << Accept() >>
 to ShiftStateCollector  state         python_eval << Object( 'SHIFT_STATE_COLLECTOR', first = cons( state, null ) ) >>
-to Automaton  initial_state           python_eval << Automaton( initial_state, FALLBACK() ) >>
+to Automaton  initial_state           python_eval << Automaton( initial_state, FALLBACK_FUNCTION() ) >>
 
 to print_automaton
 	initial_state
@@ -1290,7 +1290,7 @@ def bound2( obj_sharp, environment, possible_match ):
 	else:
 		return possible_match
 
-def next_state( state, obj_sharp, fallback, original_obj_for_error_reporting ):
+def next_state( state, obj_sharp, fallback_function, original_obj_for_error_reporting ):
 	# Pseudocode:
 	#
 	# if take( state, obj_sharp ):
@@ -1301,32 +1301,32 @@ def next_state( state, obj_sharp, fallback, original_obj_for_error_reporting ):
 	#       if take( state, tag_edge_symbol( t ) )
 	#          return that
 	#       else:
-	#          t = fallback[ t ]
+	#          t = fallback_function[ t ]
 	# raise Unexpected_token
 	#
-	return next_state2( state, obj_sharp, take( state, obj_sharp ), fallback, original_obj_for_error_reporting )
+	return next_state2( state, obj_sharp, take( state, obj_sharp ), fallback_function, original_obj_for_error_reporting )
 
-def next_state2( state, obj_sharp, possible_match, fallback, original_obj_for_error_reporting ):
+def next_state2( state, obj_sharp, possible_match, fallback_function, original_obj_for_error_reporting ):
 	if possible_match is take_failed:
 		tag_sharp = sharp( tag( obj_sharp ) )
-		return next_state_by_tag( state, tag_sharp, fallback, original_obj_for_error_reporting )
+		return next_state_by_tag( state, tag_sharp, fallback_function, original_obj_for_error_reporting )
 	else:
 		return possible_match
 
-def next_state_by_tag( state, tag_sharp, fallback, original_obj_for_error_reporting ):
+def next_state_by_tag( state, tag_sharp, fallback_function, original_obj_for_error_reporting ):
 	if tag_sharp is take_failed:
 		raise Unexpected_token( state, original_obj_for_error_reporting )
 	else:
-		return next_state_by_tag2( state, tag_sharp, take( state, tag_edge_symbol( tag_sharp ) ), fallback, original_obj_for_error_reporting )
+		return next_state_by_tag2( state, tag_sharp, take( state, tag_edge_symbol( tag_sharp ) ), fallback_function, original_obj_for_error_reporting )
 
-def next_state_by_tag2( state, tag_sharp, possible_next_state, fallback, original_obj_for_error_reporting ):
+def next_state_by_tag2( state, tag_sharp, possible_next_state, fallback_function, original_obj_for_error_reporting ):
 	if possible_next_state is take_failed:
-		return next_state_by_tag( state, get_fallback( fallback, tag_sharp, take( fallback, tag_sharp ) ), fallback, original_obj_for_error_reporting )
+		return next_state_by_tag( state, get_fallback( fallback_function, tag_sharp, take( fallback_function, tag_sharp ) ), fallback_function, original_obj_for_error_reporting )
 	else:
 		return possible_next_state
 
-def get_fallback( fallback, obj_sharp, possible_result ):
-	silence( "get_fallback( %s, %r, %r )", fallback, obj_sharp, possible_result )
+def get_fallback( fallback_function, obj_sharp, possible_result ):
+	silence( "get_fallback( %s, %r, %r )", fallback_function, obj_sharp, possible_result )
 	if possible_result is take_failed:
 		if obj_sharp == "ANY#":
 			return take_failed
@@ -1390,7 +1390,7 @@ def process_shift( frame, state ):
 	end_digression_if_finished( frame, frame.cursor.tokens )
 	#debug_shift( "    value: %r", flat( token_sharp ) )
 	frame[ 'operands' ] = cons( token_sharp, frame.operands )
-	frame[ 'history' ] = cons( next_state( state, token_sharp, frame.fallback, token_sharp ), frame.history )
+	frame[ 'history' ] = cons( next_state( state, token_sharp, frame.fallback_function, token_sharp ), frame.history )
 	#debug_shift( "  new_state: %r", state )
 	if list_length( frame.operands ) > 50:
 		error( RuntimeError( "Operand stack overflow" ) )
@@ -1428,7 +1428,7 @@ process = {
 	}
 
 def execute( procedure, action_bindings ): # One day we can get partial evaluation by having static and dynamic action_bindings
-	frame = ACTIVATION( DIGRESSION( procedure.script, ENVIRONMENT( procedure.enclosing_scope ), dial_tone ), null, LIST( procedure.automaton.initial_state, null ), action_bindings, procedure.automaton.fallback, null )
+	frame = ACTIVATION( DIGRESSION( procedure.script, ENVIRONMENT( procedure.enclosing_scope ), dial_tone ), null, LIST( procedure.automaton.initial_state, null ), action_bindings, procedure.automaton.fallback_function, null )
 	global current_thread # Allow us to print debug info without passing this all over the place
 	current_thread = THREAD( frame, null )
 	frame[ 'thread' ] = current_thread # I don't love this back link, but it's really handy and efficient
@@ -1456,7 +1456,7 @@ python_eval
 	<< DIGRESSION(**dict( locals() )) >>
 
 to Activation
-	cursor operands history action_bindings fallback caller
+	cursor operands history action_bindings fallback_function caller
 python_eval
 	<< ACTIVATION(**dict( locals() )) >>
 
@@ -1551,40 +1551,40 @@ do
 
 
 to next_state 
-	state obj_sharp fallback original_obj_for_error_reporting
+	state obj_sharp fallback_function original_obj_for_error_reporting
 do
 	next_state2
 		state
 		obj_sharp
 		take state obj_sharp
-		fallback
+		fallback_function
 		original_obj_for_error_reporting
 
 
 to next_state2 
-	state obj_sharp possible_match fallback original_obj_for_error_reporting
+	state obj_sharp possible_match fallback_function original_obj_for_error_reporting
 do
 	possible_match
 
 to next_state2 
-	state obj_sharp x=TAKE_FAILED fallback original_obj_for_error_reporting
+	state obj_sharp x=TAKE_FAILED fallback_function original_obj_for_error_reporting
 do
 	set tag_sharp
 		tag obj_sharp
 	next_state_by_tag
 		state
 		tag_sharp
-		fallback
+		fallback_function
 		original_obj_for_error_reporting
 
 
 to next_state_by_tag
-	state tag_sharp=TAKE_FAILED fallback original_obj_for_error_reporting
+	state tag_sharp=TAKE_FAILED fallback_function original_obj_for_error_reporting
 python_exec
 	<< raise Unexpected_token( state, original_obj_for_error_reporting ) >>
 
 to next_state_by_tag
-	state tag_sharp fallback original_obj_for_error_reporting
+	state tag_sharp fallback_function original_obj_for_error_reporting
 do
 	next_state_by_tag2
 		state
@@ -1592,30 +1592,30 @@ do
 		take
 			state
 			tag_edge_symbol tag_sharp
-		fallback
+		fallback_function
 		original_obj_for_error_reporting
 
 to next_state_by_tag2
-	state tag_sharp possible_next_state fallback original_obj_for_error_reporting
+	state tag_sharp possible_next_state fallback_function original_obj_for_error_reporting
 do
 	possible_next_state
 
 to next_state_by_tag2
-	state tag_sharp x=TAKE_FAILED fallback original_obj_for_error_reporting
+	state tag_sharp x=TAKE_FAILED fallback_function original_obj_for_error_reporting
 do
 	next_state_by_tag
 		state
 		get_fallback
-			fallback
+			fallback_function
 			tag_sharp
-			take fallback tag_sharp
-		fallback
+			take fallback_function tag_sharp
+		fallback_function
 		original_obj_for_error_reporting
 
 
-to get_fallback  fallback obj_sharp      possible_result              do possible_result
-to get_fallback  fallback obj_sharp      possible_result=TAKE_FAILED  do ANY#
-to get_fallback  fallback obj_sharp=ANY# possible_result=TAKE_FAILED  do TAKE_FAILED  /* Holy double dispatch, Batman */
+to get_fallback  fallback_function obj_sharp      possible_result              do possible_result
+to get_fallback  fallback_function obj_sharp      possible_result=TAKE_FAILED  do ANY#
+to get_fallback  fallback_function obj_sharp=ANY# possible_result=TAKE_FAILED  do TAKE_FAILED  /* Holy double dispatch, Batman */
 
 
 to perform  frame action:PYTHON_EXEC    reduce_environment  python_exec << perform_python_exec( frame, action, reduce_environment ) >>
@@ -1664,7 +1664,7 @@ do
 			next_state
 				state
 				token_sharp
-				get frame fallback
+				get frame fallback_function
 				token_sharp
 			get frame history
 	true
@@ -1717,7 +1717,7 @@ do
 				get2 procedure automaton initial_state
 				null
 			action_bindings
-			get2 procedure automaton fallback
+			get2 procedure automaton fallback_function
 			null  /* No caller */
 	put frame thread  /* Putting a thread pointer in each frame seems wasteful, but it's handy */
 		Thread frame current_thread
