@@ -17,9 +17,9 @@ def debug( message, *args ):
 def silence( message, *args ):
 	pass
 
-def error( exception ):
+def error( th, exception ):
 	debug( "!! ERROR: %s", exception )
-	print_backtrace( current_thread )
+	print_backtrace( th )
 	raise exception
 
 def reprs( xs ):
@@ -539,7 +539,7 @@ def flat_inheritance( type_list ):
 		result[ t ] = ':ANY'
 	return result
 
-def ENVIRONMENT( outer, **bindings ): return Object( 'ENVIRONMENT', outer=outer, bindings=Object('BINDINGS', **bindings) )
+def ENVIRONMENT( outer, bindings=None ): return Object( 'ENVIRONMENT', outer=outer, bindings=( bindings or Object('BINDINGS') ) )
 
 def DIGRESSION( tokens, local_scope, resumption ): return Object( 'DIGRESSION', tokens=tokens, local_scope=local_scope, resumption=resumption )
 
@@ -580,7 +580,9 @@ eta     = 'η'
 def ACTIVATION( cursor, operands, history, action_bindings, fallback_function, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, action_bindings=action_bindings, fallback_function=fallback_function, caller=caller )
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
 def AUTOMATON( initial_state, fallback_function ): return Object( 'AUTOMATON', initial_state=initial_state, fallback_function=fallback_function )
-def PROCEDURE( name, script, automaton, enclosing_scope ): return Object( 'PROCEDURE', name=name, script=script, automaton=automaton, enclosing_scope=enclosing_scope )
+
+# I've stuffed action_bindings in here for convenience.  Not sure that's wise.
+def PROCEDURE( name, script, automaton, action_bindings, enclosing_scope ): return Object( 'PROCEDURE', name=name, script=script, automaton=automaton, action_bindings=action_bindings, enclosing_scope=enclosing_scope )
 
 def FALLBACK_FUNCTION( **bindings ):
 	result = Object( 'FALLBACK_FUNCTION', **bindings )
@@ -606,7 +608,7 @@ def Shift( **edges ):
 			result[     name ] = value
 	return result
 
-def LIBRARY( name, automaton ): return Object( 'LIBRARY', name=name, automaton=automaton ) # TODO: LIBRARY should be ( grammar, action_bindings )
+def LIBRARY( name, automaton, action_bindings ): return Object( 'LIBRARY', name=name, automaton=automaton, action_bindings=action_bindings ) # TODO: LIBRARY should be ( grammar, action_bindings )
 
 # A few functions to help with the Python / Sheppard impedance mismatch
 
@@ -722,17 +724,6 @@ def add_predefined_fallbacks( fallback_function ):
 		fallback_function[ x ] = 'SYMBOL'
 	fallback_function[ 'DIAL_TONE' ] = 'DIGRESSION'
 
-def define_builtins( action_bindings, enclosing_scope ):
-	name = 'current_thread'
-	arg_name_stack = Stack( [null] )
-	arg_type_stack = Stack( [name] )
-	action_bindings[ 'ACTION_current_thread' ] = Object(
-		'CURRENT_THREAD',
-		name=name,
-		formal_arg_names=arg_name_stack,
-		formal_arg_types=arg_type_stack,
-		enclosing_scope=enclosing_scope )
-
 prologue_text = """
 to take       base key_sharp               python_eval << take( base, key_sharp ) >>
 to give       base key_sharp value_sharp   python_exec << give( base, key_sharp, value_sharp ) >>
@@ -743,6 +734,7 @@ to cons       head_sharp tail              python_eval << cons( head_sharp, tail
 to all_fields obj                          python_eval << all_fields( obj ) >>
 to sharp      symbol                       python_eval << sharp( symbol ) >>
 to tag        obj_sharp                    python_eval << sharp( tag( flat( obj_sharp ) ) ) >>
+to current_thread                          builtin_current_thread
 
 /* This could really just be a binding */
 to current_environment th:THREAD   python_eval << th.activation.cursor.local_scope >>
@@ -764,18 +756,14 @@ to - a b   python_eval << a-b >>
 
 debug_parse = silence
 
-def parse_library( name, string, action_bindings, enclosing_scope ):
-	"""
-	action_bindings needs to have any pre-defined actions because they can affect the resulting automaton.
-	This routine modifies action_bindings to include the actions declared by the library.
-	TODO: This seems weird.  The action bindings should probably go in the LIBRARY object.
-	"""
-	debug_parse( "parse_library( %r, %r, %r, %r )", name, string, action_bindings, enclosing_scope )
+def parse_library( name, string, enclosing_scope ):
+	debug_parse( "parse_library( %r, %r, %r )", name, string, enclosing_scope )
 	word_cursor = Object( 'WORD_CURSOR', current = library_words( string ) )
+	action_bindings = Object( 'BINDINGS' )
 	while bind_action( action_bindings, parse_action( word_cursor, enclosing_scope ) ):
 		pass
 	automaton = polymorphic_automaton( action_bindings )
-	return LIBRARY( name, automaton )
+	return LIBRARY( name, automaton, action_bindings )
 
 def maybe_int( word ):
 	try:
@@ -807,7 +795,7 @@ def parse_arg_list( word_cursor ):
 	return parse_arg_list2( take( word_cursor.current, 'head#' ), word_cursor )
 
 def parse_arg_list2( lookahead_sharp, word_cursor ):
-	if lookahead_sharp in [ 'do#', 'python_eval#', 'python_exec#' ]:
+	if lookahead_sharp in [ 'do#', 'python_eval#', 'python_exec#', 'builtin_current_thread#' ]:
 		debug_parse( "Ending arg list on %r", lookahead_sharp )
 		return null
 	else:
@@ -870,8 +858,10 @@ def parse_action3( name_sharp, kind_sharp, arg_names, arg_types, word_cursor, en
 		statement = flat( take_word( word_cursor ) ).strip()
 		debug_parse( "Statement: %r", statement )
 		result = PYTHON_EXEC( flat( name_sharp ), statement, arg_names, arg_types, enclosing_scope )
+	elif kind_sharp == 'builtin_current_thread#':
+		result = Object( 'CURRENT_THREAD', name=flat( name_sharp ), formal_arg_names=arg_names, formal_arg_types=arg_types, enclosing_scope=enclosing_scope )
 	else:
-		raise ParseError( "Expected 'do', 'python_eval', or 'python_exec'; found %r" % kind_sharp )
+		raise ParseError( "Expected 'do', 'python_eval', 'python_exec', or builtin; found %r" % kind_sharp )
 	return result
 
 def bind_action( bindings, action ):
@@ -897,7 +887,7 @@ def polymorphic_automaton( action_bindings ):
 	if use_sheppard_text:
 		use_sheppard_text = False
 		procedure = parse_procedure( "polymorphic_automaton", prologue_text + polymorphic_automaton_text, [ "polymorphic_automaton", action_bindings ] )
-		execute( procedure, procedure.enclosing_scope )
+		execute( procedure, procedure.action_bindings )
 		# Uh, how do I get the result?
 	if True:
 		debug_ppa( "Building automaton" )
@@ -1126,11 +1116,9 @@ do
 
 def parse_procedure( name, library_text, script ):
 	global_scope = ENVIRONMENT( null )
-	action_bindings = global_scope.bindings # double-duty
-	define_builtins( action_bindings, global_scope )
-	lib = parse_library( name, library_text, action_bindings, global_scope )
+	lib = parse_library( name, library_text, global_scope )
 	add_predefined_bindings( global_scope.bindings )
-	result = PROCEDURE( name, List( script ), lib.automaton, global_scope )
+	result = PROCEDURE( name, List( script ), lib.automaton, lib.action_bindings, global_scope )
 	if False:
 		debug( "Procedure:\n%s\n", result._description( 1 ) )
 	if False:
@@ -1279,6 +1267,7 @@ def bind_args( frame, arg_bindings, formal_arg_names ):
 		bind_args( frame, arg_bindings, formal_arg_names.tail )
 
 def bound( obj_sharp, environment ):
+	#debug( "bound( %r, %r )", obj_sharp, environment )
 	if environment is null:
 		return obj_sharp
 	else:
@@ -1393,7 +1382,7 @@ def process_shift( frame, state ):
 	frame[ 'history' ] = cons( next_state( state, token_sharp, frame.fallback_function, token_sharp ), frame.history )
 	#debug_shift( "  new_state: %r", state )
 	if list_length( frame.operands ) > 50:
-		error( RuntimeError( "Operand stack overflow" ) )
+		error( frame.thread, RuntimeError( "Operand stack overflow" ) )
 	return true
 
 def process_reduce0( frame, state ):
@@ -1405,7 +1394,7 @@ def process_reduce0( frame, state ):
 		debug2_reduce = silence
 	print_stuff( frame.thread )
 	#debug2_reduce( ">-- reduce0 %s --", state.action_symbol )
-	action = bound( take( state, 'action_symbol#' ), frame.action_bindings ) # 'take' here just to get a sharp result
+	action = take( frame.action_bindings, take( state, 'action_symbol#' ) )
 	#debug2_reduce( "  action: %s", action )
 	#if is_a( action, 'MACRO' ):
 	#	debug_reduce( "    %s", python_list( action.script ) )
@@ -1429,11 +1418,10 @@ process = {
 
 def execute( procedure, action_bindings ): # One day we can get partial evaluation by having static and dynamic action_bindings
 	frame = ACTIVATION( DIGRESSION( procedure.script, ENVIRONMENT( procedure.enclosing_scope ), dial_tone ), null, LIST( procedure.automaton.initial_state, null ), action_bindings, procedure.automaton.fallback_function, null )
-	global current_thread # Allow us to print debug info without passing this all over the place
-	current_thread = THREAD( frame, null )
-	frame[ 'thread' ] = current_thread # I don't love this back link, but it's really handy and efficient
-	debug( "starting thread: %r with digression:\n\t%s", current_thread, frame.cursor )
-	print_program( current_thread )
+	thread = THREAD( frame, null )
+	frame[ 'thread' ] = thread # I don't love this back link, but it's really handy and efficient
+	debug( "starting thread: %r with digression:\n\t%s", thread, frame.cursor )
+	print_program( thread )
 	execute2( frame, true )
 
 def execute2( frame, keep_going ):
@@ -1674,9 +1662,9 @@ to process
 do
 	print_stuff frame
 	set action
-		bound
-			take state action_symbol#
+		take
 			get frame action_bindings
+			take state action_symbol#
 	set reduce_environment
 		Environment
 			get action enclosing_scope
@@ -1740,10 +1728,6 @@ do
 
 """
 
-# Implementing a primitive with eval/exec requires three additional shifts
-# compared with a builtin.  In some cases, that's enough to make the
-# interpreter much slower, so we just leave them as builtins for now.
-#
 not_used_because_they_are_too_slow = """
 to pop_list 
 	base field_symbol_sharp
@@ -1814,13 +1798,11 @@ def wrap_procedure( inner_procedure ):
 	global global_scope, sheppard_interpreter_library
 	if sheppard_interpreter_library is None:
 		global_scope = ENVIRONMENT( null )
-		action_bindings = global_scope.bindings # double-duty
-		define_builtins( action_bindings, global_scope )
-		sheppard_interpreter_library = parse_library( "sheppard_interpreter", prologue_text + meta_interpreter_text, action_bindings, global_scope )
+		sheppard_interpreter_library = parse_library( "sheppard_interpreter", prologue_text + meta_interpreter_text, global_scope )
 		add_predefined_bindings( global_scope.bindings )
 	bindings = global_scope.bindings
-	script = List([ 'execute', inner_procedure, inner_procedure.enclosing_scope ])
-	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, script, sheppard_interpreter_library.automaton, global_scope )
+	script = List([ 'execute', inner_procedure, inner_procedure.action_bindings ])
+	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, script, sheppard_interpreter_library.automaton, sheppard_interpreter_library.action_bindings, global_scope )
 	return outer_procedure
 
 def test( depth, plt ):
@@ -1842,7 +1824,7 @@ def test( depth, plt ):
 		file("s2.txt", "w").write(s2)
 		if s1 != s2:
 			raise ParseError # Shogun test mismatch: check for differences between the files
-	execute( procedure, procedure.enclosing_scope )
+	execute( procedure, procedure.action_bindings )
 
 def pretty_time( t ):
 	if t < 1:
