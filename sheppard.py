@@ -81,8 +81,8 @@ class Object:
 	# won't yet behave the way it should: it won't add the new field to _fields.
 	# They're a little awkward to implement, so I just haven't bothered yet.
 	#
-	# Also note that this is not in sharp-land.  When we're doing python_eval or
-	# python_exec, the code needs to act like Python or it will be too confusing.
+	# Also note that this is not in sharp-land.  When we're interpreting be_python or
+	# do_python, the code needs to act like Python or it will be too confusing.
 
 	def __getitem__( self, key ):
 		#debug_object( "getitem %r[ %r ]", self, key )
@@ -738,26 +738,26 @@ def add_predefined_fallbacks( fallback_function ):
 	fallback_function[ 'DIAL_TONE' ] = 'DIGRESSION'
 
 prologue_text = """
-to take       base key_sharp               python_eval << take( base, key_sharp ) >>
-to give       base key_sharp value_sharp   python_exec << give( base, key_sharp, value_sharp ) >>
-to get        base key:SYMBOL              python_eval << base[ key ] >>
-to get2       base f1 f2                   python_eval << base[ f1 ][ f2 ] >>
-to put        base key:MONIKER value       python_exec << base[ key ] = value >>
-to cons       head_sharp tail              python_eval << cons( head_sharp, tail ) >>
-to all_fields obj                          python_eval << all_fields( obj ) >>
-to sharp      symbol                       python_eval << sharp( symbol ) >>
-to tag        obj_sharp                    python_eval << sharp( tag( flat( obj_sharp ) ) ) >>
-to current_thread                          builtin_current_thread
+let take       base key_sharp               be_python << take( base, key_sharp ) >>
+to  give       base key_sharp value_sharp   do_python << give( base, key_sharp, value_sharp ) >>
+let get        base key:SYMBOL              be_python << base[ key ] >>
+let get2       base f1 f2                   be_python << base[ f1 ][ f2 ] >>
+to  put        base key:MONIKER value       do_python << base[ key ] = value >>
+let cons       head_sharp tail              be_python << cons( head_sharp, tail ) >>
+let all_fields obj                          be_python << all_fields( obj ) >>
+let sharp      symbol                       be_python << sharp( symbol ) >>
+let tag        obj_sharp                    be_python << sharp( tag( flat( obj_sharp ) ) ) >>
+let current_thread                          be_builtin_current_thread
 
 /* This could really just be a binding */
-to current_environment th:THREAD   python_eval << th.activation.cursor.local_scope >>
+let current_environment th:THREAD   be_python << th.activation.cursor.local_scope >>
 
 to set        symbol:MONIKER value          do set2 symbol value current_thread
-to set2       symbol:MONIKER value th       python_exec << th.activation.cursor.local_scope.bindings[ symbol ] = value >>
+to set2       symbol:MONIKER value th       do_python << th.activation.cursor.local_scope.bindings[ symbol ] = value >>
 
 /* Math */
-to + a b   python_eval << a+b >>
-to - a b   python_eval << a-b >>
+let + a b   be_python << a+b >>
+let - a b   be_python << a-b >>
 
 """
 
@@ -810,7 +810,7 @@ def parse_arg_list( word_cursor ):
 	return parse_arg_list2( take( word_cursor.current, 'head#' ), word_cursor )
 
 def parse_arg_list2( lookahead_sharp, word_cursor ):
-	if lookahead_sharp in [ 'do#', 'python_eval#', 'python_exec#', 'builtin_current_thread#' ]:
+	if lookahead_sharp in [ 'do#', 'be#', 'be_python#', 'do_python#', 'be_builtin_current_thread#' ]:
 		debug_parse( "Ending arg list on %r", lookahead_sharp )
 		return null
 	else:
@@ -831,7 +831,7 @@ def parse_script( word_cursor ):
 	return parse_script2( take( word_cursor.current, 'head#' ), word_cursor )
 
 def parse_script2( lookahead_sharp, word_cursor ):
-	if lookahead_sharp in [ 'to#', take_failed ]:
+	if lookahead_sharp in [ 'to#', 'let#', take_failed ]:
 		return null
 	else:
 		return cons( take_word( word_cursor ), parse_script( word_cursor ) )
@@ -853,8 +853,12 @@ def parse_definition2( start_word_sharp, word_cursor, enclosing_scope ):
 	if start_word_sharp is take_failed:
 		return null
 	else:
-		if start_word_sharp != 'to#':
-			raise ParseError( "Expected action declaration to begin with 'to'; found %r" % start_word_sharp )
+		if start_word_sharp == 'let#':
+			# How should we represent the return type?
+			#type_name = take_word( word_cursor )
+			pass
+		elif start_word_sharp != 'to#':
+			raise ParseError( "Expected action declaration to begin with 'to' or 'let'; found %r" % start_word_sharp )
 		name_sharp = take_word( word_cursor )
 		formal_args = LIST( FORMAL_ARG( null, flat( name_sharp ) ), parse_arg_list( word_cursor ) )
 		arg_names = arg_stack( formal_args, 'name' )
@@ -864,22 +868,22 @@ def parse_definition2( start_word_sharp, word_cursor, enclosing_scope ):
 
 def parse_action( name_sharp, kind_sharp, arg_names, word_cursor, enclosing_scope ):
 	debug_parse( "Action keyword: %r", kind_sharp )
-	if kind_sharp == 'do#':
+	if kind_sharp in [ 'do#', 'be#' ]:
 		script = parse_script( word_cursor )
 		debug_parse( "Parsed script: %r", python_list( script ) )
 		action = MACRO( flat( name_sharp ), script, arg_names, enclosing_scope )
-	elif kind_sharp == 'python_eval#':
+	elif kind_sharp == 'be_python#':
 		expression = flat( take_word( word_cursor ) ).strip()
 		debug_parse( "Expression: %r", expression )
 		action = PYTHON_EVAL( flat( name_sharp ), expression, arg_names, enclosing_scope )
-	elif kind_sharp == 'python_exec#':
+	elif kind_sharp == 'do_python#':
 		statement = flat( take_word( word_cursor ) ).strip()
 		debug_parse( "Statement: %r", statement )
 		action = PYTHON_EXEC( flat( name_sharp ), statement, arg_names, enclosing_scope )
-	elif kind_sharp == 'builtin_current_thread#':
+	elif kind_sharp == 'be_builtin_current_thread#':
 		action = Object( 'CURRENT_THREAD', name=flat( name_sharp ), formal_arg_names=arg_names, enclosing_scope=enclosing_scope )
 	else:
-		raise ParseError( "Expected 'do', 'python_eval', 'python_exec', or builtin; found %r" % kind_sharp )
+		raise ParseError( "Expected 'do', 'be_python', 'do_python', or builtin; found %r" % kind_sharp )
 	return action
 
 def bind_action( bindings, action ):
@@ -894,7 +898,7 @@ def bind_action( bindings, action ):
 		debug_parse( "Bound %r to %s", action_symbol, action )
 		return action_symbol
 
-debug_ppa = silence
+debug_kba = silence
 
 # build_keyword_based_automaton
 
@@ -911,19 +915,19 @@ def build_keyword_based_automaton( grammar ):
 		execute( procedure, procedure.action_bindings )
 		# Uh, how do I get the result?
 	if True:
-		debug_ppa( "Building automaton" )
+		debug_kba( "Building automaton" )
 		initial_state = Shift()
 		all_shift_states = Object( 'SHIFT_STATE_COLLECTOR', first = cons( initial_state, null ) )
-		debug_ppa( "  initial_state: %s", initial_state )
-		debug_ppa( "  Building parse tree" )
+		debug_kba( "  initial_state: %s", initial_state )
+		debug_kba( "  Building parse tree" )
 		make_branches( initial_state, grammar.productions, all_shift_states )
 		# Names are effectively keywords.  Any time we see one of those, whatever shift state we are in, we leap to that name's state.
-		debug_ppa( "  Connecting keywords" )
+		debug_kba( "  Connecting keywords" )
 		connect_keywords( initial_state, grammar.productions, all_shift_states.first )
 		# The accept state
 		initial_state[ ':EOF' ] = Accept()
-		debug_ppa( '  EOF => %s', initial_state[ ':EOF' ] )
-		debug_ppa( ' Automaton:\n%s\n', shogun( initial_state ) )
+		debug_kba( '  EOF => %s', initial_state[ ':EOF' ] )
+		debug_kba( ' Automaton:\n%s\n', shogun( initial_state ) )
 		#debug( ' Automaton again:\n%s\n', shogun( deshogun( shogun( initial_state ) ) ) )
 		return AUTOMATON( initial_state, FALLBACK_FUNCTION() )
 
@@ -936,7 +940,7 @@ def make_branches( initial_state, productions, all_shift_states ):
 		reduce_state = Reduce0( flat( take( production, 'action_symbol#' ) ) )
 		reduce_word_sharp = take( production.rhs_stack, 'head#' )
 		give( tip, reduce_word_sharp, reduce_state )
-		debug_ppa( '      %r:%r >> %r', tip, flat( reduce_word_sharp ), reduce_state )
+		debug_kba( '      %r:%r >> %r', tip, flat( reduce_word_sharp ), reduce_state )
 		# Tail digression
 		make_branches( initial_state, productions.tail, all_shift_states )
 
@@ -954,14 +958,14 @@ def extend_one_step2( state, arg_type_sharp, possible_match, all_shift_states ):
 		result = Shift()
 		all_shift_states.first = cons( result, all_shift_states.first )
 		give( state, arg_type_sharp, result )
-		debug_ppa( '      %r:%r => %r', state, flat( arg_type_sharp ), result )
+		debug_kba( '      %r:%r => %r', state, flat( arg_type_sharp ), result )
 		return result
 	else:
-		debug_ppa( '      %r:%r -> %r', state, flat( arg_type_sharp ), possible_match )
+		debug_kba( '      %r:%r -> %r', state, flat( arg_type_sharp ), possible_match )
 		return possible_match
 
 def connect_keywords( initial_state, productions, states ):
-	#debug_ppa( "      connect_keywords( %r, %r, %r, %r )" % ( initial_state, bound_symbols, index, states ) )
+	#debug_kba( "      connect_keywords( %r, %r, %r, %r )" % ( initial_state, bound_symbols, index, states ) )
 	if states is null:
 		pass
 	else:
@@ -969,7 +973,7 @@ def connect_keywords( initial_state, productions, states ):
 		connect_keywords         ( initial_state, productions, states.tail )
 
 def connect_keywords_to_state( initial_state, productions, shift_state ):
-	#debug_ppa( "      connect_keywords_to_state( %r, %r, %r, %r )" % ( initial_state, bound_symbols, index, shift_state ) )
+	#debug_kba( "      connect_keywords_to_state( %r, %r, %r, %r )" % ( initial_state, bound_symbols, index, shift_state ) )
 	if productions is null:
 		pass
 	else:
@@ -987,15 +991,15 @@ def last_head( items ):
 polymorphic_automaton_text = r"""
 HEY this is stale.  If you want to use it, you'll have to debug it.
 
-to Shift                              python_eval << Shift() >>
-to Reduce0  action_symbol_sharp       python_eval << Reduce0( flat( action_symbol_sharp ) ) >>
-to Accept                             python_eval << Accept() >>
-to ShiftStateCollector  state         python_eval << Object( 'SHIFT_STATE_COLLECTOR', first = cons( state, null ) ) >>
-to Automaton  initial_state           python_eval << Automaton( initial_state, FALLBACK_FUNCTION() ) >>
+let Shift                              be_python << Shift() >>
+let Reduce0  action_symbol_sharp       be_python << Reduce0( flat( action_symbol_sharp ) ) >>
+let Accept                             be_python << Accept() >>
+let ShiftStateCollector  state         be_python << Object( 'SHIFT_STATE_COLLECTOR', first = cons( state, null ) ) >>
+let Automaton  initial_state           be_python << Automaton( initial_state, FALLBACK_FUNCTION() ) >>
 
 to print_automaton
 	initial_state
-python_exec
+do_python
 	<< debug( ' Automaton:\n%s\n', shogun( initial_state ) ) >>
 
 to build_keyword_based_automaton
@@ -1055,14 +1059,14 @@ do
 		all_shift_states
 
 
-to extend_branch
+let extend_branch
 	state x:NULL all_shift_states
-do
+be
 	state
 
-to extend_branch
+let extend_branch
 	state arg_types all_shift_states
-do
+be
 	extend_one_step
 		extend_branch
 			state
@@ -1072,18 +1076,18 @@ do
 		all_shift_states
 
 
-to extend_one_step
+let extend_one_step
 	state arg_type_sharp all_shift_states
-do
+be
 	extend_one_step2
 		state
 		arg_type_sharp
 		take state arg_type_sharp
 		all_shift_states
 
-to extend_one_step2
+let extend_one_step2
 	state arg_type_sharp x=TAKE_FAILED all_shift_states
-do
+be
 	set result
 		Shift
 	put all_shift_states first
@@ -1094,9 +1098,9 @@ do
 		result
 	result
 
-to extend_one_step2
+let extend_one_step2
 	state arg_type_sharp possible_match all_shift_states
-do
+be
 	possible_match
 
 
@@ -1464,34 +1468,34 @@ def execute2( frame, keep_going ):
 #
 
 meta_interpreter_text = """
-to Digression
+let Digression
 	tokens local_scope resumption
-python_eval
+be_python
 	<< DIGRESSION(**dict( locals() )) >>
 
-to Activation
+let Activation
 	cursor operands history action_bindings fallback_function caller
-python_eval
+be_python
 	<< ACTIVATION(**dict( locals() )) >>
 
-to Thread
+let Thread
 	activation meta_thread
-python_eval
+be_python
 	<< THREAD( activation, meta_thread ) >>
 
-to Environment
+let Environment
 	outer
-python_eval
+be_python
 	<< ENVIRONMENT( outer ) >>
 
-to tag_edge_symbol
+let tag_edge_symbol
 	tag_sharp
-python_eval
+be_python
 	<< ':' + tag_sharp >>
 
-to pop_list 
+let pop_list 
 	base field_symbol_sharp:MONIKER
-python_eval
+be_python
 	<< pop_list( base, field_symbol_sharp ) >>
 
 
@@ -1535,14 +1539,14 @@ do
 		get formal_arg_names tail
 
 
-to bound 
+let bound 
 	obj_sharp environment:NULL
-do
+be
 	obj_sharp
 
-to bound 
+let bound 
 	obj_sharp environment:ENVIRONMENT
-do
+be
 	bound2
 		obj_sharp
 		environment
@@ -1551,22 +1555,22 @@ do
 			obj_sharp
 
 
-to bound2 
+let bound2 
 	obj_sharp environment possible_match
-do
+be
 	possible_match
 
-to bound2 
+let bound2 
 	obj_sharp environment x=TAKE_FAILED
-do
+be
 	bound
 		obj_sharp
 		get environment outer
 
 
-to next_state 
+let next_state 
 	state obj_sharp fallback_function original_obj_for_error_reporting
-do
+be
 	next_state2
 		state
 		obj_sharp
@@ -1575,14 +1579,14 @@ do
 		original_obj_for_error_reporting
 
 
-to next_state2 
+let next_state2 
 	state obj_sharp possible_match fallback_function original_obj_for_error_reporting
-do
+be
 	possible_match
 
-to next_state2 
+let next_state2 
 	state obj_sharp x=TAKE_FAILED fallback_function original_obj_for_error_reporting
-do
+be
 	set tag_sharp
 		tag obj_sharp
 	next_state_by_tag
@@ -1592,14 +1596,14 @@ do
 		original_obj_for_error_reporting
 
 
-to next_state_by_tag
+let next_state_by_tag
 	state tag_sharp=TAKE_FAILED fallback_function original_obj_for_error_reporting
-python_exec
+do_python
 	<< raise Unexpected_token( state, original_obj_for_error_reporting ) >>
 
-to next_state_by_tag
+let next_state_by_tag
 	state tag_sharp fallback_function original_obj_for_error_reporting
-do
+be
 	next_state_by_tag2
 		state
 		tag_sharp
@@ -1609,14 +1613,14 @@ do
 		fallback_function
 		original_obj_for_error_reporting
 
-to next_state_by_tag2
+let next_state_by_tag2
 	state tag_sharp possible_next_state fallback_function original_obj_for_error_reporting
-do
+be
 	possible_next_state
 
-to next_state_by_tag2
+let next_state_by_tag2
 	state tag_sharp x=TAKE_FAILED fallback_function original_obj_for_error_reporting
-do
+be
 	next_state_by_tag
 		state
 		get_fallback
@@ -1627,14 +1631,14 @@ do
 		original_obj_for_error_reporting
 
 
-to get_fallback  fallback_function obj_sharp      possible_result              do possible_result
-to get_fallback  fallback_function obj_sharp      possible_result=TAKE_FAILED  do ANY#
-to get_fallback  fallback_function obj_sharp=ANY# possible_result=TAKE_FAILED  do TAKE_FAILED  /* Holy double dispatch, Batman */
+let get_fallback  fallback_function obj_sharp      possible_result              be possible_result
+let get_fallback  fallback_function obj_sharp      possible_result=TAKE_FAILED  be ANY#
+let get_fallback  fallback_function obj_sharp=ANY# possible_result=TAKE_FAILED  be TAKE_FAILED  /* Holy double dispatch, Batman */
 
 
-to perform  frame action:PYTHON_EXEC    reduce_environment  python_exec << perform_python_exec( frame, action, reduce_environment ) >>
-to perform  frame action:PYTHON_EVAL    reduce_environment  python_exec << perform_python_eval( frame, action, reduce_environment ) >>
-to perform  frame action:CURRENT_THREAD reduce_environment  python_exec << perform_current_thread( frame, action, reduce_environment ) >>
+to perform  frame action:PYTHON_EXEC    reduce_environment  do_python << perform_python_exec( frame, action, reduce_environment ) >>
+to perform  frame action:PYTHON_EVAL    reduce_environment  do_python << perform_python_eval( frame, action, reduce_environment ) >>
+to perform  frame action:CURRENT_THREAD reduce_environment  do_python << perform_current_thread( frame, action, reduce_environment ) >>
 
 to perform
 	frame action:MACRO reduce_environment
@@ -1647,18 +1651,18 @@ do
 
 
 /* Behave as though every token list ends with an infinite sequence of eofs */
-to get_token possible_token do possible_token
-to get_token x=TAKE_FAILED  do eof
+let get_token possible_token be possible_token
+let get_token x=TAKE_FAILED  be eof
 
 
-to process 
+let process 
 	frame state:ACCEPT
-do
+be
 	false
 
-to process 
+let process 
 	frame state:SHIFT
-do
+be
 	set token_sharp
 		bound
 			get_token
@@ -1683,9 +1687,9 @@ do
 			get frame history
 	true
 
-to process 
+let process 
 	frame state:REDUCE0
-do
+be
 	print_stuff frame
 	set action
 		take
@@ -1710,10 +1714,10 @@ do
 	true
 
 
-to print_stuff        frame                             python_exec << print_stuff( frame.thread ) >>
-to print_reduce_stuff frame action reduce_environment   python_exec << print_reduce_stuff( frame.thread, action, reduce_environment ) >>
-to print_program      frame                             python_exec << print_program( frame.thread ) >>
-to print              obj                               python_exec << print str( obj ) >>
+to print_stuff        frame                             do_python << print_stuff( frame.thread ) >>
+to print_reduce_stuff frame action reduce_environment   do_python << print_reduce_stuff( frame.thread, action, reduce_environment ) >>
+to print_program      frame                             do_python << print_program( frame.thread ) >>
+to print              obj                               do_python << print str( obj ) >>
 
 
 to execute 
@@ -1755,9 +1759,9 @@ do
 """
 
 not_used_because_they_are_too_slow = """
-to pop_list 
+let pop_list 
 	base field_symbol_sharp
-do
+be
 	set current
 		take base field_symbol_sharp
 	set result
@@ -1802,18 +1806,18 @@ class Unexpected_token( BaseException ):
 		return "Unexpected token %r in state %s" % ( flat( self._token ), self._state )
 
 fib_text = """
-to fib  n=0  do 1
-to fib  n=1  do 1
+let fib  n=0  be  1
+let fib  n=1  be  1
 
-to fib  n  do
+let fib  n  be
 	+
 		fib - n 1
 		fib - n 2
 
-to + a b   python_eval << a+b >>
-to - a b   python_eval << a-b >>
+let + a b   be_python  << a+b >>
+let - a b   be_python  << a-b >>
 
-to print_result  n  python_exec << print "*** RESULT IS", n, "***" >>
+to print_result  n  do_python << print "*** RESULT IS", n, "***" >>
 """
 
 def fib_procedure():
