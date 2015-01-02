@@ -232,16 +232,16 @@ null = Null()  # The very first object!  It gets _id=0
 
 class Anonymous_symbol( Object ):
 
-	def __init__( self, prefix=None ):
-		Object.__init__( self, "ANON" )
-		if prefix is not None:
-			self._name = "%s#%d" % ( prefix, self._id )
+	def __init__( self, pseudonym=None ):
+		Object.__init__( self, "ANON", pseudonym=pseudonym )
+		if pseudonym is not None:
+			self._name = "%s#%d" % ( pseudonym, self._id )
 
 	def __hash__( self ): return id( self )
 
 	def __eq__( self, other ): return self is other
 
-def ANON( prefix=None ): return Anonymous_symbol( prefix )
+def ANON( pseudonym=None ): return Anonymous_symbol( pseudonym )
 
 # These need to be disembodied functions.  They can't be methods, because some
 # Sheppard objects like monikers are represented by plain old Python objects like
@@ -571,11 +571,8 @@ true  = Object( 'TRUE' )
 # states (get it? eta-cetera), and the rule is that each "cetera" state has
 # exactly one incoming η-transition, and normal states have none.
 #
-# TODO: These two guys really need to be some kind of anonymous symbols, or
-# else we can't make NFAs to parse Greek text!
-#
-epsilon = 'ε'
-eta     = 'η'
+epsilon = ANON('epsilon')
+eta     = ANON('eta')
 
 def ACTIVATION( cursor, operands, history, action_bindings, fallback_function, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, action_bindings=action_bindings, fallback_function=fallback_function, caller=caller )
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
@@ -608,7 +605,7 @@ def Shift( **edges ):
 			result[     name ] = value
 	return result
 
-def LIBRARY( name, automaton, action_bindings ): return Object( 'LIBRARY', name=name, automaton=automaton, action_bindings=action_bindings ) # TODO: LIBRARY should be ( grammar, action_bindings )
+def LIBRARY( name, action_bindings ): return Object( 'LIBRARY', name=name, action_bindings=action_bindings ) # TODO: LIBRARY should be ( grammar, action_bindings )
 
 # A few functions to help with the Python / Sheppard impedance mismatch
 
@@ -762,8 +759,7 @@ def parse_library( name, string, enclosing_scope ):
 	action_bindings = Object( 'BINDINGS' )
 	while bind_action( action_bindings, parse_action( word_cursor, enclosing_scope ) ):
 		pass
-	automaton = polymorphic_automaton( action_bindings )
-	return LIBRARY( name, automaton, action_bindings )
+	return LIBRARY( name, action_bindings )
 
 def maybe_int( word ):
 	try:
@@ -1117,8 +1113,9 @@ do
 def parse_procedure( name, library_text, script ):
 	global_scope = ENVIRONMENT( null )
 	lib = parse_library( name, library_text, global_scope )
+	automaton = polymorphic_automaton( lib.action_bindings )
 	add_predefined_bindings( global_scope.bindings )
-	result = PROCEDURE( name, List( script ), lib.automaton, lib.action_bindings, global_scope )
+	result = PROCEDURE( name, List( script ), automaton, lib.action_bindings, global_scope )
 	if False:
 		debug( "Procedure:\n%s\n", result._description( 1 ) )
 	if False:
@@ -1795,14 +1792,15 @@ def fib_procedure():
 
 sheppard_interpreter_library = None
 def wrap_procedure( inner_procedure ):
-	global global_scope, sheppard_interpreter_library
+	global global_scope, sheppard_interpreter_library, sheppard_interpreter_automaton
 	if sheppard_interpreter_library is None:
 		global_scope = ENVIRONMENT( null )
 		sheppard_interpreter_library = parse_library( "sheppard_interpreter", prologue_text + meta_interpreter_text, global_scope )
 		add_predefined_bindings( global_scope.bindings )
+		sheppard_interpreter_automaton = polymorphic_automaton( sheppard_interpreter_library.action_bindings )
 	bindings = global_scope.bindings
 	script = List([ 'execute', inner_procedure, inner_procedure.action_bindings ])
-	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, script, sheppard_interpreter_library.automaton, sheppard_interpreter_library.action_bindings, global_scope )
+	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, script, sheppard_interpreter_automaton, sheppard_interpreter_library.action_bindings, global_scope )
 	return outer_procedure
 
 def test( depth, plt ):
