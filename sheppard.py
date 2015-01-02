@@ -22,6 +22,8 @@ def error( th, exception ):
 	print_backtrace( th )
 	raise exception
 
+test_shogun = False
+
 def reprs( xs ):
 	return "[ " + string.join([ repr(x) for x in xs ], ", ") + " ]"
 
@@ -76,7 +78,7 @@ class Object:
 	# Allow map syntax for convenience.
 	#
 	# NOTE: getattr and setattr are not implemented yet.  Setattr, in particular,
-	# won't behave the way it should: it won't add the new field to _fields.
+	# won't yet behave the way it should: it won't add the new field to _fields.
 	# They're a little awkward to implement, so I just haven't bothered yet.
 	#
 	# Also note that this is not in sharp-land.  When we're doing python_eval or
@@ -341,14 +343,14 @@ def shogun( obj ):
 	while i < len(objects):
 		obj = objects[ i ]
 		if isinstance( obj, int ) or isinstance( obj, str ):
-			result += "\t%r: %r\n" % ( i, obj )
+			result += "\t%r : %r\n" % ( i, obj )
 		elif tag( obj ) == 'LIST':
 			try:
-				result += "\t%r: [%s]\n" % ( i, ", ".join( shogun_list_elements( obj, objects, sanity_limit ) ) )
+				result += "\t%r : [%s]\n" % ( i, ", ".join( shogun_list_elements( obj, objects, sanity_limit ) ) )
 			except NotAListError:
-				result += "\t%r: %s" % ( i, shogun_object_by_fields( obj, objects ) )
+				result += "\t%r : %s" % ( i, shogun_object_by_fields( obj, objects ) )
 		else:
-			result += "\t%r: %s" % ( i, shogun_object_by_fields( obj, objects ) )
+			result += "\t%r : %s" % ( i, shogun_object_by_fields( obj, objects ) )
 		i += 1
 	return result + "}[1]"
 
@@ -387,7 +389,7 @@ def shogun_object_by_fields( obj, objects ):
 	fields.sort( smart_order )
 	for field in fields:
 		value = obj[ field ]
-		result += "\t\t%r: %s\n" % ( field, shogun_value( value, objects ) )
+		result += "\t\t%r : %s\n" % ( field, shogun_value( value, objects ) )
 	result += "\t}\n"
 	return result
 
@@ -430,7 +432,7 @@ def deshogun( text ):
 	words.reverse()
 	consume( "{", words )
 	while words[-1] != "}":
-		key = maybe_int( words.pop() )
+		key = deshogun_symbol( words.pop() )
 		debug_deshogun( "key is %r", key )
 		consume( ":", words )
 		item = words.pop()
@@ -449,7 +451,7 @@ def deshogun( text ):
 				if field[0] in [ "'", '"' ]:
 					field = ast.literal_eval( field )
 				else:
-					field = maybe_int( field )
+					field = deshogun_symbol( field )
 				debug_deshogun( "field is %r", field )
 				consume( ":", words )
 				value = words.pop()
@@ -469,6 +471,23 @@ def deshogun( text ):
 	result = dictionary[ maybe_int( words.pop() ) ]
 	consume( "]", words )
 	return result
+
+anon_symbol_name_regex = None
+def deshogun_symbol( word ):
+	debug_deshogun( "deshogun_symbol( %r )", word )
+	global anon_symbol_name_regex
+	if not anon_symbol_name_regex:
+		anon_symbol_name_regex = re.compile(r"([A-Za-z_0-9]+)#\d+")
+	match = anon_symbol_name_regex.match( word )
+	if match:
+		# NOTE: This doesn't actually work properly.  We need to get the right
+		# identity for ANONs.  We probably need them to be references to the
+		# top-level array, complete with relocations etc.
+		debug_deshogun( "  ANON" )
+		return ANON( match.group(1) )
+	else:
+		debug_deshogun( "  normal" )
+		return maybe_int( word )
 
 def deshogun_simple_value( word, words ):
 	debug_deshogun( "deshogun_simple_value( %r )", word )
@@ -586,12 +605,12 @@ def FALLBACK_FUNCTION( **bindings ):
 	add_predefined_fallbacks( result )
 	return result
 
-def MACRO( name, script, formal_arg_names, formal_arg_types, enclosing_scope ):
-	return Object( 'MACRO', name=name, script=script, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, enclosing_scope=enclosing_scope )
-def PYTHON_EVAL( name, expression, formal_arg_names, formal_arg_types, enclosing_scope ):
-	return Object( 'PYTHON_EVAL', name=name, expression=expression, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, enclosing_scope=enclosing_scope )
-def PYTHON_EXEC( name, statement, formal_arg_names, formal_arg_types, enclosing_scope ):
-	return Object( 'PYTHON_EXEC', name=name, statement=statement, formal_arg_names=formal_arg_names, formal_arg_types=formal_arg_types, enclosing_scope=enclosing_scope )
+def MACRO( name, script, formal_arg_names, enclosing_scope ):
+	return Object( 'MACRO', name=name, script=script, formal_arg_names=formal_arg_names, enclosing_scope=enclosing_scope )
+def PYTHON_EVAL( name, expression, formal_arg_names, enclosing_scope ):
+	return Object( 'PYTHON_EVAL', name=name, expression=expression, formal_arg_names=formal_arg_names, enclosing_scope=enclosing_scope )
+def PYTHON_EXEC( name, statement, formal_arg_names, enclosing_scope ):
+	return Object( 'PYTHON_EXEC', name=name, statement=statement, formal_arg_names=formal_arg_names, enclosing_scope=enclosing_scope )
 
 def Reduce0( action_symbol ): return Object( 'REDUCE0', action_symbol=action_symbol )
 def Accept(): return Object( 'ACCEPT' )
@@ -605,7 +624,7 @@ def Shift( **edges ):
 			result[     name ] = value
 	return result
 
-def LIBRARY( name, action_bindings ): return Object( 'LIBRARY', name=name, action_bindings=action_bindings ) # TODO: LIBRARY should be ( grammar, action_bindings )
+def LIBRARY( name, grammar, action_bindings ): return Object( 'LIBRARY', name=name, grammar=grammar, action_bindings=action_bindings )
 
 # A few functions to help with the Python / Sheppard impedance mismatch
 
@@ -704,9 +723,6 @@ def print_backtrace( th ):
 # Sheppard builtins
 
 def add_predefined_bindings( bindings ):
-	# Note: You usually want to add these after calling
-	# polymorphic_automaton, because that routine expects all bindings
-	# to be for actions only.
 	bindings[ 'null' ] = null
 	bindings[ 'eof' ] = eof
 	bindings[ 'false' ] = false
@@ -757,9 +773,12 @@ def parse_library( name, string, enclosing_scope ):
 	debug_parse( "parse_library( %r, %r, %r )", name, string, enclosing_scope )
 	word_cursor = Object( 'WORD_CURSOR', current = library_words( string ) )
 	action_bindings = Object( 'BINDINGS' )
-	while bind_action( action_bindings, parse_action( word_cursor, enclosing_scope ) ):
-		pass
-	return LIBRARY( name, action_bindings )
+	grammar = GRAMMAR( ANON('dummy_goal'), null ) # TODO
+	definition = parse_definition( word_cursor, enclosing_scope, action_bindings )
+	while definition:
+		grammar.productions = LIST( PRODUCTION( definition.arg_types, definition.action_symbol ), grammar.productions )
+		definition = parse_definition( word_cursor, enclosing_scope, action_bindings )
+	return LIBRARY( name, grammar, action_bindings )
 
 def maybe_int( word ):
 	try:
@@ -823,58 +842,64 @@ def arg_stack( arg_list, field, tail=null ):
 	else:
 		return arg_stack( arg_list.tail, field, LIST( arg_list.head[ field ], tail ) )
 
-def parse_action( word_cursor, enclosing_scope ):
-	return parse_action2( take_word( word_cursor ), word_cursor, enclosing_scope )
+def parse_definition( word_cursor, enclosing_scope, action_bindings ):
+	result = parse_definition2( take_word( word_cursor ), word_cursor, enclosing_scope )
+	if result:
+		action_symbol = bind_action( action_bindings, result.action )
+		result.action_symbol = action_symbol
+	return result
 
-def parse_action2( start_word_sharp, word_cursor, enclosing_scope ):
+def parse_definition2( start_word_sharp, word_cursor, enclosing_scope ):
 	if start_word_sharp is take_failed:
 		return null
 	else:
 		if start_word_sharp != 'to#':
 			raise ParseError( "Expected action declaration to begin with 'to'; found %r" % start_word_sharp )
 		name_sharp = take_word( word_cursor )
-		arg_list = LIST( FORMAL_ARG( null, flat( name_sharp ) ), parse_arg_list( word_cursor ) )
-		arg_names = arg_stack( arg_list, 'name' )
-		arg_types = arg_stack( arg_list, 'symbol' )
-		result = parse_action3( name_sharp, take_word( word_cursor ), arg_names, arg_types, word_cursor, enclosing_scope )
-		debug_parse( "Parsed %s", result )
-		return result
+		formal_args = LIST( FORMAL_ARG( null, flat( name_sharp ) ), parse_arg_list( word_cursor ) )
+		arg_names = arg_stack( formal_args, 'name' )
+		arg_types = arg_stack( formal_args, 'symbol' )
+		action = parse_action( name_sharp, take_word( word_cursor ), arg_names, word_cursor, enclosing_scope )
+		return Object( 'DEFINITION', arg_types=arg_types, action=action ) # TODO: I can probably create PRODUCTIONs directly if I rearrange this a little
 
-def parse_action3( name_sharp, kind_sharp, arg_names, arg_types, word_cursor, enclosing_scope ):
+def parse_action( name_sharp, kind_sharp, arg_names, word_cursor, enclosing_scope ):
 	debug_parse( "Action keyword: %r", kind_sharp )
 	if kind_sharp == 'do#':
 		script = parse_script( word_cursor )
 		debug_parse( "Parsed script: %r", python_list( script ) )
-		result = MACRO( flat( name_sharp ), script, arg_names, arg_types, enclosing_scope )
+		action = MACRO( flat( name_sharp ), script, arg_names, enclosing_scope )
 	elif kind_sharp == 'python_eval#':
 		expression = flat( take_word( word_cursor ) ).strip()
 		debug_parse( "Expression: %r", expression )
-		result = PYTHON_EVAL( flat( name_sharp ), expression, arg_names, arg_types, enclosing_scope )
+		action = PYTHON_EVAL( flat( name_sharp ), expression, arg_names, enclosing_scope )
 	elif kind_sharp == 'python_exec#':
 		statement = flat( take_word( word_cursor ) ).strip()
 		debug_parse( "Statement: %r", statement )
-		result = PYTHON_EXEC( flat( name_sharp ), statement, arg_names, arg_types, enclosing_scope )
+		action = PYTHON_EXEC( flat( name_sharp ), statement, arg_names, enclosing_scope )
 	elif kind_sharp == 'builtin_current_thread#':
-		result = Object( 'CURRENT_THREAD', name=flat( name_sharp ), formal_arg_names=arg_names, formal_arg_types=arg_types, enclosing_scope=enclosing_scope )
+		action = Object( 'CURRENT_THREAD', name=flat( name_sharp ), formal_arg_names=arg_names, enclosing_scope=enclosing_scope )
 	else:
 		raise ParseError( "Expected 'do', 'python_eval', 'python_exec', or builtin; found %r" % kind_sharp )
-	return result
+	return action
 
 def bind_action( bindings, action ):
 	if action is null:
-		return False
+		return null
 	else:
-		action_symbol = 'ACTION_%d' % action._id
+		if test_shogun:
+			action_symbol = 'ACTION__%d' % action._id # TODO: hack because shogun can't yet handle ANON symbols as field names
+		else:
+			action_symbol = ANON( action.name )
 		bindings[ action_symbol ] = action
 		debug_parse( "Bound %r to %s", action_symbol, action )
-		return True
+		return action_symbol
 
 debug_ppa = silence
 
-# polymorphic_automaton
+# build_keyword_based_automaton
 
 use_sheppard_text = False
-def polymorphic_automaton( action_bindings ):
+def build_keyword_based_automaton( grammar ):
 	# A little silly parser generator algorithm to deal with simple
 	# multi-dispatch LR(0) languages using prefix notation and offering very
 	# little error detection.
@@ -882,7 +907,7 @@ def polymorphic_automaton( action_bindings ):
 	global use_sheppard_text
 	if use_sheppard_text:
 		use_sheppard_text = False
-		procedure = parse_procedure( "polymorphic_automaton", prologue_text + polymorphic_automaton_text, [ "polymorphic_automaton", action_bindings ] )
+		procedure = parse_procedure( "build_keyword_based_automaton", prologue_text + polymorphic_automaton_text, [ "build_keyword_based_automaton", grammar ] )
 		execute( procedure, procedure.action_bindings )
 		# Uh, how do I get the result?
 	if True:
@@ -890,14 +915,11 @@ def polymorphic_automaton( action_bindings ):
 		initial_state = Shift()
 		all_shift_states = Object( 'SHIFT_STATE_COLLECTOR', first = cons( initial_state, null ) )
 		debug_ppa( "  initial_state: %s", initial_state )
-		debug_ppa( "  action_bindings: %s", action_bindings )
 		debug_ppa( "  Building parse tree" )
-		bound_symbols = all_fields( action_bindings )
-		debug_ppa( "    Bound symbols: %s", bound_symbols )
-		make_branches( initial_state, bound_symbols, bound_symbols.length, all_shift_states )
+		make_branches( initial_state, grammar.productions, all_shift_states )
 		# Names are effectively keywords.  Any time we see one of those, whatever shift state we are in, we leap to that name's state.
 		debug_ppa( "  Connecting keywords" )
-		connect_keywords( initial_state, bound_symbols, bound_symbols.length, all_shift_states.first )
+		connect_keywords( initial_state, grammar.productions, all_shift_states.first )
 		# The accept state
 		initial_state[ ':EOF' ] = Accept()
 		debug_ppa( '  EOF => %s', initial_state[ ':EOF' ] )
@@ -905,19 +927,18 @@ def polymorphic_automaton( action_bindings ):
 		#debug( ' Automaton again:\n%s\n', shogun( deshogun( shogun( initial_state ) ) ) )
 		return AUTOMATON( initial_state, FALLBACK_FUNCTION() )
 
-def make_branches( initial_state, bound_symbols, index, all_shift_states ):
-	if index == 0:
+def make_branches( initial_state, productions, all_shift_states ):
+	if productions is null:
 		pass
 	else:
-		action_symbol_sharp = take( bound_symbols, sharp( index ) )
-		action = take( bound_symbols.subject, action_symbol_sharp )
-		tip = extend_branch( initial_state, action.formal_arg_types.tail, all_shift_states )
-		reduce_state = Reduce0( flat( action_symbol_sharp ) )
-		reduce_word_sharp = take( action.formal_arg_types, 'head#' )
+		production = productions.head
+		tip = extend_branch( initial_state, production.rhs_stack.tail, all_shift_states )
+		reduce_state = Reduce0( flat( take( production, 'action_symbol#' ) ) )
+		reduce_word_sharp = take( production.rhs_stack, 'head#' )
 		give( tip, reduce_word_sharp, reduce_state )
 		debug_ppa( '      %r:%r >> %r', tip, flat( reduce_word_sharp ), reduce_state )
 		# Tail digression
-		make_branches( initial_state, bound_symbols, index-1, all_shift_states )
+		make_branches( initial_state, productions.tail, all_shift_states )
 
 def extend_branch( state, arg_types, all_shift_states ):
 	if arg_types is null:
@@ -939,25 +960,33 @@ def extend_one_step2( state, arg_type_sharp, possible_match, all_shift_states ):
 		debug_ppa( '      %r:%r -> %r', state, flat( arg_type_sharp ), possible_match )
 		return possible_match
 
-def connect_keywords( initial_state, bound_symbols, index, states ):
+def connect_keywords( initial_state, productions, states ):
 	#debug_ppa( "      connect_keywords( %r, %r, %r, %r )" % ( initial_state, bound_symbols, index, states ) )
 	if states is null:
 		pass
 	else:
-		connect_keywords_to_state( initial_state, bound_symbols, index, states.head )
-		connect_keywords         ( initial_state, bound_symbols, index, states.tail )
+		connect_keywords_to_state( initial_state, productions, states.head )
+		connect_keywords         ( initial_state, productions, states.tail )
 
-def connect_keywords_to_state( initial_state, bound_symbols, index, shift_state ):
+def connect_keywords_to_state( initial_state, productions, shift_state ):
 	#debug_ppa( "      connect_keywords_to_state( %r, %r, %r, %r )" % ( initial_state, bound_symbols, index, shift_state ) )
-	if index == 0:
+	if productions is null:
 		pass
 	else:
-		action = take( bound_symbols.subject, take( bound_symbols, sharp( index ) ) )
-		name_sharp = take( action, "name#" )
-		give( shift_state, name_sharp, take( initial_state, name_sharp ) )
-		connect_keywords_to_state( initial_state, bound_symbols, index-1, shift_state )
+		production = productions.head
+		keyword_sharp = last_head( productions.head.rhs_stack )
+		give( shift_state, keyword_sharp, take( initial_state, keyword_sharp ) )
+		connect_keywords_to_state( initial_state, productions.tail, shift_state )
+
+def last_head( items ):
+	if items.tail is null:
+		return take( items, 'head#' )
+	else:
+		return last_head( items.tail )
 
 polymorphic_automaton_text = r"""
+HEY this is stale.  If you want to use it, you'll have to debug it.
+
 to Shift                              python_eval << Shift() >>
 to Reduce0  action_symbol_sharp       python_eval << Reduce0( flat( action_symbol_sharp ) ) >>
 to Accept                             python_eval << Accept() >>
@@ -969,7 +998,7 @@ to print_automaton
 python_exec
 	<< debug( ' Automaton:\n%s\n', shogun( initial_state ) ) >>
 
-to polymorphic_automaton
+to build_keyword_based_automaton
 	action_bindings
 do
 	set initial_state
@@ -1113,7 +1142,7 @@ do
 def parse_procedure( name, library_text, script ):
 	global_scope = ENVIRONMENT( null )
 	lib = parse_library( name, library_text, global_scope )
-	automaton = polymorphic_automaton( lib.action_bindings )
+	automaton = build_keyword_based_automaton( lib.grammar )
 	add_predefined_bindings( global_scope.bindings )
 	result = PROCEDURE( name, List( script ), automaton, lib.action_bindings, global_scope )
 	if False:
@@ -1128,7 +1157,7 @@ def parse_procedure( name, library_text, script ):
 # Proper parser generator.
 #
 
-def PRODUCTION( lhs, rhs, action_symbol ): return Object( 'PRODUCTION', lhs=lhs, rhs=rhs, action_symbol=action_symbol )
+def PRODUCTION( rhs_stack, action_symbol ): return Object( 'PRODUCTION', rhs_stack=rhs_stack, action_symbol=action_symbol ) # rhs_stack is the types expected on the operand stack, from the top down.  It's the reverse of the rhs in the usual sense.  We do it this way because historically that's how we used to do it with action.formal_arg_types.
 
 def GRAMMAR( goal_symbol, productions ): return Object( 'GRAMMAR', goal_symbol=goal_symbol, productions=productions )
 
@@ -1797,7 +1826,7 @@ def wrap_procedure( inner_procedure ):
 		global_scope = ENVIRONMENT( null )
 		sheppard_interpreter_library = parse_library( "sheppard_interpreter", prologue_text + meta_interpreter_text, global_scope )
 		add_predefined_bindings( global_scope.bindings )
-		sheppard_interpreter_automaton = polymorphic_automaton( sheppard_interpreter_library.action_bindings )
+		sheppard_interpreter_automaton = build_keyword_based_automaton( sheppard_interpreter_library.grammar )
 	bindings = global_scope.bindings
 	script = List([ 'execute', inner_procedure, inner_procedure.action_bindings ])
 	outer_procedure = PROCEDURE( 'meta_' + inner_procedure.name, script, sheppard_interpreter_automaton, sheppard_interpreter_library.action_bindings, global_scope )
@@ -1815,7 +1844,7 @@ def test( depth, plt ):
 		debug( "   script: %s", str( procedure.script ) )
 		debug( " bindings: %s", str( procedure.enclosing_scope.bindings ) )
 		#debug( "automaton: %s", procedure.automaton._description() )
-	if False:
+	if test_shogun:
 		s1 = shogun( procedure )
 		file("s1.txt", "w").write(s1)
 		s2 = shogun( deshogun( s1 ) )
