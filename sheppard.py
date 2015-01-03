@@ -121,7 +121,10 @@ class Object:
 			delattr( self, key )
 			self._fields.remove( key )
 
-	def __iter__( self ): # Range over all (index,value) pairs
+	def __iter__( self ):
+		raise TypeError( "Object %r does not implement iteration" % self )
+
+	def _iteritems( self ):
 		for key in self._fields:
 			yield ( key, getattr( self, key ) )
 		for key in self._elements.iterkeys():
@@ -169,12 +172,12 @@ class Object:
 			if self._expand_children():
 				children_strings = [ "\n%s%s=%s" % ( indent_str, symbol_str( key ), self._long_description( value, already_described, work_queue, indent+1 ) ) for ( key, value ) in self ]
 			else:
-				keys = [ key for ( key, value ) in self ]
+				keys = [ key for ( key, value ) in self._iteritems() ]
 				debug_description( "  Keys of %r: %s", self, string.join([ "%r" % k for k in keys ], ', ') )
 				debug_description( "  Values of %r: %s", self, string.join([ "%r" % self[k] for k in keys ], ', ') )
 				keys.sort( smart_order )
 
-				children = [ value for ( key, value ) in self if isinstance( value, Object ) ]
+				children = [ value for ( key, value ) in self._iteritems() if isinstance( value, Object ) ]
 				debug_description( "  Children of %r: %s", self, string.join([ "%r" % c for c in children ], ', ') )
 				if len( children ) <= 6:
 					children_strings = [ " %s=%s" % ( symbol_str( key ), self._short_description( self[ key ] ) ) for key in keys ]
@@ -385,7 +388,7 @@ def shogun_list_elements( obj, objects, length_limit ):
 def shogun_object_by_fields( obj, objects ):
 	debug_shogun( "shogun_object_by_fields( %r )", obj )
 	result = "%s {\n" % tag( obj ) # TODO: What if the tag is really weird?
-	fields = [ f for (f,v) in obj ]
+	fields = [ f for (f,v) in obj._iteritems() ]
 	fields.sort( smart_order )
 	for field in fields:
 		value = obj[ field ]
@@ -1368,14 +1371,14 @@ def perform( frame, action, reduce_environment ):
 
 def perform_python_exec( frame, action, reduce_environment ):
 	try:
-		exec action.statement in globals(), dict( reduce_environment.bindings )
+		exec action.statement in globals(), dict( reduce_environment.bindings._iteritems() )
 	except:
 		print "\nError in exec:", action.statement, "with", reduce_environment.bindings
 		raise
 
 def perform_python_eval( frame, action, reduce_environment ):
 	try:
-		result = eval( action.expression,  globals(), dict( reduce_environment.bindings ) )
+		result = eval( action.expression,  globals(), dict( reduce_environment.bindings._iteritems() ) )
 	except:
 		print "\nError in eval:", action.expression, "with", reduce_environment.bindings
 		raise
