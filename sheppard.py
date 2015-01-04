@@ -130,6 +130,9 @@ class Object:
 		for key in self._elements.iterkeys():
 			yield ( key, self._elements[ key ] )
 
+	def __hash__( self ):
+		raise TypeError( "Object %r has no hash" % self )
+
 	def __repr__( self ):
 		try:
 			return self._name
@@ -629,6 +632,21 @@ def Shift( **edges ):
 
 def LIBRARY( name, grammar, action_bindings ): return Object( 'LIBRARY', name=name, grammar=grammar, action_bindings=action_bindings )
 
+def future_str( cursor ):
+	if cursor is dial_tone:
+		return ""
+	else:
+		return repr( cursor ) + " " + future_str( cursor.resumption )
+
+def meta_level( th ):
+	if th.meta_thread is null:
+		return 0
+	else:
+		return 1 + meta_level( th.meta_thread )
+
+def tag_edge_symbol( tag_sharp ):
+	return ':' + tag_sharp
+
 # A few functions to help with the Python / Sheppard impedance mismatch
 
 def python_list( sheppard_list, head='head', tail='tail' ):
@@ -647,21 +665,6 @@ def list_str( lst, sep=", ", ellision_limit=999 ):
 		pl = pl[ : ellision_limit-2 ]
 		prefix = "... "
 	return prefix + string.join([ repr(s) for s in reversed( pl )], sep )
-
-def future_str( cursor ):
-	if cursor is dial_tone:
-		return ""
-	else:
-		return repr( cursor ) + " " + future_str( cursor.resumption )
-
-def meta_level( th ):
-	if th.meta_thread is null:
-		return 0
-	else:
-		return 1 + meta_level( th.meta_thread )
-
-def tag_edge_symbol( tag_sharp ):
-	return ':' + tag_sharp
 
 # These functions operate in sharp-land, so they're safe to call directly from
 # a Sheppard program without interfering with the execution of the automaton
@@ -745,7 +748,7 @@ let take       base key_sharp               be_python << take( base, key_sharp )
 to  give       base key_sharp value_sharp   do_python << give( base, key_sharp, value_sharp ) >>
 let get        base key:SYMBOL              be_python << base[ key ] >>
 let get2       base f1 f2                   be_python << base[ f1 ][ f2 ] >>
-to  put        base key:MONIKER value       do_python << base[ key ] = value >>
+to  put        base key:SYMBOL value        do_python << base[ key ] = value >>
 let cons       head_sharp tail              be_python << cons( head_sharp, tail ) >>
 let all_fields obj                          be_python << all_fields( obj ) >>
 let sharp      symbol                       be_python << sharp( symbol ) >>
@@ -772,14 +775,17 @@ let - a b   be_python << a-b >>
 
 debug_parse = silence
 
+def PATTERN( formal_arg_types, action_symbol ): return Object( 'PATTERN', formal_arg_types=formal_arg_types, action_symbol=action_symbol )
+def KEYWORD_GRAMMAR( patterns ): return Object( 'KEYWORD_GRAMMAR', patterns=patterns )
+
 def parse_library( name, string, enclosing_scope ):
 	debug_parse( "parse_library( %r, %r, %r )", name, string, enclosing_scope )
 	word_cursor = Object( 'WORD_CURSOR', current = library_words( string ) )
 	action_bindings = Object( 'BINDINGS' )
-	grammar = GRAMMAR( ANON('dummy_goal'), null ) # TODO
+	grammar = KEYWORD_GRAMMAR( null )
 	definition = parse_definition( word_cursor, enclosing_scope, action_bindings )
 	while definition:
-		grammar.productions = LIST( PRODUCTION( definition.arg_types, definition.action_symbol ), grammar.productions )
+		grammar.patterns = LIST( PATTERN( definition.arg_types, definition.action_symbol ), grammar.patterns )
 		definition = parse_definition( word_cursor, enclosing_scope, action_bindings )
 	return LIBRARY( name, grammar, action_bindings )
 
@@ -867,7 +873,7 @@ def parse_definition2( start_word_sharp, word_cursor, enclosing_scope ):
 		arg_names = arg_stack( formal_args, 'name' )
 		arg_types = arg_stack( formal_args, 'symbol' )
 		action = parse_action( name_sharp, take_word( word_cursor ), arg_names, word_cursor, enclosing_scope )
-		return Object( 'DEFINITION', arg_types=arg_types, action=action ) # TODO: I can probably create PRODUCTIONs directly if I rearrange this a little
+		return Object( 'DEFINITION', arg_types=arg_types, action=action ) # TODO: I can probably create PATTERN directly if I rearrange this a little
 
 def parse_action( name_sharp, kind_sharp, arg_names, word_cursor, enclosing_scope ):
 	debug_parse( "Action keyword: %r", kind_sharp )
@@ -914,7 +920,7 @@ def build_keyword_based_automaton( grammar ):
 	global use_sheppard_text
 	if use_sheppard_text:
 		use_sheppard_text = False
-		procedure = parse_procedure( "build_keyword_based_automaton", prologue_text + polymorphic_automaton_text, [ "build_keyword_based_automaton", grammar ] )
+		procedure = parse_procedure( "build_keyword_based_automaton", prologue_text + build_keyword_based_automaton_text, [ "build_keyword_based_automaton", grammar ] )
 		execute( procedure, procedure.action_bindings )
 		# Uh, how do I get the result?
 	if True:
@@ -923,10 +929,10 @@ def build_keyword_based_automaton( grammar ):
 		all_shift_states = Object( 'SHIFT_STATE_COLLECTOR', first = cons( initial_state, null ) )
 		debug_kba( "  initial_state: %s", initial_state )
 		debug_kba( "  Building parse tree" )
-		make_branches( initial_state, grammar.productions, all_shift_states )
+		make_branches( initial_state, grammar.patterns, all_shift_states )
 		# Names are effectively keywords.  Any time we see one of those, whatever shift state we are in, we leap to that name's state.
 		debug_kba( "  Connecting keywords" )
-		connect_keywords( initial_state, grammar.productions, all_shift_states.first )
+		connect_keywords( initial_state, grammar.patterns, all_shift_states.first )
 		# The accept state
 		initial_state[ ':EOF' ] = Accept()
 		debug_kba( '  EOF => %s', initial_state[ ':EOF' ] )
@@ -934,18 +940,18 @@ def build_keyword_based_automaton( grammar ):
 		#debug( ' Automaton again:\n%s\n', shogun( deshogun( shogun( initial_state ) ) ) )
 		return AUTOMATON( initial_state, FALLBACK_FUNCTION() )
 
-def make_branches( initial_state, productions, all_shift_states ):
-	if productions is null:
+def make_branches( initial_state, patterns, all_shift_states ):
+	if patterns is null:
 		pass
 	else:
-		production = productions.head
-		tip = extend_branch( initial_state, production.rhs_stack.tail, all_shift_states )
+		production = patterns.head
+		tip = extend_branch( initial_state, production.formal_arg_types.tail, all_shift_states )
 		reduce_state = Reduce0( flat( take( production, 'action_symbol#' ) ) )
-		reduce_word_sharp = take( production.rhs_stack, 'head#' )
+		reduce_word_sharp = take( production.formal_arg_types, 'head#' )
 		give( tip, reduce_word_sharp, reduce_state )
 		debug_kba( '      %r:%r >> %r', tip, flat( reduce_word_sharp ), reduce_state )
 		# Tail digression
-		make_branches( initial_state, productions.tail, all_shift_states )
+		make_branches( initial_state, patterns.tail, all_shift_states )
 
 def extend_branch( state, arg_types, all_shift_states ):
 	if arg_types is null:
@@ -967,23 +973,23 @@ def extend_one_step2( state, arg_type_sharp, possible_match, all_shift_states ):
 		debug_kba( '      %r:%r -> %r', state, flat( arg_type_sharp ), possible_match )
 		return possible_match
 
-def connect_keywords( initial_state, productions, states ):
+def connect_keywords( initial_state, patterns, states ):
 	#debug_kba( "      connect_keywords( %r, %r, %r, %r )" % ( initial_state, bound_symbols, index, states ) )
 	if states is null:
 		pass
 	else:
-		connect_keywords_to_state( initial_state, productions, states.head )
-		connect_keywords         ( initial_state, productions, states.tail )
+		connect_keywords_to_state( initial_state, patterns, states.head )
+		connect_keywords         ( initial_state, patterns, states.tail )
 
-def connect_keywords_to_state( initial_state, productions, shift_state ):
+def connect_keywords_to_state( initial_state, patterns, shift_state ):
 	#debug_kba( "      connect_keywords_to_state( %r, %r, %r, %r )" % ( initial_state, bound_symbols, index, shift_state ) )
-	if productions is null:
+	if patterns is null:
 		pass
 	else:
-		production = productions.head
-		keyword_sharp = last_head( productions.head.rhs_stack )
+		production = patterns.head
+		keyword_sharp = last_head( patterns.head.formal_arg_types )
 		give( shift_state, keyword_sharp, take( initial_state, keyword_sharp ) )
-		connect_keywords_to_state( initial_state, productions.tail, shift_state )
+		connect_keywords_to_state( initial_state, patterns.tail, shift_state )
 
 def last_head( items ):
 	if items.tail is null:
@@ -991,7 +997,7 @@ def last_head( items ):
 	else:
 		return last_head( items.tail )
 
-polymorphic_automaton_text = r"""
+build_keyword_based_automaton_text = r"""
 HEY this is stale.  If you want to use it, you'll have to debug it.
 
 let Shift                              be_python << Shift() >>
@@ -1164,8 +1170,7 @@ def parse_procedure( name, library_text, script ):
 # Proper parser generator.
 #
 
-def PRODUCTION( rhs_stack, action_symbol ): return Object( 'PRODUCTION', rhs_stack=rhs_stack, action_symbol=action_symbol ) # rhs_stack is the types expected on the operand stack, from the top down.  It's the reverse of the rhs in the usual sense.  We do it this way because historically that's how we used to do it with action.formal_arg_types.
-
+def PRODUCTION( lhs, rhs, action_symbol ): return Object( 'PRODUCTION', lhs=lhs, rhs=rhs, action_symbol=action_symbol )
 def GRAMMAR( goal_symbol, productions ): return Object( 'GRAMMAR', goal_symbol=goal_symbol, productions=productions )
 
 def or_changed( target, source ):
@@ -1809,7 +1814,7 @@ class Unexpected_token( BaseException ):
 		return "Unexpected token %r in state %s" % ( flat( self._token ), self._state )
 
 fib_text = """
-let fib  n=0  be  1
+let fib  n=0  be  0
 let fib  n=1  be  1
 
 let fib  n  be
