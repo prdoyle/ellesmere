@@ -241,8 +241,9 @@ null = Null()  # The very first object!  It gets _id=0
 class Anonymous_symbol( Object ):
 
 	def __init__( self, pseudonym=None ):
-		Object.__init__( self, "ANON", pseudonym=pseudonym )
+		Object.__init__( self, "ANON" )
 		if pseudonym is not None:
+			self.pseudonym = pseudonym
 			self._name = "%s#%d" % ( pseudonym, self._id )
 
 	def __hash__( self ): return id( self )
@@ -611,12 +612,12 @@ def FALLBACK_FUNCTION( **bindings ):
 	add_predefined_fallbacks( result )
 	return result
 
-def MACRO( name, script, formal_arg_names, enclosing_scope ):
-	return Object( 'MACRO', name=name, script=script, formal_arg_names=formal_arg_names, enclosing_scope=enclosing_scope )
-def PYTHON_EVAL( name, expression, formal_arg_names, enclosing_scope ):
-	return Object( 'PYTHON_EVAL', name=name, expression=expression, formal_arg_names=formal_arg_names, enclosing_scope=enclosing_scope )
-def PYTHON_EXEC( name, statement, formal_arg_names, enclosing_scope ):
-	return Object( 'PYTHON_EXEC', name=name, statement=statement, formal_arg_names=formal_arg_names, enclosing_scope=enclosing_scope )
+def MACRO( script, formal_arg_names, enclosing_scope ):
+	return Object( 'MACRO', script=script, formal_arg_names=formal_arg_names, enclosing_scope=enclosing_scope )
+def PYTHON_EVAL( expression, formal_arg_names, enclosing_scope ):
+	return Object( 'PYTHON_EVAL', expression=expression, formal_arg_names=formal_arg_names, enclosing_scope=enclosing_scope )
+def PYTHON_EXEC( statement, formal_arg_names, enclosing_scope ):
+	return Object( 'PYTHON_EXEC', statement=statement, formal_arg_names=formal_arg_names, enclosing_scope=enclosing_scope )
 
 def Reduce0( action_symbol ): return Object( 'REDUCE0', action_symbol=action_symbol )
 def Accept(): return Object( 'ACCEPT' )
@@ -711,7 +712,7 @@ def print_stuff( th ):
 def print_reduce_stuff( th, action, reduce_environment ):
 	if meta_level( th ) >= printing_level_threshold:
 		frame = th.activation
-		debug( ">+  ACTION: %r %r with %s", action, action.name, reduce_environment.bindings )
+		debug( ">+  ACTION: %r %s with %s", action, getattr( action, 'name', "(anonymous)" ), reduce_environment.bindings )
 		#debug( ">+  ACTION: %s %s", action.name, action )
 		#debug( " |    with: %s %s", reduce_environment.bindings, reduce_environment )
 
@@ -767,6 +768,19 @@ let - a b   be_python << a-b >>
 
 """
 
+arithmetic_text = """
+/* We cast all these as int in Python just to avoid really weird behaviour like 'some_symbol' * 100000 */
+
+define :INT  a:INT + b:INT  as_python  << int(a) + int(b) >>  /* left_assoc(1) */
+define :INT  a:INT - b:INT  as_python  << int(a) - int(b) >>  /* left_assoc(1) */
+define :INT  a:INT * b:INT  as_python  << int(a) * int(b) >>  /* left_assoc(2) */
+define :INT  a:INT / b:INT  as_python  << int(a) / int(b) >>  /* left_assoc(2) */
+define :INT  a:INT % b:INT  as_python  << int(a) % int(b) >>  /* left_assoc(2) */
+define :INT    ( a:INT )    as_python  << a >>
+"""
+
+prologue_text += arithmetic_text
+
 
 #####################################
 #
@@ -775,7 +789,7 @@ let - a b   be_python << a-b >>
 
 debug_parse = silence
 
-def PATTERN( formal_arg_types, action_symbol ): return Object( 'PATTERN', formal_arg_types=formal_arg_types, action_symbol=action_symbol )
+def KEYWORD_PATTERN( formal_arg_types, action_symbol ): return Object( 'KEYWORD_PATTERN', formal_arg_types=formal_arg_types, action_symbol=action_symbol )
 def KEYWORD_GRAMMAR( patterns ): return Object( 'KEYWORD_GRAMMAR', patterns=patterns )
 
 def parse_library( name, string, enclosing_scope ):
@@ -785,7 +799,7 @@ def parse_library( name, string, enclosing_scope ):
 	grammar = KEYWORD_GRAMMAR( null )
 	definition = parse_definition( word_cursor, enclosing_scope, action_bindings )
 	while definition:
-		grammar.patterns = LIST( PATTERN( definition.arg_types, definition.action_symbol ), grammar.patterns )
+		grammar.patterns = LIST( definition, grammar.patterns )
 		definition = parse_definition( word_cursor, enclosing_scope, action_bindings )
 	return LIBRARY( name, grammar, action_bindings )
 
@@ -815,11 +829,11 @@ def take_word( word_cursor ):
 	#debug( "take_word: %r", result )
 	return result
 
-def parse_arg_list( word_cursor ):
-	return parse_arg_list2( take( word_cursor.current, 'head#' ), word_cursor )
+def parse_arg_list( word_cursor, a_plain_word_is_a_name ):
+	return parse_arg_list2( take( word_cursor.current, 'head#' ), word_cursor, a_plain_word_is_a_name )
 
-def parse_arg_list2( lookahead_sharp, word_cursor ):
-	if lookahead_sharp in [ 'do#', 'be#', 'be_python#', 'do_python#', 'be_builtin_current_thread#' ]:
+def parse_arg_list2( lookahead_sharp, word_cursor, a_plain_word_is_a_name ):
+	if lookahead_sharp in [ 'do#', 'be#', 'as#', 'do_python#', 'be_python#', 'as_python#', 'be_builtin_current_thread#' ]:
 		debug_parse( "Ending arg list on %r", lookahead_sharp )
 		return null
 	else:
@@ -830,11 +844,14 @@ def parse_arg_list2( lookahead_sharp, word_cursor ):
 		elif ':' in word_sharp:
 			[ name, symbol ] = flat( word_sharp ).split( ':' )
 			symbol = ':' + symbol
-		else:
+		elif a_plain_word_is_a_name:
 			name = flat( word_sharp )
 			symbol = ':ANY'
+		else:
+			name = null
+			symbol = flat( word_sharp )
 		debug_parse( '  arg %s %r', name, symbol )
-		return LIST( FORMAL_ARG( name, symbol ), parse_arg_list( word_cursor ) )
+		return LIST( FORMAL_ARG( name, symbol ), parse_arg_list( word_cursor, a_plain_word_is_a_name ) )
 
 def parse_script( word_cursor ):
 	return parse_script2( take( word_cursor.current, 'head#' ), word_cursor )
@@ -845,52 +862,65 @@ def parse_script2( lookahead_sharp, word_cursor ):
 	else:
 		return cons( take_word( word_cursor ), parse_script( word_cursor ) )
 
-def arg_stack( arg_list, field, tail=null ):
-	if arg_list is null:
+def arg_stack( formal_args, field, tail=null ):
+	if formal_args is null:
 		return tail
 	else:
-		return arg_stack( arg_list.tail, field, LIST( arg_list.head[ field ], tail ) )
+		return arg_stack( formal_args.tail, field, LIST( formal_args.head[ field ], tail ) )
+
+def arg_list( formal_args, field ):
+	if formal_args is null:
+		return null
+	else:
+		return LIST( formal_args.head[ field ], arg_list( formal_args.tail, field ) )
 
 def parse_definition( word_cursor, enclosing_scope, action_bindings ):
-	result = parse_definition2( take_word( word_cursor ), word_cursor, enclosing_scope )
-	if result:
-		action_symbol = bind_action( action_bindings, result.action )
-		result.action_symbol = action_symbol
-	return result
+	return parse_definition2( take_word( word_cursor ), word_cursor, enclosing_scope, action_bindings )
 
-def parse_definition2( start_word_sharp, word_cursor, enclosing_scope ):
+def parse_definition2( start_word_sharp, word_cursor, enclosing_scope, action_bindings ):
 	if start_word_sharp is take_failed:
 		return null
 	else:
-		if start_word_sharp == 'let#':
-			# How should we represent the return type?
-			#type_name = take_word( word_cursor )
-			pass
-		elif start_word_sharp != 'to#':
-			raise ParseError( "Expected action declaration to begin with 'to' or 'let'; found %r" % start_word_sharp )
-		name_sharp = take_word( word_cursor )
-		formal_args = LIST( FORMAL_ARG( null, flat( name_sharp ) ), parse_arg_list( word_cursor ) )
-		arg_names = arg_stack( formal_args, 'name' )
-		arg_types = arg_stack( formal_args, 'symbol' )
-		action = parse_action( name_sharp, take_word( word_cursor ), arg_names, word_cursor, enclosing_scope )
-		return Object( 'DEFINITION', arg_types=arg_types, action=action ) # TODO: I can probably create PATTERN directly if I rearrange this a little
+		if start_word_sharp == 'define#':
+			lhs_sharp = take_word( word_cursor )
+			formal_args = parse_arg_list( word_cursor, a_plain_word_is_a_name=False )
+			rhs = arg_list ( formal_args, 'symbol' )
+			arg_names = arg_stack( formal_args, 'name' )
+			action = parse_action( take_word( word_cursor ), arg_names, word_cursor, enclosing_scope )
+			action_symbol = bind_action( action_bindings, action )
+			return PRODUCTION( flat( lhs_sharp ), rhs, action_symbol )
+		else:
+			if start_word_sharp == 'let#':
+				# How should we represent the return type?
+				#type_name = take_word( word_cursor )
+				pass
+			elif start_word_sharp != 'to#':
+				raise ParseError( "Expected action declaration to begin with 'to' or 'let'; found %r" % start_word_sharp )
+			name_sharp = take_word( word_cursor )
+			formal_args = LIST( FORMAL_ARG( null, flat( name_sharp ) ), parse_arg_list( word_cursor, a_plain_word_is_a_name=True ) )
+			arg_names = arg_stack( formal_args, 'name' )
+			arg_types = arg_stack( formal_args, 'symbol' )
+			action = parse_action( take_word( word_cursor ), arg_names, word_cursor, enclosing_scope )
+			action.name = flat( name_sharp )
+			action_symbol = bind_action( action_bindings, action )
+			return KEYWORD_PATTERN( arg_types, action_symbol )
 
-def parse_action( name_sharp, kind_sharp, arg_names, word_cursor, enclosing_scope ):
+def parse_action( kind_sharp, arg_names, word_cursor, enclosing_scope ):
 	debug_parse( "Action keyword: %r", kind_sharp )
-	if kind_sharp in [ 'do#', 'be#' ]:
+	if kind_sharp in [ 'do#', 'be#', 'as#' ]:
 		script = parse_script( word_cursor )
 		debug_parse( "Parsed script: %r", python_list( script ) )
-		action = MACRO( flat( name_sharp ), script, arg_names, enclosing_scope )
-	elif kind_sharp == 'be_python#':
+		action = MACRO( script, arg_names, enclosing_scope )
+	elif kind_sharp in [ 'be_python#', 'as_python#' ]:
 		expression = flat( take_word( word_cursor ) ).strip()
 		debug_parse( "Expression: %r", expression )
-		action = PYTHON_EVAL( flat( name_sharp ), expression, arg_names, enclosing_scope )
+		action = PYTHON_EVAL( expression, arg_names, enclosing_scope )
 	elif kind_sharp == 'do_python#':
 		statement = flat( take_word( word_cursor ) ).strip()
 		debug_parse( "Statement: %r", statement )
-		action = PYTHON_EXEC( flat( name_sharp ), statement, arg_names, enclosing_scope )
+		action = PYTHON_EXEC( statement, arg_names, enclosing_scope )
 	elif kind_sharp == 'be_builtin_current_thread#':
-		action = Object( 'CURRENT_THREAD', name=flat( name_sharp ), formal_arg_names=arg_names, enclosing_scope=enclosing_scope )
+		action = Object( 'CURRENT_THREAD', formal_arg_names=arg_names, enclosing_scope=enclosing_scope )
 	else:
 		raise ParseError( "Expected 'do', 'be_python', 'do_python', or builtin; found %r" % kind_sharp )
 	return action
@@ -902,14 +932,18 @@ def bind_action( bindings, action ):
 		if test_shogun:
 			action_symbol = 'ACTION__%d' % action._id # TODO: hack because shogun can't yet handle ANON symbols as field names
 		else:
-			action_symbol = ANON( action.name )
+			name_sharp = take( action, 'name#' )
+			if name_sharp is take_failed:
+				action_symbol = ANON()
+			else:
+				action_symbol = ANON( flat( name_sharp ) )
 		bindings[ action_symbol ] = action
 		debug_parse( "Bound %r to %s", action_symbol, action )
 		return action_symbol
 
-debug_kba = silence
-
 # build_keyword_based_automaton
+
+debug_kba = silence
 
 use_sheppard_text = False
 def build_keyword_based_automaton( grammar ):
@@ -944,13 +978,16 @@ def make_branches( initial_state, patterns, all_shift_states ):
 	if patterns is null:
 		pass
 	else:
-		production = patterns.head
-		tip = extend_branch( initial_state, production.formal_arg_types.tail, all_shift_states )
-		reduce_state = Reduce0( flat( take( production, 'action_symbol#' ) ) )
-		reduce_word_sharp = take( production.formal_arg_types, 'head#' )
-		give( tip, reduce_word_sharp, reduce_state )
-		debug_kba( '      %r:%r >> %r', tip, flat( reduce_word_sharp ), reduce_state )
-		# Tail digression
+		pattern = patterns.head
+		if is_a( pattern, 'PRODUCTION' ):
+			debug_kba( "Productions not yet supported, but this one would have been:\n%s", shogun( pattern ) )
+		else:
+			tip = extend_branch( initial_state, pattern.formal_arg_types.tail, all_shift_states )
+			reduce_state = Reduce0( flat( take( pattern, 'action_symbol#' ) ) )
+			reduce_word_sharp = take( pattern.formal_arg_types, 'head#' )
+			give( tip, reduce_word_sharp, reduce_state )
+			debug_kba( '      %r:%r >> %r', tip, flat( reduce_word_sharp ), reduce_state )
+			# Tail digression
 		make_branches( initial_state, patterns.tail, all_shift_states )
 
 def extend_branch( state, arg_types, all_shift_states ):
@@ -974,7 +1011,7 @@ def extend_one_step2( state, arg_type_sharp, possible_match, all_shift_states ):
 		return possible_match
 
 def connect_keywords( initial_state, patterns, states ):
-	#debug_kba( "      connect_keywords( %r, %r, %r, %r )" % ( initial_state, bound_symbols, index, states ) )
+	#debug_kba( "      connect_keywords( %r, %r, %r )" % ( initial_state, patterns, states ) )
 	if states is null:
 		pass
 	else:
@@ -982,13 +1019,15 @@ def connect_keywords( initial_state, patterns, states ):
 		connect_keywords         ( initial_state, patterns, states.tail )
 
 def connect_keywords_to_state( initial_state, patterns, shift_state ):
-	#debug_kba( "      connect_keywords_to_state( %r, %r, %r, %r )" % ( initial_state, bound_symbols, index, shift_state ) )
+	#debug_kba( "      connect_keywords_to_state( %r, %r, %r )" % ( initial_state, patterns, shift_state ) )
 	if patterns is null:
 		pass
 	else:
-		production = patterns.head
-		keyword_sharp = last_head( patterns.head.formal_arg_types )
-		give( shift_state, keyword_sharp, take( initial_state, keyword_sharp ) )
+		if is_a( patterns.head, 'PRODUCTION' ):
+			debug_kba( "Skip %s", patterns.head )
+		else:
+			keyword_sharp = last_head( patterns.head.formal_arg_types )
+			give( shift_state, keyword_sharp, take( initial_state, keyword_sharp ) )
 		connect_keywords_to_state( initial_state, patterns.tail, shift_state )
 
 def last_head( items ):
@@ -1171,7 +1210,7 @@ def parse_procedure( name, library_text, script ):
 #
 
 def PRODUCTION( lhs, rhs, action_symbol ): return Object( 'PRODUCTION', lhs=lhs, rhs=rhs, action_symbol=action_symbol )
-def GRAMMAR( goal_symbol, productions ): return Object( 'GRAMMAR', goal_symbol=goal_symbol, productions=productions )
+def GRAMMAR( goal_symbol, productions ):   return Object( 'GRAMMAR', goal_symbol=goal_symbol, productions=productions )
 
 def or_changed( target, source ):
 	if target >= source:
