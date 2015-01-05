@@ -712,8 +712,7 @@ def print_stuff( th ):
 def print_reduce_stuff( th, action, reduce_environment ):
 	if meta_level( th ) >= printing_level_threshold:
 		frame = th.activation
-		debug( ">+  ACTION: %r %s with %s", action, getattr( action, 'name', "(anonymous)" ), reduce_environment.bindings )
-		#debug( ">+  ACTION: %s %s", action.name, action )
+		debug( ">+  ACTION: %r %s with %s", action, getattr( action, 'keyword', "" ), reduce_environment.bindings )
 		#debug( " |    with: %s %s", reduce_environment.bindings, reduce_environment )
 
 def print_backtrace( th ):
@@ -901,7 +900,7 @@ def parse_definition2( start_word_sharp, word_cursor, enclosing_scope, action_bi
 			arg_names = arg_stack( formal_args, 'name' )
 			arg_types = arg_stack( formal_args, 'symbol' )
 			action = parse_action( take_word( word_cursor ), arg_names, word_cursor, enclosing_scope )
-			action.name = flat( name_sharp )
+			action.keyword = flat( name_sharp )
 			action_symbol = bind_action( action_bindings, action )
 			return KEYWORD_PATTERN( arg_types, action_symbol )
 
@@ -932,11 +931,11 @@ def bind_action( bindings, action ):
 		if test_shogun:
 			action_symbol = 'ACTION__%d' % action._id # TODO: hack because shogun can't yet handle ANON symbols as field names
 		else:
-			name_sharp = take( action, 'name#' )
-			if name_sharp is take_failed:
+			keyword_sharp = take( action, 'keyword#' )
+			if keyword_sharp is take_failed:
 				action_symbol = ANON()
 			else:
-				action_symbol = ANON( flat( name_sharp ) )
+				action_symbol = ANON( flat( keyword_sharp ) )
 		bindings[ action_symbol ] = action
 		debug_parse( "Bound %r to %s", action_symbol, action )
 		return action_symbol
