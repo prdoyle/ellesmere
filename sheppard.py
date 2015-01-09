@@ -59,14 +59,17 @@ def smart_order( key1, key2 ):
 #debug_object = debug
 
 object_counter = 0
+tag_counters = None # {}
 
 class Object:
 	"""Warps Python's object model to make it more Sheppard-like"""
 
 	def __init__( _self, _tag, **edges ):
-		global object_counter
+		global object_counter, tag_counters
 		assert( _tag.isupper() )
 		_self._tag = _tag
+		if tag_counters is not None:
+			tag_counters[ _tag ] = 1 + tag_counters.get( _tag, 0 )
 		# The terminology is a little weird here, from a time when numbers were not considered
 		# symbols, so I differentiated "elements" (indexed by ints) from "fields".
 		_self._elements = {}
@@ -2038,6 +2041,11 @@ def main():
 	test( depth, printing_level_threshold )
 	elapsed_time = time.time() - start_time
 	print shift_count, "shifts in", pretty_time( elapsed_time ), "with", object_counter, "objects"
+	if tag_counters:
+		tc = tag_counters.items()
+		tc.sort( lambda (k1,v1), (k2,v2): cmp((-v1,k1),(-v2,k2)) )
+		for ( t, num ) in tc:
+			print "%25s: %d" % ( t, num )
 
 if False:
 	import cProfile
