@@ -38,7 +38,8 @@ def symbol_str( obj ):
 		else:
 			return repr( obj )
 	else:
-		raise TypeError
+		# Could be an ANON etc.
+		return repr( obj )
 
 def smart_order( key1, key2 ):
 	# One day, this is supposed to grow into something that sorts the numeric
@@ -124,14 +125,15 @@ class Object:
 	def __iter__( self ):
 		raise TypeError( "Object %r does not implement iteration" % self )
 
-	def _iteritems( self ):
+	def _iterkeys( self ):
 		for key in self._fields:
-			yield ( key, getattr( self, key ) )
+			yield key
 		for key in self._elements.iterkeys():
-			yield ( key, self._elements[ key ] )
+			yield key
 
-	def __hash__( self ):
-		raise TypeError( "Object %r has no hash" % self )
+	def _iteritems( self ):
+		for key in self._iterkeys():
+			yield ( key, self[ key ] )
 
 	def __repr__( self ):
 		try:
@@ -216,6 +218,8 @@ class Object:
 	# Most Sheppard objects can't be dict keys (i.e. they are not symbols)
 
 	def __hash__( self ):
+		if True:
+			return self._id # nfa2dfa needs sets of objects, so now we need to hash them
 		# Prevent most Sheppard objects from being hashed.  We raise KeyError to
 		# make getitem and setitem act like they don't have data for the given
 		# (illegal) "key" object, which I think is usually how we want them to behave.
@@ -341,12 +345,20 @@ def get_index( obj, obj_list ):
 		obj_list.append( obj )
 		return len( obj_list ) - 1
 
+shogun_predefined_objects = None # Lazy init
+def init_shogun_predefined_objects():
+	global shogun_predefined_objects, shogun_predefined_names_by_object
+	shogun_predefined_objects = dict()
+	add_predefined_bindings( shogun_predefined_objects )
+	shogun_predefined_names_by_object = dict([ (v,k) for (k,v) in shogun_predefined_objects.iteritems() ])
+
 def shogun( obj ):
 	"""Sheppard Object Graph Unicode Notation"""
 	debug_shogun( "shogun( %r )", obj )
-	objects = [ null, obj ]
+	init_shogun_predefined_objects()
+	objects = [ obj ]
 	result = "{\n"
-	i = 1
+	i = 0
 	while i < len(objects):
 		obj = objects[ i ]
 		if isinstance( obj, int ) or isinstance( obj, str ):
@@ -359,7 +371,7 @@ def shogun( obj ):
 		else:
 			result += "\t%r : %s" % ( i, shogun_object_by_fields( obj, objects ) )
 		i += 1
-	return result + "}[1]"
+	return result + "}[0]"
 
 class ParseError( Exception ):
 	pass
@@ -402,13 +414,13 @@ def shogun_object_by_fields( obj, objects ):
 
 def shogun_value( value, objects ):
 	debug_shogun( "shogun_value( %r )", value )
-	if value is null:
-		return "@0" # SPECIAL CASE FOR NULL
+	if value in shogun_predefined_names_by_object:
+		return shogun_predefined_names_by_object[ value ]
 	elif isinstance( value, int ) or isinstance( value, str ):
 		return repr( value )
 	elif tag( value ) == 'LIST':
 		try:
-			return "[ %s ]" % ", ".join( shogun_list_elements( value, objects, sanity_limit ) )
+			return "[ %s ]" % " , ".join( shogun_list_elements( value, objects, sanity_limit ) )
 		except NotAListError:
 			pass
 	# Default
@@ -431,7 +443,8 @@ def deshogun( text ):
 	# add_predefined_bindings) might need the same treatment, and I'm not
 	# sure what else.
 	#
-	dictionary = { 0:null }
+	init_shogun_predefined_objects()
+	dictionary = { }
 
 	relocations = []
 	words = re.findall( r"'[^']*'|@\d+|\d+|[{}:]|\[|\]|'.*'|\".*\"|\S+", text )
@@ -492,13 +505,21 @@ def deshogun_symbol( word ):
 		# top-level array, complete with relocations etc.
 		debug_deshogun( "  ANON" )
 		return ANON( match.group(1) )
+	elif word in shogun_predefined_objects:
+		# TODO: Assert that the predefined object is a symbol
+		return shogun_predefined_objects[ word ]
 	else:
+		# TODO: I'm not thrilled about this behaviour.  A symbol like abc can
+		# suddenly change meaning if abc becomes a predefined object.  Quotes
+		# should be mandatory.
 		debug_deshogun( "  normal" )
 		return maybe_int( word )
 
 def deshogun_simple_value( word, words ):
 	debug_deshogun( "deshogun_simple_value( %r )", word )
-	if word[0].isdigit():
+	if word in shogun_predefined_objects:
+		return shogun_predefined_objects[ word ]
+	elif word[0].isdigit():
 		return int( word )
 	elif word[0] in [ "'", '"' ]:
 		return ast.literal_eval( word )
@@ -768,7 +789,7 @@ let - a b   be_python << a-b >>
 """
 
 arithmetic_text = """
-/* We cast all these as int in Python just to avoid really weird behaviour like 'some_symbol' * 100000 */
+/* We cast all these to int in Python just to avoid really weird behaviour like 'some_symbol' * 100000 */
 
 define :INT  a:INT + b:INT  as_python  << int(a) + int(b) >>  /* left_assoc(1) */
 define :INT  a:INT - b:INT  as_python  << int(a) - int(b) >>  /* left_assoc(1) */
@@ -944,18 +965,11 @@ def bind_action( bindings, action ):
 
 debug_kba = silence
 
-use_sheppard_text = False
 def build_keyword_based_automaton( grammar ):
 	# A little silly parser generator algorithm to deal with simple
 	# multi-dispatch LR(0) languages using prefix notation and offering very
 	# little error detection.
 	# This will suffice until I write a proper parser generator.
-	global use_sheppard_text
-	if use_sheppard_text:
-		use_sheppard_text = False
-		procedure = parse_procedure( "build_keyword_based_automaton", prologue_text + build_keyword_based_automaton_text, [ "build_keyword_based_automaton", grammar ] )
-		execute( procedure, procedure.action_bindings )
-		# Uh, how do I get the result?
 	if True:
 		debug_kba( "Building automaton" )
 		initial_state = Shift()
@@ -1035,161 +1049,6 @@ def last_head( items ):
 	else:
 		return last_head( items.tail )
 
-build_keyword_based_automaton_text = r"""
-HEY this is stale.  If you want to use it, you'll have to debug it.
-
-let Shift                              be_python << Shift() >>
-let Reduce0  action_symbol_sharp       be_python << Reduce0( flat( action_symbol_sharp ) ) >>
-let Accept                             be_python << Accept() >>
-let ShiftStateCollector  state         be_python << Object( 'SHIFT_STATE_COLLECTOR', first = cons( state, null ) ) >>
-let Automaton  initial_state           be_python << Automaton( initial_state, FALLBACK_FUNCTION() ) >>
-
-to print_automaton
-	initial_state
-do_python
-	<< debug( ' Automaton:\n%s\n', shogun( initial_state ) ) >>
-
-to build_keyword_based_automaton
-	action_bindings
-do
-	set initial_state
-		Shift
-	set all_shift_states
-		ShiftStateCollector initial_state
-	set bound_symbols
-		all_fields action_bindings
-	make_branches
-		initial_state
-		bound_symbols
-		get bound_symbols length
-		all_shift_states
-	connect_keywords
-		initial_state
-		bound_symbols
-		get bound_symbols length
-		get all_shift_states first
-	put initial_state :EOF
-		Accept
-	print_automaton Automaton initial_state
-
-
-to make_branches
-	initial_state bound_symbols index=0 all_shift_states
-do
-
-to make_branches
-	initial_state bound_symbols index:INT all_shift_states
-do
-	set action_symbol_sharp
-		take bound_symbols sharp index
-	set action
-		take
-			get bound_symbols subject
-			action_symbol_sharp
-	set tip
-		extend_branch
-			initial_state
-			get2 action formal_arg_types tail
-			all_shift_states
-	set reduce_state
-		Reduce0 action_symbol_sharp
-	set reduce_word_sharp
-		take
-			get action formal_arg_types
-			head#
-	give tip reduce_word_sharp
-		reduce_state
-	make_branches
-		initial_state
-		bound_symbols
-		- index 1
-		all_shift_states
-
-
-let extend_branch
-	state x:NULL all_shift_states
-be
-	state
-
-let extend_branch
-	state arg_types all_shift_states
-be
-	extend_one_step
-		extend_branch
-			state
-			get arg_types tail
-			all_shift_states
-		take arg_types head#
-		all_shift_states
-
-
-let extend_one_step
-	state arg_type_sharp all_shift_states
-be
-	extend_one_step2
-		state
-		arg_type_sharp
-		take state arg_type_sharp
-		all_shift_states
-
-let extend_one_step2
-	state arg_type_sharp x=TAKE_FAILED all_shift_states
-be
-	set result
-		Shift
-	put all_shift_states first
-		cons
-			result
-			get all_shift_states first
-	give state arg_type_sharp
-		result
-	result
-
-let extend_one_step2
-	state arg_type_sharp possible_match all_shift_states
-be
-	possible_match
-
-
-to connect_keywords
-	initial_state bound_symbols index x:NULL
-do
-
-to connect_keywords
-	initial_state bound_symbols index states:LIST
-do
-	connect_keywords_to_state
-		initial_state bound_symbols index
-		get states head
-	connect_keywords
-		initial_state bound_symbols index
-		get states tail
-
-
-to connect_keywords_to_state
-	initial_state bound_symbols index=0 shift_state
-do
-
-to connect_keywords_to_state
-	initial_state bound_symbols index shift_state
-do
-	set action
-		take
-			get bound_symbols subject
-			take
-				bound_symbols
-				sharp index
-	set name_sharp
-		take action name#
-	give shift_state name_sharp
-		take initial_state name_sharp
-	connect_keywords_to_state
-		initial_state
-		bound_symbols
-		- index 1
-		shift_state
-"""
-
 def parse_procedure( name, library_text, script ):
 	global_scope = ENVIRONMENT( null )
 	lib = parse_library( name, library_text, global_scope )
@@ -1201,6 +1060,257 @@ def parse_procedure( name, library_text, script ):
 	if False:
 		debug( "Procedure:\n%s\n", shogun( result ) )
 	return result
+
+
+#####################################
+#
+# Subset algorithm to convert NFA -> DFA
+#
+
+def nfa2dfa( nfa_initial_state ):
+	debug_n2d = debug
+	dfa_states_by_superposition = {}
+	def dfa( nfa_states ):
+		superposition = frozenset( nfa_states )
+		try:
+			return dfa_states_by_superposition[ superposition ]
+		except KeyError:
+			if len( superposition ) == 1 and tag( the_element( superposition ) ) in [ 'ACCEPT', 'REDUCE0' ]:
+				result = the_element( superposition ) # Use the actual REDUCE0 object since we're not going to change it anyway
+			else:
+				tags = list( frozenset([ tag(s) for s in superposition ]) )
+				tags.sort()
+				result = Object( '_'.join( tags ) )
+			dfa_states_by_superposition[ superposition ] = result
+			return result
+
+	def closure( nfa_states ):
+		nfa_states = filter( lambda s: tag(s) in ['SHIFT','REDUCE0','ACCEPT'], nfa_states )
+		result = set( nfa_states )
+		work_stack = list( nfa_states )[:]
+		def visit( state, key ):
+			try:
+				next_state = state[ key ]
+				if next_state not in result:
+					work_stack.append( next_state )
+					result.add( next_state )
+			except KeyError:
+				pass
+		while work_stack:
+			state = work_stack.pop()
+			visit( state, epsilon )
+			visit( state, eta )
+		result = frozenset( result )
+		if result == frozenset( nfa_states ):
+			#debug( "Closure returning %r", result )
+			return result
+		else:
+			return closure( result )
+
+	def union( sets ):
+		return reduce( lambda x,y: x|y, sets, frozenset() )
+
+	initial_superposition = closure([ nfa_initial_state ])
+	work_stack = [ initial_superposition ] # invariant: work_stack contains only closed superpositions
+	nfa_only = frozenset([ epsilon, eta ])
+	while work_stack:
+		superposition = work_stack.pop()
+		dfa_state = dfa( superposition )
+		debug_n2d( "Visiting %r: %s", dfa_state, list( superposition ) )
+		unique_keys = union([ frozenset( nfa_state._iterkeys() ) - nfa_only for nfa_state in superposition ])
+		for key in unique_keys:
+			next_superposition = closure([ nfa_state[ key ] for nfa_state in superposition if key in nfa_state ])
+			if next_superposition:
+				if next_superposition not in dfa_states_by_superposition:
+					work_stack.append( next_superposition )
+				dfa_state[ key ] = dfa( next_superposition )
+				debug_n2d( "  %r[ %r ] = %r  <==> %r[ %r ] = %r", dfa_state, key, dfa_state[ key ], list( superposition ), key, list( next_superposition ) )
+					
+	return dfa( initial_superposition )
+
+def the_element( x ):
+	( element, ) = x
+	return element
+
+def test_nfa2dfa():
+	nfa = deshogun("""
+{
+	1 : PROCEDURE {
+		'action_bindings' : @2
+		'automaton' : @3
+		'enclosing_scope' : @4
+		'name' : 'fib'
+		'script' : [ 'print_result', 'fib', 2 ]
+	}
+	2 : BINDINGS {
+		'ACTION__104' : @5
+		'ACTION__119' : @6
+		'ACTION__134' : @7
+		'ACTION__145' : @8
+		'ACTION__66' : @9
+		'ACTION__80' : @10
+	}
+	3 : AUTOMATON {
+		'fallback_function' : @11
+		'initial_state' : @12
+	}
+	4 : ENVIRONMENT {
+		'bindings' : @13
+		'outer' : @0
+	}
+	5 : MACRO {
+		'enclosing_scope' : @4
+		'formal_arg_names' : [ 'n', @0 ]
+		'script' : [ '+', 'fib', '-', 'n', 1, 'fib', '-', 'n', 2 ]
+	}
+	6 : PYTHON_EVAL {
+		'enclosing_scope' : @4
+		'expression' : 'a+b'
+		'formal_arg_names' : [ 'b', 'a', @0 ]
+	}
+	7 : PYTHON_EVAL {
+		'enclosing_scope' : @4
+		'expression' : 'a-b'
+		'formal_arg_names' : [ 'b', 'a', @0 ]
+	}
+	8 : PYTHON_EXEC {
+		'enclosing_scope' : @4
+		'formal_arg_names' : [ 'n', @0 ]
+		'statement' : 'print "*** RESULT IS", n, "***"'
+	}
+	9 : MACRO {
+		'enclosing_scope' : @4
+		'formal_arg_names' : [ 'n', @0 ]
+		'script' : [ 0 ]
+	}
+	10 : MACRO {
+		'enclosing_scope' : @4
+		'formal_arg_names' : [ 'n', @0 ]
+		'script' : [ 1 ]
+	}
+	11 : FALLBACK_FUNCTION {
+		'ANON' : 'SYMBOL'
+		'DIAL_TONE' : 'DIGRESSION'
+		'INT' : 'SYMBOL'
+		'MONIKER' : 'SYMBOL'
+		'SHARPED_SYMBOL' : 'SYMBOL'
+	}
+	12 : SHIFT {
+		'+' : @14
+		'-' : @15
+		':EOF' : @16
+		'fib' : @17
+		'print_result' : @18
+	}
+	13 : BINDINGS {
+		'dial_tone' : @19
+		'eof' : @20
+		'epsilon' : @21
+		'eta' : @22
+		'false' : @23
+		'null' : @0
+		'true' : @24
+	}
+	14 : SHIFT {
+		'+' : @14
+		'-' : @15
+		':ANY' : @25
+		epsilon : @15
+		'fib' : @17
+		'print_result' : @18
+	}
+	15 : SHIFT {
+		'+' : @14
+		'-' : @15
+		':ANY' : @26
+		'fib' : @17
+		'print_result' : @18
+	}
+	16 : ACCEPT {
+	}
+	17 : SHIFT {
+		'+' : @14
+		'-' : @15
+		':ANY' : @27
+		'fib' : @17
+		'print_result' : @18
+		0 : @28
+		1 : @29
+	}
+	18 : SHIFT {
+		'+' : @14
+		'-' : @15
+		':ANY' : @30
+		'fib' : @17
+		'print_result' : @18
+	}
+	19 : DIAL_TONE {
+		'local_scope' : @31
+		'resumption' : @19
+		'tokens' : @32
+	}
+	20 : EOF {
+	}
+	21 : ANON {
+	}
+	22 : ANON {
+	}
+	23 : FALSE {
+	}
+	24 : TRUE {
+	}
+	25 : SHIFT {
+		'+' : @14
+		'-' : @15
+		':ANY' : @33
+		'fib' : @17
+		'print_result' : @18
+	}
+	26 : SHIFT {
+		'+' : @14
+		'-' : @15
+		':ANY' : @34
+		'fib' : @17
+		'print_result' : @18
+	}
+	27 : REDUCE0 {
+		'action_symbol' : 'ACTION__104'
+	}
+	28 : REDUCE0 {
+		'action_symbol' : 'ACTION__66'
+	}
+	29 : REDUCE0 {
+		'action_symbol' : 'ACTION__80'
+	}
+	30 : REDUCE0 {
+		'action_symbol' : 'ACTION__145'
+	}
+	31 : ENVIRONMENT {
+		'bindings' : @35
+		'outer' : @0
+	}
+	32 : LIST {
+		'head' : @20
+		'tail' : @32
+	}
+	33 : REDUCE0 {
+		'action_symbol' : 'ACTION__119'
+	}
+	34 : REDUCE0 {
+		'action_symbol' : 'ACTION__134'
+	}
+	35 : BINDINGS {
+	}
+	36 : SHIFT {
+		'booger' : @26
+	}
+}[12]
+	""")
+	dfa = nfa2dfa( nfa )
+	print " -- NFA --"
+	print nfa._description()
+	print " -- DFA --"
+	print dfa._description()
 
 
 #####################################
@@ -1933,6 +2043,7 @@ if False:
 	import cProfile
 	cProfile.run( "main()", None, "time" )
 else:
+	#test_nfa2dfa()
 	main()
 
 
@@ -1950,8 +2061,5 @@ else:
 # - get should sharp its result, and put should take a sharp value.  Difference from give/take would be that get/put take un-sharped field symbols.
 # - getattr/setattr and getitem/setitem on Object probably should NOT sharp/flat things.  When we're in Python code, it should act like Python code, or it's too confusing.
 # - probably remove the _sharp suffixes everywhere because that can be taken for granted.
-#
-# Libraries, grammars, procedures, etc.
-# - LIBRARY can be ( productions, action_bindings ).  Automaton can be done separately from the productions.
 #
 
