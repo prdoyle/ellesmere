@@ -83,14 +83,18 @@ class Object( dict ):
 		try:
 			return self[ key ]
 		except KeyError:
-			# TODO: What if it starts with an underscore?
-			raise AttributeError( "no field %r" % ( key ) )
+			return dict.__getattr__( self, key )
 
 	def __setattr__( self, key, value ):
 		if key[0] == '_':
 			dict.__setattr__( self, key, value )
 		else:
 			self[ key ] = value
+
+	def __setitem__( self, key, value ):
+		if key not in self._fields:
+			self._fields.append( key )
+		dict.__setitem__( self, key, value )
 
 	def __iter__( self ):
 		raise TypeError( "Object %r does not implement iteration" % self )
@@ -225,11 +229,9 @@ def ANON( pseudonym=None ): return Anonymous_symbol( pseudonym )
 # These need to be disembodied functions.  They can't be methods, because some
 # Sheppard objects like monikers are represented by plain old Python objects like
 # strings that have no such methods.
-# Also, methods of Object can confuse __getattr__ and end up trying to call Sheppard objects.
 
 def is_int( obj ):     return isinstance( obj, int ) # Sheppard integers are represented by Python ints
 def is_moniker( obj ): return isinstance( obj, str ) # Sheppard monikers are represented by Python strs
-# TODO: What about the fact that I'm now considering ints to be symbols?
 
 def all_fields( obj ):
 	if isinstance( obj, Object ):
@@ -567,22 +569,6 @@ def Dial_tone():
 dial_tone = Dial_tone()
 false = Object( 'FALSE' )
 true  = Object( 'TRUE' )
-
-# For nondeterministic automata
-#
-# The "eta" symbol η has the same meaning as "epsilon" ε when interpreting an NFA.
-# It exists in order to support efficient representation of mutable NFAs as
-# Sheppard object graphs, in which every state can have only one outgoing edge
-# for each symbol.  The η-transitions are interpreted to point at states that
-# are considered to have the same identity, so if you want to add a new transitions
-# to some state S, you can add the transition to any state S' such that S[η*] = S'.
-# This makes each state into a kind of linked list, where the "next" pointer is
-# the η-transition.  I've been calling the second and subsequent states the "cetera"
-# states (get it? eta-cetera), and the rule is that each "cetera" state has
-# exactly one incoming η-transition, and normal states have none.
-#
-epsilon = ANON('epsilon')
-eta     = ANON('eta')
 
 def ACTIVATION( cursor, operands, history, action_bindings, fallback_function, caller ): return Object( 'ACTIVATION', cursor=cursor, operands=operands, history=history, action_bindings=action_bindings, fallback_function=fallback_function, caller=caller )
 def THREAD( activation, meta_thread ): return Object( 'THREAD', activation=activation, meta_thread=meta_thread )
@@ -1029,6 +1015,20 @@ def parse_procedure( name, library_text, script ):
 #
 # Subset algorithm to convert NFA -> DFA
 #
+
+# The "eta" symbol η has the same meaning as "epsilon" ε when interpreting an NFA.
+# It exists in order to support efficient representation of mutable NFAs as
+# Sheppard object graphs, in which every state can have only one outgoing edge
+# for each symbol.  The η-transitions are interpreted to point at states that
+# are considered to have the same identity, so if you want to add a new transitions
+# to some state S, you can add the transition to any state S' such that S[η*] = S'.
+# This makes each state into a kind of linked list, where the "next" pointer is
+# the η-transition.  I've been calling the second and subsequent states the "cetera"
+# states (get it? eta-cetera), and the rule is that each "cetera" state has
+# exactly one incoming η-transition, and normal states have none.
+#
+epsilon = ANON('epsilon')
+eta     = ANON('eta')
 
 def nfa2dfa( nfa_initial_state ):
 	debug_n2d = debug
