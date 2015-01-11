@@ -61,8 +61,8 @@ def smart_order( key1, key2 ):
 object_counter = 0
 tag_counters = None # {}
 
-class Object:
-	"""Warps Python's object model to make it more Sheppard-like"""
+class Object( dict ):
+	"""A Sheppard object is based on a Python dict with extra goodies"""
 
 	def __init__( _self, _tag, **edges ):
 		global object_counter, tag_counters
@@ -70,73 +70,36 @@ class Object:
 		_self._tag = _tag
 		if tag_counters is not None:
 			tag_counters[ _tag ] = 1 + tag_counters.get( _tag, 0 )
-		# The terminology is a little weird here, from a time when numbers were not considered
-		# symbols, so I differentiated "elements" (indexed by ints) from "fields".
-		_self._elements = {}
 		_self._fields = sorted([ k for k in edges ]) # _fields can be adjusted if we want a particular field ordering
 		_self._id = object_counter
 		object_counter += 1
 		for ( name, value ) in edges.iteritems():
 			_self[ name ] = value
 
-	# Allow map syntax for convenience.
-	#
-	# NOTE: getattr and setattr are not implemented yet.  Setattr, in particular,
-	# won't yet behave the way it should: it won't add the new field to _fields.
-	# They're a little awkward to implement, so I just haven't bothered yet.
-	#
-	# Also note that this is not in sharp-land.  When we're interpreting be_python or
+	# Note that this is not in sharp-land.  When we're interpreting be_python or
 	# do_python, the code needs to act like Python or it will be too confusing.
 
-	def __getitem__( self, key ):
-		#debug_object( "getitem %r[ %r ]", self, key )
+	def __getattr__( self, key ):
 		try:
-			return getattr( self, key )
-		except AttributeError:
-			raise KeyError # When using dict syntax, we should raise the dict exception, so this can be used as bindings for python exec and eval
-		except TypeError:
-			#debug_object( "getitem is checking %r._elements %s", self, self._elements )
-			return self._elements[ key ] # If _elements were implemented as a list, we should catch IndexError and raise KeyError
+			return self[ key ]
+		except KeyError:
+			# TODO: What if it starts with an underscore?
+			raise AttributeError( "no field %r" % ( key ) )
 
-	def __setitem__( self, key, value ):
-		#debug_object( "setitem %r[ %r ] = %r", self, key, value )
-		try:
-			setattr( self, key, value )
-			if key[0] == '_':
-				raise KeyError
-			if not key in self._fields:
-				self._fields.append( key )
-		except TypeError:
-			assert(isinstance( key, int ))
-			#debug_object( "setitem is setting %r._elements[%r] = %s", self, key, value )
-			self._elements[ key ] = value
-
-	def __contains__( self, key ):
-		try:
-			self[ key ]
-			return True
-		except:
-			return False
-
-	def __delitem__( self, key ):
-		if key in [ "_tag", "_elements", "_fields", "_id" ]:
-			raise KeyError # TODO: Use a Sheppard exception?
+	def __setattr__( self, key, value ):
+		if key[0] == '_':
+			dict.__setattr__( self, key, value )
 		else:
-			delattr( self, key )
-			self._fields.remove( key )
+			self[ key ] = value
 
 	def __iter__( self ):
 		raise TypeError( "Object %r does not implement iteration" % self )
 
 	def _iterkeys( self ):
-		for key in self._fields:
-			yield key
-		for key in self._elements.iterkeys():
-			yield key
+		return dict.iterkeys( self )
 
 	def _iteritems( self ):
-		for key in self._iterkeys():
-			yield ( key, self[ key ] )
+		return dict.iteritems( self )
 
 	def __repr__( self ):
 		try:
@@ -153,7 +116,7 @@ class Object:
 
 	def __str__( self ):
 		suffix = ""
-		return repr( self ) + "{ " + string.join([ "%s=%s" % ( field, self._short_description( self[field] ) ) for field in ( self._fields + self._elements.keys() ) ], ', ') + " }"
+		return repr( self ) + "{ " + string.join([ "%s=%s" % ( field, self._short_description( self[field] ) ) for field in ( self._fields ) ], ', ') + " }"
 
 	def _description( self, indent=0 ):
 		work_queue = []
@@ -270,11 +233,8 @@ def is_moniker( obj ): return isinstance( obj, str ) # Sheppard monikers are rep
 
 def all_fields( obj ):
 	if isinstance( obj, Object ):
-		str_fields = obj._fields
-		int_fields = obj._elements.keys()
-		str_fields.sort()
-		int_fields.sort()
-		fields = str_fields + int_fields
+		fields = obj._fields[:]
+		fields.sort()
 		result = Object( 'FIELD_ARRAY', length=len( fields ), subject=obj )
 		for ( i, value ) in enumerate( fields ):
 			result[ i+1 ] = value # Let's count from 1, just to be zany
@@ -1615,7 +1575,7 @@ def execute( procedure, action_bindings ): # One day we can get partial evaluati
 
 def execute2( frame, keep_going ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
-	while keep_going == true: #is_a( keep_going, 'TRUE' ):
+	while keep_going is true: #is_a( keep_going, 'TRUE' ):
 		#print_stuff( frame.thread )
 		process_func = process[ tag( frame.history.head ) ]
 		keep_going = process_func( frame, frame.history.head )
