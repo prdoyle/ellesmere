@@ -83,27 +83,39 @@ class Object( dict ):
 		try:
 			return self[ key ]
 		except KeyError:
+			# Why not check the built-in dict attributes for convenience.  Might as well.
+			# This has the side-benefit of throwing the right exception if there's no such attribute.
 			return dict.__getattr__( self, key )
 
 	def __setattr__( self, key, value ):
-		if key[0] == '_':
+		if key[0] == "_":
 			dict.__setattr__( self, key, value )
 		else:
 			self[ key ] = value
 
+	def __delattr__( self, key ):
+		if key[0] == "_":
+			dict.__delattr__( self, key )
+		else:
+			try:
+				del self[ key ]
+			except KeyError:
+				# Let's not offer to delete the built-in attributes of dict
+				raise AttributeError( repr(key) )
+
 	def __setitem__( self, key, value ):
-		if key not in self._fields:
+		assert( key[0] != "_" )
+		if not dict.__contains__( self, key ):
+			assert( key not in self._fields )
 			self._fields.append( key )
 		dict.__setitem__( self, key, value )
 
 	def __iter__( self ):
 		raise TypeError( "Object %r does not implement iteration" % self )
 
-	def _iterkeys( self ):
-		return dict.iterkeys( self )
-
-	def _iteritems( self ):
-		return dict.iteritems( self )
+	_iterkeys    = dict.iterkeys
+	_itervalues  = dict.itervalues
+	_iteritems   = dict.iteritems
 
 	def __repr__( self ):
 		try:
