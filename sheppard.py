@@ -1050,9 +1050,29 @@ def nfa2dfa( nfa_initial_state ):
 		try:
 			return dfa_states_by_superposition[ superposition ]
 		except KeyError:
-			if len( superposition ) == 1 and tag( the_element( superposition ) ) in [ 'ACCEPT', 'REDUCE0' ]:
-				result = the_element( superposition ) # Use the actual REDUCE0 object since we're not going to change it anyway
+			states = list( superposition )
+			states.sort( by_priority )
+			if len( states ) == 1 and tag( states[0] ) in [ 'ACCEPT', 'REDUCE0' ]:
+				result = states[0] # Use the actual object since we're not going to change it anyway
 			else:
+				if False:
+					def overlay( summary, state ):
+						# symmary maps each symbol to the state FROM WHICH the correct target state should be taken
+						new_priority = state.get( priority_symbol, 0 )
+						for symbol in state._iterkeys():
+							if symbol in summary and symmary[ symbol ] is not state[ symbol ]:
+								old_priority = summary[ symbol ].get( priority_symbol, 0 )
+								if existing_priority < new_priority:
+									summary[ symbol ] = state
+								elif existing_priority == new_priority:
+									old_tag = tag( summary )
+									new_tag = tag( state )
+					summary = Object( tag( states[-1] ) ) # HEY WHAT DO I REALLY WANT TO DO HERE??
+					for ( i, state ) in states[1:]:
+						if prev_state.get( priority_symbol, 0 ) == state.get( priority_symbol, 0 ):
+							pass
+				# This is super lame.  I need to make a serious effort to resolve
+				# conflicts, especially since even arithmetic needs precedence.
 				tags = list( frozenset([ tag(s) for s in superposition ]) )
 				tags.sort()
 				result = Object( '_'.join( tags ) )
@@ -1102,6 +1122,9 @@ def nfa2dfa( nfa_initial_state ):
 				debug_n2d( "  %r[ %r ] = %r  <==> %r[ %r ] = %r", dfa_state, key, dfa_state[ key ], list( superposition ), key, list( next_superposition ) )
 					
 	return dfa( initial_superposition )
+
+def by_priority( s1, s2 ):
+	return cmp( s1.get( priority_symbol, 0 ), s2.get( priority_symbol, 0 ) )
 
 def the_element( x ):
 	( element, ) = x
@@ -1599,105 +1622,129 @@ def execute2( frame, keep_going ):
 #
 
 meta_interpreter_text = """
-let Digression
-	tokens local_scope resumption
-be_python
-	<< DIGRESSION(**dict( locals() )) >>
+to execute 
+	procedure action_bindings
+do
+	set frame
+		Activation
+			Digression
+				get procedure script
+				Environment
+					get procedure enclosing_scope
+				dial_tone
+			null  /* Empty operand stack */
+			cons
+				get2 procedure automaton initial_state
+				null
+			action_bindings
+			get2 procedure automaton fallback_function
+			null  /* No caller */
+	put frame thread  /* Putting a thread pointer in each frame seems wasteful, but it's handy */
+		Thread frame current_thread
+	print_program frame
+	execute2 frame CONTINUE_INTERPRETING
 
-let Activation
-	cursor operands history action_bindings fallback_function caller
-be_python
-	<< ACTIVATION(**dict( locals() )) >>
+to execute2 
+	frame x=CONTINUE_INTERPRETING
+do
+	execute2
+		frame
+		process
+			get2 frame history head
+			frame
 
-let Thread
-	activation meta_thread
-be_python
-	<< THREAD( activation, meta_thread ) >>
+to execute2 
+	frame x=EXIT_INTERPRETER
+do
+	/* Nothing left to do */
 
-let Environment
-	outer
-be_python
-	<< ENVIRONMENT( outer ) >>
 
-let tag_edge_symbol
-	tag_sharp
-be_python
-	<< ':' + tag_sharp >>
+/* The routine "process" performs one execution step of the program, as indicated by the current automaton state */
 
-let pop_list 
-	base field_symbol_sharp:MONIKER
-be_python
-	<< pop_list( base, field_symbol_sharp ) >>
+let process 
+	state:ACCEPT frame
+be
+	EXIT_INTERPRETER
 
+let process 
+	state:SHIFT frame
+be
+	set token_sharp
+		bound
+			get_token
+				pop_list
+					get frame cursor
+					tokens#
+			get2 frame cursor local_scope
+	end_digression_if_finished
+		get2 frame cursor tokens
+		frame
+	put frame operands
+		cons
+			token_sharp
+			get frame operands
+	put frame history
+		cons
+			next_state
+				state
+				token_sharp
+				get frame fallback_function
+				token_sharp
+			get frame history
+	CONTINUE_INTERPRETING
+
+let process 
+	state:REDUCE0 frame
+be
+	print_stuff frame
+	set action
+		take
+			get frame action_bindings
+			take state action_symbol#
+	set reduce_environment
+		Environment
+			get action enclosing_scope
+	bind_args
+		get reduce_environment bindings
+		get action formal_arg_names
+		frame
+	print_reduce_stuff frame action reduce_environment
+	perform
+		action
+		frame
+		reduce_environment
+	end_digression_if_finished
+		get2 frame cursor tokens
+		frame
+	print_program frame
+	CONTINUE_INTERPRETING
+
+
+to perform  action:PYTHON_EXEC    frame reduce_environment  do_python << perform_python_exec( frame, action, reduce_environment ) >>
+to perform  action:PYTHON_EVAL    frame reduce_environment  do_python << perform_python_eval( frame, action, reduce_environment ) >>
+to perform  action:CURRENT_THREAD frame reduce_environment  do_python << perform_current_thread( frame, action, reduce_environment ) >>
+to perform
+	action:MACRO frame reduce_environment
+do
+	put frame cursor
+		Digression
+			get action script
+			reduce_environment
+			get frame cursor
 
 to end_digression_if_finished 
-	frame remaining_tokens:NULL
+	remaining_tokens:NULL frame
 do
 	put frame cursor
 		get2 frame cursor resumption
 
 to end_digression_if_finished 
-	frame remaining_tokens
+	remaining_tokens frame
 do
+	/* Not finished -- don't end the digression */
 
 
-to bind_arg
-	arg_bindings arg_symbol_sharp:NULL arg_value_sharp
-do
-
-to bind_arg 
-	arg_bindings arg_symbol_sharp:MONIKER arg_value_sharp
-do
-	give arg_bindings arg_symbol_sharp arg_value_sharp
-
-
-to bind_args 
-	frame arg_bindings formal_arg_names:NULL
-do
-
-to bind_args 
-	frame arg_bindings formal_arg_names:LIST
-do
-	put frame history
-		get2 frame history tail
-	bind_arg
-		arg_bindings
-		take formal_arg_names head#
-		pop_list frame operands#
-	bind_args
-		frame
-		arg_bindings
-		get formal_arg_names tail
-
-
-let bound 
-	obj_sharp environment:NULL
-be
-	obj_sharp
-
-let bound 
-	obj_sharp environment:ENVIRONMENT
-be
-	bound2
-		obj_sharp
-		environment
-		take
-			get environment bindings
-			obj_sharp
-
-
-let bound2 
-	obj_sharp environment possible_match
-be
-	possible_match
-
-let bound2 
-	obj_sharp environment x=TAKE_FAILED
-be
-	bound
-		obj_sharp
-		get environment outer
-
+/* The routine "next_state" determines which automaton edge to follow */
 
 let next_state 
 	state obj_sharp fallback_function original_obj_for_error_reporting
@@ -1767,126 +1814,117 @@ let get_fallback  fallback_function obj_sharp      possible_result=TAKE_FAILED  
 let get_fallback  fallback_function obj_sharp=ANY# possible_result=TAKE_FAILED  be TAKE_FAILED  /* Holy double dispatch, Batman */
 
 
-to perform  frame action:PYTHON_EXEC    reduce_environment  do_python << perform_python_exec( frame, action, reduce_environment ) >>
-to perform  frame action:PYTHON_EVAL    reduce_environment  do_python << perform_python_eval( frame, action, reduce_environment ) >>
-to perform  frame action:CURRENT_THREAD reduce_environment  do_python << perform_current_thread( frame, action, reduce_environment ) >>
+/* Binding logic to create new bindings, and to look up existing bindings */
 
-to perform
-	frame action:MACRO reduce_environment
+to bind_args 
+	arg_bindings formal_arg_names:LIST frame
 do
-	put frame cursor
-		Digression
-			get action script
-			reduce_environment
-			get frame cursor
+	put frame history
+		get2 frame history tail
+	bind_arg
+		arg_bindings
+		take formal_arg_names head#
+		pop_list frame operands#
+	bind_args
+		arg_bindings
+		get formal_arg_names tail
+		frame
+
+to bind_args 
+	arg_bindings formal_arg_names:NULL frame
+do
+	/* stop when there are no more formal_arg_names */
+
+
+to bind_arg 
+	arg_bindings arg_symbol_sharp:MONIKER arg_value_sharp
+do
+	give arg_bindings arg_symbol_sharp arg_value_sharp
+
+to bind_arg
+	arg_bindings arg_symbol_sharp:NULL arg_value_sharp
+do
+	/* no symbol -- no binding */
+
+
+let bound 
+	obj_sharp environment:ENVIRONMENT
+be
+	bound2
+		obj_sharp
+		environment
+		take
+			get environment bindings
+			obj_sharp
+
+let bound 
+	obj_sharp environment:NULL
+be
+	/* without an environment, an object represents itself */
+	obj_sharp
+
+
+let bound2 
+	obj_sharp environment possible_match
+be
+	possible_match
+
+let bound2 
+	obj_sharp environment x=TAKE_FAILED
+be
+	bound
+		obj_sharp
+		get environment outer
+
+
+/* Constructors for data types used by the interpreter */
+
+let Digression
+	tokens local_scope resumption
+be_python
+	<< DIGRESSION(**dict( locals() )) >>
+
+let Activation
+	cursor operands history action_bindings fallback_function caller
+be_python
+	<< ACTIVATION(**dict( locals() )) >>
+
+let Thread
+	activation meta_thread
+be_python
+	<< THREAD( activation, meta_thread ) >>
+
+let Environment
+	outer
+be_python
+	<< ENVIRONMENT( outer ) >>
+
+
+/* Some helpful utilities */
+
+let tag_edge_symbol
+	tag_sharp
+be_python
+	<< ':' + tag_sharp >>
+
+let pop_list 
+	base field_symbol_sharp:MONIKER
+be_python
+	<< pop_list( base, field_symbol_sharp ) >>
 
 
 /* Behave as though every token list ends with an infinite sequence of eofs */
+
 let get_token possible_token be possible_token
 let get_token x=TAKE_FAILED  be eof
 
 
-let process 
-	frame state:ACCEPT
-be
-	false
-
-let process 
-	frame state:SHIFT
-be
-	set token_sharp
-		bound
-			get_token
-				pop_list
-					get frame cursor
-					tokens#
-			get2 frame cursor local_scope
-	end_digression_if_finished
-		frame
-		get2 frame cursor tokens
-	put frame operands
-		cons
-			token_sharp
-			get frame operands
-	put frame history
-		cons
-			next_state
-				state
-				token_sharp
-				get frame fallback_function
-				token_sharp
-			get frame history
-	true
-
-let process 
-	frame state:REDUCE0
-be
-	print_stuff frame
-	set action
-		take
-			get frame action_bindings
-			take state action_symbol#
-	set reduce_environment
-		Environment
-			get action enclosing_scope
-	bind_args
-		frame
-		get reduce_environment bindings
-		get action formal_arg_names
-	print_reduce_stuff frame action reduce_environment
-	perform
-		frame
-		action
-		reduce_environment
-	end_digression_if_finished
-		frame
-		get2 frame cursor tokens
-	print_program frame
-	true
-
+/* Diagnostics */
 
 to print_stuff        frame                             do_python << print_stuff( frame.thread ) >>
 to print_reduce_stuff frame action reduce_environment   do_python << print_reduce_stuff( frame.thread, action, reduce_environment ) >>
 to print_program      frame                             do_python << print_program( frame.thread ) >>
 to print              obj                               do_python << print str( obj ) >>
-
-
-to execute 
-	procedure action_bindings
-do
-	set frame
-		Activation
-			Digression
-				get procedure script
-				Environment
-					get procedure enclosing_scope
-				dial_tone
-			null  /* Empty operand stack */
-			cons
-				get2 procedure automaton initial_state
-				null
-			action_bindings
-			get2 procedure automaton fallback_function
-			null  /* No caller */
-	put frame thread  /* Putting a thread pointer in each frame seems wasteful, but it's handy */
-		Thread frame current_thread
-	print_program frame
-	execute2 frame true
-
-
-to execute2 
-	frame keep_going:FALSE
-do
-
-to execute2 
-	frame keep_going:TRUE
-do
-	execute2
-		frame
-		process
-			frame
-			get2 frame history head
-
 """
 
 not_used_because_they_are_too_slow = """
