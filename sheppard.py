@@ -627,9 +627,6 @@ def meta_level( th ):
 	else:
 		return 1 + meta_level( th.meta_thread )
 
-def tag_edge_symbol( tag_sharp ):
-	return ':' + tag_sharp
-
 # A few functions to help with the Python / Sheppard impedance mismatch
 
 def python_list( sheppard_list, head='head', tail='tail' ):
@@ -1418,50 +1415,109 @@ def follow_sets( grammar, nullable_symbols, first_by_symbol ):
 # pick the right variant.
 #
 
-def pop_list( base, field_symbol_sharp ):
-	"""Odd little routine that's just super handy for dealing with object fields that are stacks"""
-	current = take( base, field_symbol_sharp )
-	result  = take( current, 'head#' )
-	#debug( "!!! pop_list( %s, %s ) = %s", base, field_symbol_sharp, result )
-	give( base, field_symbol_sharp, take( current, 'tail#' ) )
-	return result
+def execute( procedure, action_bindings ): # One day we can get partial evaluation by having static and dynamic action_bindings
+	frame = ACTIVATION( DIGRESSION( procedure.script, ENVIRONMENT( procedure.enclosing_scope ), dial_tone ), null, LIST( procedure.automaton.initial_state, null ), action_bindings, procedure.automaton.fallback_function, null )
+	thread = THREAD( frame, null )
+	frame[ 'thread' ] = thread # I don't love this back link, but it's really handy and efficient
+	debug( "starting thread: %r with digression:\n\t%s", thread, frame.cursor )
+	print_program( thread )
+	execute2( frame, 'CONTINUE_INTERPRETING' )
 
-def end_digression_if_finished( frame, remaining_tokens ):
+def execute2( frame, x ):
+	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
+	while x == 'CONTINUE_INTERPRETING':
+		#print_stuff( frame.thread )
+		process_func = process[ tag( frame.history.head ) ]
+		x = process_func( frame.history.head, frame )
+
+def process_accept( state, frame ):
+	debug( 'accept' )
+	return 'EXIT_INTERPRETER'
+
+shift_count = 0
+def process_shift( state, frame ):
+	global shift_count
+	shift_count += 1
+	#debug_shift = silence
+	#debug_shift( 'shift' )
+	#debug_shift( "  cursor: %r", frame.cursor )
+	#debug_shift( "  state: %s", state )
+	token_sharp = bound_value( get_token( pop_list( frame.cursor, "tokens#" ) ), frame.cursor.local_scope )
+	end_digression_if_finished( frame.cursor.tokens, frame )
+	#debug_shift( "    value: %r", flat( token_sharp ) )
+	frame[ 'operands' ] = cons( token_sharp, frame.operands )
+	frame[ 'history' ] = cons( next_state( state, token_sharp, frame.fallback_function, token_sharp ), frame.history )
+	#debug_shift( "  new_state: %r", state )
+	if list_length( frame.operands ) > 50:
+		error( frame.thread, RuntimeError( "Operand stack overflow" ) )
+	return 'CONTINUE_INTERPRETING'
+
+def process_reduce0( state, frame ):
+	if meta_level( frame.thread ) >= printing_level_threshold:
+		debug_reduce = debug
+		debug2_reduce = silence
+	else:
+		debug_reduce = silence
+		debug2_reduce = silence
+	print_stuff( frame.thread )
+	#debug2_reduce( ">-- reduce0 %s --", state.action_symbol )
+	action = take( frame.action_bindings, take( state, 'action_symbol#' ) )
+	#debug2_reduce( "  action: %s", action )
+	#if is_a( action, 'MACRO' ):
+	#	debug_reduce( "    %s", python_list( action.script ) )
+	reduce_environment = ENVIRONMENT( action.enclosing_scope )
+	#debug2_reduce( "  environment1: %s with %s", reduce_environment, reduce_environment.bindings )
+	bind_args( frame, reduce_environment.bindings, action.formal_arg_names )
+	debug2_reduce( "  environment2: %s with %s", reduce_environment, reduce_environment.bindings )
+	print_reduce_stuff( frame.thread, action, reduce_environment )
+	#debug2_reduce( "  environment: %s with %s", reduce_environment, reduce_environment.bindings )
+	#debug2_reduce( "    based on: %s", action.enclosing_scope )
+	perform( action, frame, reduce_environment )
+	end_digression_if_finished( frame.cursor.tokens, frame )
+	print_program( frame.thread )
+	return 'CONTINUE_INTERPRETING'
+
+process = {
+	'ACCEPT':  process_accept,
+	'SHIFT':   process_shift,
+	'REDUCE0': process_reduce0,
+	}
+
+def perform( action, frame, reduce_environment ):
+	if is_a( action, 'PYTHON_EXEC' ):
+		perform_python_exec( frame, action, reduce_environment )
+	elif is_a( action, 'PYTHON_EVAL' ):
+		perform_python_eval( frame, action, reduce_environment )
+	elif is_a( action, 'CURRENT_THREAD' ):
+		perform_current_thread( frame, action, reduce_environment )
+	else:
+		assert( is_a( action, 'MACRO' ) )
+		frame[ 'cursor' ] = DIGRESSION( action.script, reduce_environment, frame.cursor )
+
+def perform_python_exec( frame, action, reduce_environment ):
+	try:
+		exec action.statement in globals(), dict( reduce_environment.bindings._iteritems() )
+	except:
+		print "\nError in exec:", action.statement, "with", reduce_environment.bindings
+		raise
+
+def perform_python_eval( frame, action, reduce_environment ):
+	try:
+		result = eval( action.expression,  globals(), dict( reduce_environment.bindings._iteritems() ) )
+	except:
+		print "\nError in eval:", action.expression, "with", reduce_environment.bindings
+		raise
+	end_digression_if_finished( frame.cursor.tokens, frame )
+	frame[ 'cursor' ] = DIGRESSION( List([ result ]), frame.cursor.local_scope, frame.cursor )
+
+def perform_current_thread( frame, action, reduce_environment ):
+	end_digression_if_finished( frame.cursor.tokens, frame )
+	frame[ 'cursor' ] = DIGRESSION( List([ frame.thread ]), frame.cursor.local_scope, frame.cursor )
+
+def end_digression_if_finished( remaining_tokens, frame ):
 	if remaining_tokens is null: #is_a( remaining_tokens, 'NULL' ):
 		#debug_digressions( "  (finished %r %r %s)", frame.cursor, frame.cursor.local_scope, frame.cursor.local_scope.bindings  )
 		frame[ 'cursor' ] = frame.cursor.resumption
-
-def bind_arg( arg_bindings, arg_symbol_sharp, arg_value_sharp ):
-	debug_bind = silence
-	#debug_bind( "  bind_arg( %r, %r, %r )", arg_bindings, flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
-	if arg_symbol_sharp is null: # is_a( arg_symbol_sharp, 'NULL' )
-		#debug_bind( "    pop %r", flat( arg_value_sharp ) )
-		pass
-	else:
-		assert( is_a( arg_symbol_sharp, 'MONIKER' ) )
-		give( arg_bindings, arg_symbol_sharp, arg_value_sharp )
-		#debug_bind( "    %r.%s=%r", arg_bindings, flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
-
-def bind_args( frame, arg_bindings, formal_arg_names ):
-	if formal_arg_names is null:
-		pass
-	else:
-		frame[ 'history' ] = frame.history.tail
-		bind_arg( arg_bindings, take( formal_arg_names, 'head#' ), pop_list( frame, 'operands#' ) )
-		bind_args( frame, arg_bindings, formal_arg_names.tail )
-
-def bound( obj_sharp, environment ):
-	#debug( "bound( %r, %r )", obj_sharp, environment )
-	if environment is null:
-		return obj_sharp
-	else:
-		return bound2( obj_sharp, environment, take( environment.bindings, obj_sharp ) )
-
-def bound2( obj_sharp, environment, possible_match ):
-	if possible_match is take_failed:
-		return bound( obj_sharp, environment.outer )
-	else:
-		return possible_match
 
 def next_state( state, obj_sharp, fallback_function, original_obj_for_error_reporting ):
 	# Pseudocode:
@@ -1508,37 +1564,48 @@ def get_fallback( fallback_function, obj_sharp, possible_result ):
 	else:
 		return possible_result
 
-
-def perform( frame, action, reduce_environment ):
-	if is_a( action, 'PYTHON_EXEC' ):
-		perform_python_exec( frame, action, reduce_environment )
-	elif is_a( action, 'PYTHON_EVAL' ):
-		perform_python_eval( frame, action, reduce_environment )
-	elif is_a( action, 'CURRENT_THREAD' ):
-		perform_current_thread( frame, action, reduce_environment )
+def bind_arg( arg_bindings, arg_symbol_sharp, arg_value_sharp ):
+	debug_bind = silence
+	#debug_bind( "  bind_arg( %r, %r, %r )", arg_bindings, flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
+	if arg_symbol_sharp is null: # is_a( arg_symbol_sharp, 'NULL' )
+		#debug_bind( "    pop %r", flat( arg_value_sharp ) )
+		pass
 	else:
-		assert( is_a( action, 'MACRO' ) )
-		frame[ 'cursor' ] = DIGRESSION( action.script, reduce_environment, frame.cursor )
+		assert( is_a( arg_symbol_sharp, 'MONIKER' ) )
+		give( arg_bindings, arg_symbol_sharp, arg_value_sharp )
+		#debug_bind( "    %r.%s=%r", arg_bindings, flat( arg_symbol_sharp ), flat( arg_value_sharp ) )
 
-def perform_python_exec( frame, action, reduce_environment ):
-	try:
-		exec action.statement in globals(), dict( reduce_environment.bindings._iteritems() )
-	except:
-		print "\nError in exec:", action.statement, "with", reduce_environment.bindings
-		raise
+def bind_args( frame, arg_bindings, formal_arg_names ):
+	if formal_arg_names is null:
+		pass
+	else:
+		frame[ 'history' ] = frame.history.tail
+		bind_arg( arg_bindings, take( formal_arg_names, 'head#' ), pop_list( frame, 'operands#' ) )
+		bind_args( frame, arg_bindings, formal_arg_names.tail )
 
-def perform_python_eval( frame, action, reduce_environment ):
-	try:
-		result = eval( action.expression,  globals(), dict( reduce_environment.bindings._iteritems() ) )
-	except:
-		print "\nError in eval:", action.expression, "with", reduce_environment.bindings
-		raise
-	end_digression_if_finished( frame, frame.cursor.tokens )
-	frame[ 'cursor' ] = DIGRESSION( List([ result ]), frame.cursor.local_scope, frame.cursor )
+def bound_value( obj_sharp, environment ):
+	#debug( "bound_value( %r, %r )", obj_sharp, environment )
+	if environment is null:
+		return obj_sharp
+	else:
+		return bound_value2( obj_sharp, environment, take( environment.bindings, obj_sharp ) )
 
-def perform_current_thread( frame, action, reduce_environment ):
-	end_digression_if_finished( frame, frame.cursor.tokens )
-	frame[ 'cursor' ] = DIGRESSION( List([ frame.thread ]), frame.cursor.local_scope, frame.cursor )
+def bound_value2( obj_sharp, environment, possible_match ):
+	if possible_match is take_failed:
+		return bound_value( obj_sharp, environment.outer )
+	else:
+		return possible_match
+
+def tag_edge_symbol( tag_sharp ):
+	return ':' + tag_sharp
+
+def pop_list( base, field_symbol_sharp ):
+	"""Odd little routine that's just super handy for dealing with object fields that are stacks"""
+	current = take( base, field_symbol_sharp )
+	result  = take( current, 'head#' )
+	#debug( "!!! pop_list( %s, %s ) = %s", base, field_symbol_sharp, result )
+	give( base, field_symbol_sharp, take( current, 'tail#' ) )
+	return result
 
 def get_token( possible_token ):
 	"""Transmute TAKE_FAILED into eof to make all token lists appear to end with an infinite stream of eofs"""
@@ -1546,74 +1613,6 @@ def get_token( possible_token ):
 		return sharp( eof )
 	else:
 		return possible_token
-
-def process_accept( frame, state ):
-	debug( 'accept' )
-	return false
-
-shift_count = 0
-def process_shift( frame, state ):
-	global shift_count
-	shift_count += 1
-	#debug_shift = silence
-	#debug_shift( 'shift' )
-	#debug_shift( "  cursor: %r", frame.cursor )
-	#debug_shift( "  state: %s", state )
-	token_sharp = bound( get_token( pop_list( frame.cursor, "tokens#" ) ), frame.cursor.local_scope )
-	end_digression_if_finished( frame, frame.cursor.tokens )
-	#debug_shift( "    value: %r", flat( token_sharp ) )
-	frame[ 'operands' ] = cons( token_sharp, frame.operands )
-	frame[ 'history' ] = cons( next_state( state, token_sharp, frame.fallback_function, token_sharp ), frame.history )
-	#debug_shift( "  new_state: %r", state )
-	if list_length( frame.operands ) > 50:
-		error( frame.thread, RuntimeError( "Operand stack overflow" ) )
-	return true
-
-def process_reduce0( frame, state ):
-	if meta_level( frame.thread ) >= printing_level_threshold:
-		debug_reduce = debug
-		debug2_reduce = silence
-	else:
-		debug_reduce = silence
-		debug2_reduce = silence
-	print_stuff( frame.thread )
-	#debug2_reduce( ">-- reduce0 %s --", state.action_symbol )
-	action = take( frame.action_bindings, take( state, 'action_symbol#' ) )
-	#debug2_reduce( "  action: %s", action )
-	#if is_a( action, 'MACRO' ):
-	#	debug_reduce( "    %s", python_list( action.script ) )
-	reduce_environment = ENVIRONMENT( action.enclosing_scope )
-	#debug2_reduce( "  environment1: %s with %s", reduce_environment, reduce_environment.bindings )
-	bind_args( frame, reduce_environment.bindings, action.formal_arg_names )
-	debug2_reduce( "  environment2: %s with %s", reduce_environment, reduce_environment.bindings )
-	print_reduce_stuff( frame.thread, action, reduce_environment )
-	#debug2_reduce( "  environment: %s with %s", reduce_environment, reduce_environment.bindings )
-	#debug2_reduce( "    based on: %s", action.enclosing_scope )
-	perform( frame, action, reduce_environment )
-	end_digression_if_finished( frame, frame.cursor.tokens )
-	print_program( frame.thread )
-	return true
-
-process = {
-	'ACCEPT':  process_accept,
-	'SHIFT':   process_shift,
-	'REDUCE0': process_reduce0,
-	}
-
-def execute( procedure, action_bindings ): # One day we can get partial evaluation by having static and dynamic action_bindings
-	frame = ACTIVATION( DIGRESSION( procedure.script, ENVIRONMENT( procedure.enclosing_scope ), dial_tone ), null, LIST( procedure.automaton.initial_state, null ), action_bindings, procedure.automaton.fallback_function, null )
-	thread = THREAD( frame, null )
-	frame[ 'thread' ] = thread # I don't love this back link, but it's really handy and efficient
-	debug( "starting thread: %r with digression:\n\t%s", thread, frame.cursor )
-	print_program( thread )
-	execute2( frame, true )
-
-def execute2( frame, keep_going ):
-	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
-	while keep_going is true: #is_a( keep_going, 'TRUE' ):
-		#print_stuff( frame.thread )
-		process_func = process[ tag( frame.history.head ) ]
-		keep_going = process_func( frame, frame.history.head )
 
 
 #####################################
@@ -1670,7 +1669,7 @@ let process
 	state:SHIFT frame
 be
 	set token_sharp
-		bound
+		bound_value
 			get_token
 				pop_list
 					get frame cursor
@@ -1847,32 +1846,32 @@ do
 	/* no symbol -- no binding */
 
 
-let bound 
+let bound_value 
 	obj_sharp environment:ENVIRONMENT
 be
-	bound2
+	bound_value2
 		obj_sharp
 		environment
 		take
 			get environment bindings
 			obj_sharp
 
-let bound 
+let bound_value 
 	obj_sharp environment:NULL
 be
 	/* without an environment, an object represents itself */
 	obj_sharp
 
 
-let bound2 
+let bound_value2 
 	obj_sharp environment possible_match
 be
 	possible_match
 
-let bound2 
+let bound_value2 
 	obj_sharp environment x=TAKE_FAILED
 be
-	bound
+	bound_value
 		obj_sharp
 		get environment outer
 
