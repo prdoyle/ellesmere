@@ -85,6 +85,8 @@ class Object( dict ):
 		except KeyError:
 			# Why not check the built-in dict attributes for convenience.  Might as well.
 			# This has the side-benefit of throwing the right exception if there's no such attribute.
+			#
+			# HMM, this doesn't actually work...
 			return dict.__getattr__( self, key )
 
 	def __setattr__( self, key, value ):
@@ -1039,6 +1041,10 @@ def parse_procedure( name, library_text, script ):
 epsilon = ANON('epsilon')
 eta     = ANON('eta')
 
+class ConflictError( Exception ):
+	pass
+
+priority_symbol = ANON( 'priority' )
 def nfa2dfa( nfa_initial_state ):
 	debug_n2d = debug
 	dfa_states_by_superposition = {}
@@ -1048,31 +1054,22 @@ def nfa2dfa( nfa_initial_state ):
 			return dfa_states_by_superposition[ superposition ]
 		except KeyError:
 			states = list( superposition )
-			states.sort( by_priority )
 			if len( states ) == 1 and tag( states[0] ) in [ 'ACCEPT', 'REDUCE0' ]:
 				result = states[0] # Use the actual object since we're not going to change it anyway
 			else:
-				if False:
-					def overlay( summary, state ):
-						# symmary maps each symbol to the state FROM WHICH the correct target state should be taken
-						new_priority = state.get( priority_symbol, 0 )
-						for symbol in state._iterkeys():
-							if symbol in summary and symmary[ symbol ] is not state[ symbol ]:
-								old_priority = summary[ symbol ].get( priority_symbol, 0 )
-								if existing_priority < new_priority:
-									summary[ symbol ] = state
-								elif existing_priority == new_priority:
-									old_tag = tag( summary )
-									new_tag = tag( state )
-					summary = Object( tag( states[-1] ) ) # HEY WHAT DO I REALLY WANT TO DO HERE??
-					for ( i, state ) in states[1:]:
-						if prev_state.get( priority_symbol, 0 ) == state.get( priority_symbol, 0 ):
-							pass
-				# This is super lame.  I need to make a serious effort to resolve
-				# conflicts, especially since even arithmetic needs precedence.
-				tags = list( frozenset([ tag(s) for s in superposition ]) )
-				tags.sort()
-				result = Object( '_'.join( tags ) )
+				states.sort( by_priority_descending )
+				primary_state = states[0]
+				top_priority = primary_state.get( priority_symbol, 0 )
+				result = Object( tag( primary_state ) )
+				if tag( primary_state ) == 'REDUCE0':
+					result.action_symbol = primary_state.action_symbol
+				debug( "Result is %r", result )
+				for state in states:
+					if state.get( priority_symbol, 0 ) == top_priority:
+						if tag( state ) != tag( result ):
+							raise ConflictError( "Conflict between %r and %r", result, state )
+						elif tag( result ) == 'REDUCE0' and result.action_symbol != state.action_symbol:
+							raise ConflictError( "Reduce conflict between %r and %r", result.action_symbol, state.action_symbol )
 			dfa_states_by_superposition[ superposition ] = result
 			return result
 
@@ -1120,8 +1117,8 @@ def nfa2dfa( nfa_initial_state ):
 					
 	return dfa( initial_superposition )
 
-def by_priority( s1, s2 ):
-	return cmp( s1.get( priority_symbol, 0 ), s2.get( priority_symbol, 0 ) )
+def by_priority_descending( s1, s2 ):
+	return -cmp( s1.get( priority_symbol, 0 ), s2.get( priority_symbol, 0 ) )
 
 def the_element( x ):
 	( element, ) = x
@@ -1200,7 +1197,6 @@ def test_nfa2dfa():
 	13 : BINDINGS {
 		'dial_tone' : @19
 		'eof' : @20
-		'epsilon' : @21
 		'eta' : @22
 		'false' : @23
 		'null' : @0
@@ -1210,7 +1206,6 @@ def test_nfa2dfa():
 		'+' : @14
 		'-' : @15
 		':ANY' : @25
-		epsilon : @15
 		'fib' : @17
 		'print_result' : @18
 	}
@@ -1229,6 +1224,7 @@ def test_nfa2dfa():
 		':ANY' : @27
 		'fib' : @17
 		'print_result' : @18
+		epsilon : @36
 		0 : @28
 		1 : @29
 	}
