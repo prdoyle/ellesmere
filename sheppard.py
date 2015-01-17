@@ -531,8 +531,17 @@ def pop_list_words( words, depth=1 ):
 
 # Object constructors
 
+class List_object( Object ):
+	"""Allows Python code to use list comprehensions on LIST objects"""
+
+	def __iter__( self ):
+		current = self
+		while current is not null:
+			yield current.head
+			current = current.tail
+
 def LIST( head, tail ):
-	result = Object( 'LIST', head=head, tail=tail )
+	result = List_object( 'LIST', head=head, tail=tail )
 	result._fields = ['head','tail'] # We want them in this order just for readability
 	return result
 
@@ -603,17 +612,10 @@ def PYTHON_EVAL( expression, formal_arg_names, enclosing_scope ):
 def PYTHON_EXEC( statement, formal_arg_names, enclosing_scope ):
 	return Object( 'PYTHON_EXEC', statement=statement, formal_arg_names=formal_arg_names, enclosing_scope=enclosing_scope )
 
-def Reduce0( action_symbol ): return Object( 'REDUCE0', action_symbol=action_symbol )
+def Reduce( action_symbol ): return Object( 'REDUCE', action_symbol=action_symbol )
 def Accept(): return Object( 'ACCEPT' )
-def Shift( **edges ):
-	# For convenience, we stick a colon on the front of each uppercase field name because that's probably what you want
-	result = Object( 'SHIFT' )
-	for ( name, value ) in edges.iteritems():
-		if name.isupper():
-			result[ ':'+name ] = value
-		else:
-			result[     name ] = value
-	return result
+def Shift(): return Object( 'SHIFT' )
+def Lookahead1(): return Object( 'LOOKAHEAD1' )
 
 def LIBRARY( name, grammar, action_bindings ): return Object( 'LIBRARY', name=name, grammar=grammar, action_bindings=action_bindings )
 
@@ -956,7 +958,7 @@ def make_branches( initial_state, patterns, all_shift_states ):
 			debug_kba( "Productions not yet supported, but this one would have been:\n%s", shogun( pattern ) )
 		else:
 			tip = extend_branch( initial_state, pattern.formal_arg_types.tail, all_shift_states )
-			reduce_state = Reduce0( flat( take( pattern, 'action_symbol#' ) ) )
+			reduce_state = Reduce( flat( take( pattern, 'action_symbol#' ) ) )
 			reduce_word_sharp = take( pattern.formal_arg_types, 'head#' )
 			give( tip, reduce_word_sharp, reduce_state )
 			debug_kba( '      %r:%r >> %r', tip, flat( reduce_word_sharp ), reduce_state )
@@ -1021,6 +1023,22 @@ def parse_procedure( name, library_text, script ):
 		debug( "Procedure:\n%s\n", shogun( result ) )
 	return result
 
+def parse_grammar( grammar_text ):
+	words = re.findall( r"\S+", grammar_text )
+	words.reverse()
+	productions = null
+	goal_symbol = None
+	while words:
+		lhs = words.pop()
+		if not goal_symbol:
+			goal_symbol = lhs
+		consume( "->", words )
+		rhs = null
+		while words[-1] != ";":
+			rhs = LIST( words.pop(), rhs )
+		consume( ";", words )
+		productions = LIST( PRODUCTION( lhs, rhs, ANON( 'action' ) ), productions )
+	return GRAMMAR( goal_symbol, productions )
 
 #####################################
 #
@@ -1054,27 +1072,27 @@ def nfa2dfa( nfa_initial_state ):
 			return dfa_states_by_superposition[ superposition ]
 		except KeyError:
 			states = list( superposition )
-			if len( states ) == 1 and tag( states[0] ) in [ 'ACCEPT', 'REDUCE0' ]:
+			if len( states ) == 1 and tag( states[0] ) in [ 'ACCEPT', 'REDUCE' ]:
 				result = states[0] # Use the actual object since we're not going to change it anyway
 			else:
 				states.sort( by_priority_descending )
 				primary_state = states[0]
 				top_priority = primary_state.get( priority_symbol, 0 )
 				result = Object( tag( primary_state ) )
-				if tag( primary_state ) == 'REDUCE0':
+				if tag( primary_state ) == 'REDUCE':
 					result.action_symbol = primary_state.action_symbol
 				debug( "Result is %r", result )
 				for state in states:
 					if state.get( priority_symbol, 0 ) == top_priority:
 						if tag( state ) != tag( result ):
 							raise ConflictError( "Conflict between %r and %r", result, state )
-						elif tag( result ) == 'REDUCE0' and result.action_symbol != state.action_symbol:
+						elif tag( result ) == 'REDUCE' and result.action_symbol != state.action_symbol:
 							raise ConflictError( "Reduce conflict between %r and %r", result.action_symbol, state.action_symbol )
 			dfa_states_by_superposition[ superposition ] = result
 			return result
 
 	def closure( nfa_states ):
-		nfa_states = filter( lambda s: tag(s) in ['SHIFT','REDUCE0','ACCEPT'], nfa_states )
+		nfa_states = filter( lambda s: tag(s) in ['SHIFT','LOOKAHEAD1','REDUCE','ACCEPT'], nfa_states )
 		result = set( nfa_states )
 		work_stack = list( nfa_states )[:]
 		def visit( state, key ):
@@ -1264,16 +1282,16 @@ def test_nfa2dfa():
 		'fib' : @17
 		'print_result' : @18
 	}
-	27 : REDUCE0 {
+	27 : REDUCE {
 		'action_symbol' : 'ACTION__104'
 	}
-	28 : REDUCE0 {
+	28 : REDUCE {
 		'action_symbol' : 'ACTION__66'
 	}
-	29 : REDUCE0 {
+	29 : REDUCE {
 		'action_symbol' : 'ACTION__80'
 	}
-	30 : REDUCE0 {
+	30 : REDUCE {
 		'action_symbol' : 'ACTION__145'
 	}
 	31 : ENVIRONMENT {
@@ -1284,10 +1302,10 @@ def test_nfa2dfa():
 		'head' : @20
 		'tail' : @32
 	}
-	33 : REDUCE0 {
+	33 : REDUCE {
 		'action_symbol' : 'ACTION__119'
 	}
-	34 : REDUCE0 {
+	34 : REDUCE {
 		'action_symbol' : 'ACTION__134'
 	}
 	35 : BINDINGS {
@@ -1349,16 +1367,19 @@ def first_sets( grammar, nullable_symbols ):
 		try:
 			return first_by_symbol[ symbol ]
 		except KeyError:
-			first_by_symbol[ symbol ] = set()
+			first_by_symbol[ symbol ] = set([ symbol ])
 			return first( symbol )
 	something_changed = True
 	while something_changed:
 		something_changed = False
 		for production in grammar.productions:
 			lhs = production.lhs
-			for symbol in production.rhs:
-				something_changed |= or_changed( first(lhs), first(symbol) )
-				if symbol in nullable_symbols:
+			for symbol in production.rhs: #OOPS this is backward
+				changed = or_changed( first(lhs), first(symbol) )
+				if changed:
+					debug( "included first( %r ) in first( %r ): %r", symbol, lhs, first(symbol) )
+				something_changed |= changed
+				if symbol not in nullable_symbols:
 					break
 	return first_by_symbol
 
@@ -1377,6 +1398,9 @@ def follow_sets( grammar, nullable_symbols, first_by_symbol ):
 			lhs = production.lhs
 			rhs = production.rhs
 			if len( rhs ) >= 1:
+				# Oh dear.  rhs[-1] is not supported on a Sheppard list.  Also we're processing rhs backward.
+				# I think what I want to do is make a trivial little parsing automaton for each rhs that I can knit together into an NFA,
+				# except that it's awkward to ask for the nth edge in a Sheppard graph.
 				something_changed != or_changed( follow( rhs[-1] ), follow( lhs ) )
 				for ( i, symbol ) in reversed(list(enumerate( production.rhs[:-1] ))):
 					next_symbol = production.rhs[ i+1 ]
@@ -1384,6 +1408,24 @@ def follow_sets( grammar, nullable_symbols, first_by_symbol ):
 					if next_symbol in nullable_symbols:
 						something_changed |= or_changed( follow( symbol ), follow( next_symbol ) )
 	return follow_by_symbol
+
+def test_parser_generator():
+	grammar_text = """
+		S -> E        ;
+		E -> T + T    ;
+		E -> T - T    ;
+		T -> F * F    ;
+		T -> F / F    ;
+		F -> :INT     ;
+		F -> ( E )    ;
+		"""
+	grammar = parse_grammar( grammar_text )
+	n = nullable_symbols( grammar )
+	print "nullable_symbols: ", n
+	first = first_sets( grammar, n )
+	print "first: ", first
+	follow = follow_sets( grammar, n, first )
+	print "follow: ", follow
 
 #####################################
 #
@@ -1448,7 +1490,13 @@ def process_shift( state, frame ):
 		error( frame.thread, RuntimeError( "Operand stack overflow" ) )
 	return 'CONTINUE_INTERPRETING'
 
-def process_reduce0( state, frame ):
+def process_lookahead1( state, frame ):
+	# Note that the token binding gets looked up twice in this case: once for
+	# the lookup, and once for the next shift.
+	token_sharp = bound_value( get_token( frame.cursor.tokens.head ), frame.cursor.local_scope )
+	return process( next_state( state, token_sharp, frame.fallback_function, token_sharp ), frame )
+
+def process_reduce( state, frame ):
 	if meta_level( frame.thread ) >= printing_level_threshold:
 		debug_reduce = debug
 		debug2_reduce = silence
@@ -1456,7 +1504,7 @@ def process_reduce0( state, frame ):
 		debug_reduce = silence
 		debug2_reduce = silence
 	print_stuff( frame.thread )
-	#debug2_reduce( ">-- reduce0 %s --", state.action_symbol )
+	#debug2_reduce( ">-- reduce %s --", state.action_symbol )
 	action = take( frame.action_bindings, take( state, 'action_symbol#' ) )
 	#debug2_reduce( "  action: %s", action )
 	#if is_a( action, 'MACRO' ):
@@ -1474,9 +1522,10 @@ def process_reduce0( state, frame ):
 	return 'CONTINUE_INTERPRETING'
 
 process = {
-	'ACCEPT':  process_accept,
-	'SHIFT':   process_shift,
-	'REDUCE0': process_reduce0,
+	'ACCEPT':      process_accept,
+	'SHIFT':       process_shift,
+	'LOOKAHEAD1':  process_lookahead1,
+	'REDUCE':      process_reduce,
 	}
 
 def perform( action, frame, reduce_environment ):
@@ -1689,7 +1738,25 @@ be
 	CONTINUE_INTERPRETING
 
 let process 
-	state:REDUCE0 frame
+	state:LOOKAHEAD1 frame
+be
+	set token_sharp
+		bound_value
+			get_token
+				get
+					get2 frame cursor tokens
+					head
+			get2 frame cursor local_scope
+	process
+		next_state
+			state
+			token_sharp
+			get frame fallback_function
+			token_sharp
+		frame
+
+let process 
+	state:REDUCE frame
 be
 	print_stuff frame
 	set action
@@ -2057,6 +2124,7 @@ if False:
 	cProfile.run( "main()", None, "time" )
 else:
 	#test_nfa2dfa()
+	#test_parser_generator()
 	main()
 
 
