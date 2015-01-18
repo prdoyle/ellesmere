@@ -75,7 +75,7 @@ def memoized( func ):
 #debug_object = debug
 
 object_counter = 0
-tag_counters = #None # {}
+tag_counters = None # {}
 
 class Object( dict ):
 	"""A Sheppard object is based on a Python dict with extra goodies"""
@@ -1388,9 +1388,10 @@ def parenthesized_arithmetic_parsing_automaton():
 		if penultimate:
 			states[ -2 ][ epsilon ] = states[ -1 ]
 		for state in states:
-			state[ priority_symbol ] = priority
-		for state in shifts:
-			state[ priority_symbol ] = priority + 1 # Prefer shift over reduce to get left-to-right precedence
+			tag_bonus = 0
+			if tag( state ) == 'REDUCE':
+				tag_bonus = 1 # Left-to-right evaluation prefers reduce over others
+			state[ priority_symbol ] = priority + tag_bonus
 		return states[0]
 	add = dfa([ ':INT', '+', ':INT' ], '+', 10, Lookahead1() )
 	sub = dfa([ ':INT', '-', ':INT' ], '-', 10, Lookahead1() )
