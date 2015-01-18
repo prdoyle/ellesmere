@@ -788,7 +788,7 @@ to  put        base key:SYMBOL value        do_python << base[ key ] = value >>
 let cons       head_sharp tail              be_python << cons( head_sharp, tail ) >>
 let all_fields obj                          be_python << all_fields( obj ) >>
 let sharp      symbol                       be_python << sharp( symbol ) >>
-let tag        obj_sharp                    be_python << sharp( tag( flat( obj_sharp ) ) ) >>
+let take_tag   obj_sharp                    be_python << sharp( tag( flat( obj_sharp ) ) ) >>
 let current_thread                          be_builtin_current_thread
 
 /* This could really just be a binding */
@@ -1891,10 +1891,12 @@ do
 			action_bindings
 			get2 procedure automaton fallback_function
 			null  /* No caller */
+	/* I haven't got this right yet, because it makes no sense to spawn a Thread just to execute a procedure */
 	put frame thread  /* Putting a thread pointer in each frame seems wasteful, but it's handy */
 		Thread frame current_thread
 	print_program frame
 	execute2 frame CONTINUE_INTERPRETING
+	/* return get frame operands  /* the "return values" */
 
 to execute2 
 	frame x=CONTINUE_INTERPRETING
@@ -1937,7 +1939,7 @@ be
 			get frame operands
 	put frame history
 		cons
-			next_state
+			get_next_state
 				state
 				token_sharp
 				get frame fallback_function
@@ -1951,12 +1953,12 @@ be
 	set token_sharp
 		bound_value
 			get_token
-				get
+				take
 					get2 frame cursor tokens
-					head
+					head#
 			get2 frame cursor local_scope
 	process
-		next_state
+		get_next_state
 			state
 			token_sharp
 			get frame fallback_function
@@ -2014,12 +2016,12 @@ do
 	/* Not finished -- don't end the digression */
 
 
-/* The routine "next_state" determines which automaton edge to follow */
+/* The routine "get_next_state" determines which automaton edge to follow */
 
-let next_state 
+let get_next_state 
 	state obj_sharp fallback_function original_obj_for_error_reporting
 be
-	next_state2
+	get_next_state2
 		state
 		obj_sharp
 		take state obj_sharp
@@ -2027,32 +2029,30 @@ be
 		original_obj_for_error_reporting
 
 
-let next_state2 
+let get_next_state2 
 	state obj_sharp possible_match fallback_function original_obj_for_error_reporting
 be
 	possible_match
 
-let next_state2 
+let get_next_state2 
 	state obj_sharp x=TAKE_FAILED fallback_function original_obj_for_error_reporting
 be
-	set tag_sharp
-		tag obj_sharp
-	next_state_by_tag
+	get_next_state_by_tag
 		state
-		tag_sharp
+		take_tag obj_sharp
 		fallback_function
 		original_obj_for_error_reporting
 
 
-let next_state_by_tag
+let get_next_state_by_tag
 	state tag_sharp=TAKE_FAILED fallback_function original_obj_for_error_reporting
 do_python
 	<< raise Unexpected_token( state, original_obj_for_error_reporting ) >>
 
-let next_state_by_tag
+let get_next_state_by_tag
 	state tag_sharp fallback_function original_obj_for_error_reporting
 be
-	next_state_by_tag2
+	get_next_state_by_tag2
 		state
 		tag_sharp
 		take
@@ -2061,15 +2061,15 @@ be
 		fallback_function
 		original_obj_for_error_reporting
 
-let next_state_by_tag2
+let get_next_state_by_tag2
 	state tag_sharp possible_next_state fallback_function original_obj_for_error_reporting
 be
 	possible_next_state
 
-let next_state_by_tag2
+let get_next_state_by_tag2
 	state tag_sharp x=TAKE_FAILED fallback_function original_obj_for_error_reporting
 be
-	next_state_by_tag
+	get_next_state_by_tag
 		state
 		get_fallback
 			fallback_function
@@ -2146,6 +2146,10 @@ be
 		obj_sharp
 		get environment outer
 
+to return
+	value
+do
+	/* TODO: Take of my operand stack and put on the caller's */
 
 /* Constructors for data types used by the interpreter */
 
