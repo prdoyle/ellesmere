@@ -9,13 +9,18 @@ from sys import argv
 # Since Python sees no difference between these, there's no way to enforce this
 # rule, so you may find some unintentional inconsistencies.
 
+debug_indent_level = 0
 def debug( message, *args ):
 	if args:
 		message = message % args
-	print message
+	print debug_indent_level * "  " + message
 
 def silence( message, *args ):
 	pass
+
+def debug_indent( delta=1 ):
+	global debug_indent_level
+	debug_indent_level += delta
 
 def error( th, exception ):
 	debug( "!! ERROR: %s", exception )
@@ -54,12 +59,23 @@ def smart_order( key1, key2 ):
 	except TypeError:
 		return 0
 
+def memoized( func ):
+	cache = {}
+	def wrapper( arg ):
+		try:
+			return cache[ arg ]
+		except KeyError:
+			result = func( arg )
+			cache[ arg ] = result
+			return result
+	return lambda x: wrapper( x )
+
 # Calls to these are often commented out below to improve performance.  "Enabling" these here may not be enough.
 #debug_digressions = debug
 #debug_object = debug
 
 object_counter = 0
-tag_counters = None # {}
+tag_counters = #None # {}
 
 class Object( dict ):
 	"""A Sheppard object is based on a Python dict with extra goodies"""
@@ -87,7 +103,8 @@ class Object( dict ):
 			# This has the side-benefit of throwing the right exception if there's no such attribute.
 			#
 			# HMM, this doesn't actually work...
-			return dict.__getattr__( self, key )
+			#return dict.__getattr__( self, key )
+			raise AttributeError( repr(key) )
 
 	def __setattr__( self, key, value ):
 		if key[0] == "_":
@@ -224,6 +241,14 @@ class Null( Object ): # Just to make debugging messages more informative
 	def __str__( self ):
 		return "null"
 
+	def __iter__( self ):
+		if False:
+			yield False
+
+	def _links( self ):
+		if False:
+			yield False
+
 null = Null()  # The very first object!  It gets _id=0
 
 class Anonymous_symbol( Object ):
@@ -294,7 +319,7 @@ def sharp( arg ):
 		# a use for ':#INT' yet.  Maybe we never will?
 		return arg + '#'  # Hmm, should this be considered a SHARPED_SYMBOL?  Right now it would just be another MONIKER.  I guess that's a job for is_a once it handles inheritance.
 	elif is_a( arg, 'INT' ) or is_a( arg, 'ANON' ):
-		return Object( 'SHARPED_SYMBOL', value=arg )
+		return Sharped_symbol( arg )
 	else:
 		return arg
 
@@ -308,9 +333,15 @@ def flat( arg ):
 	else:
 		return arg
 
+def Sharped_symbol( arg ):
+	return Object( 'SHARPED_SYMBOL', value=arg )
+Sharped_symbol = memoized( Sharped_symbol )
+
 #####################################
 #
 # Serialization
+#
+# "Shogun" = Sheppard object graph UTF-8 notation
 #
 
 debug_shogun   = silence
@@ -540,7 +571,14 @@ class List_object( Object ):
 			yield current.head
 			current = current.tail
 
+	def _links( self ):
+		current = self
+		while current is not null:
+			yield current
+			current = current.tail
+
 def LIST( head, tail ):
+	#debug( "LIST( %r )", head )
 	result = List_object( 'LIST', head=head, tail=tail )
 	result._fields = ['head','tail'] # We want them in this order just for readability
 	return result
@@ -639,10 +677,10 @@ def python_list( sheppard_list, head='head', tail='tail' ):
 	else:
 		return []
 
-def stack_str( stack, sep=", " ):
+def list_str( stack, sep=", " ):
 	return string.join([ repr(s) for s in python_list( stack )], sep )
 
-def list_str( lst, sep=", ", ellision_limit=999 ):
+def stack_str( lst, sep=", ", ellision_limit=999 ):
 	pl = python_list( lst )
 	prefix = ''
 	if len( pl ) > ellision_limit:
@@ -681,14 +719,14 @@ def cursor_description( cursor ):
 def print_program( th ):
 	if meta_level( th ) >= printing_level_threshold:
 		frame = th.activation
-		debug( "# PROGRAM%d: %s ^ %s", meta_level(th), list_str( frame.operands, "  ", debug_ellision_limit ), cursor_description( frame.cursor ) )
+		debug( "# PROGRAM%d: %s ^ %s", meta_level(th), stack_str( frame.operands, "  ", debug_ellision_limit ), cursor_description( frame.cursor ) )
 
 def print_stuff( th ):
 	if meta_level( th ) >= printing_level_threshold:
 		frame = th.activation
 		#debug( "stack: %s", zip( python_list( frame.history ), python_list( frame.operands ) ) )
 		print_program( th )
-		debug( "|  history: %s", list_str( frame.history, ':', debug_ellision_limit ) )
+		debug( "|  history: %s", stack_str( frame.history, ':', debug_ellision_limit ) )
 		debug( "|   future: %s", future_str( frame.cursor ) )
 		#debug( "| bindings: %s", frame.cursor.local_scope.bindings )
 
@@ -870,7 +908,7 @@ def parse_definition2( start_word_sharp, word_cursor, enclosing_scope, action_bi
 			arg_names = arg_stack( formal_args, 'name' )
 			action = parse_action( take_word( word_cursor ), arg_names, word_cursor, enclosing_scope )
 			action_symbol = bind_action( action_bindings, action )
-			return PRODUCTION( flat( lhs_sharp ), rhs, action_symbol )
+			return PRODUCTION( flat( lhs_sharp ), rhs, action_symbol ) # HEY this gets rhs backward
 		else:
 			if start_word_sharp == 'let#':
 				# How should we represent the return type?
@@ -1033,11 +1071,11 @@ def parse_grammar( grammar_text ):
 		if not goal_symbol:
 			goal_symbol = lhs
 		consume( "->", words )
-		rhs = null
+		rhs_stack = null
 		while words[-1] != ";":
-			rhs = LIST( words.pop(), rhs )
+			rhs_stack = LIST( words.pop(), rhs_stack )
 		consume( ";", words )
-		productions = LIST( PRODUCTION( lhs, rhs, ANON( 'action' ) ), productions )
+		productions = LIST( PRODUCTION( lhs, rhs_stack, ANON( 'action' ) ), productions )
 	return GRAMMAR( goal_symbol, productions )
 
 #####################################
@@ -1062,6 +1100,10 @@ eta     = ANON('eta')
 class ConflictError( Exception ):
 	pass
 
+accepting_states    = frozenset([ 'ACCEPT', 'REDUCE' ])
+superposable_states = frozenset([ 'SHIFT', 'LOOKAHEAD1', 'CETERA', 'STATION' ])
+state_tags = accepting_states | superposable_states
+
 priority_symbol = ANON( 'priority' )
 def nfa2dfa( nfa_initial_state ):
 	debug_n2d = debug
@@ -1072,7 +1114,7 @@ def nfa2dfa( nfa_initial_state ):
 			return dfa_states_by_superposition[ superposition ]
 		except KeyError:
 			states = list( superposition )
-			if len( states ) == 1 and tag( states[0] ) in [ 'ACCEPT', 'REDUCE' ]:
+			if len( states ) == 1 and tag( states[0] ) in accepting_states:
 				result = states[0] # Use the actual object since we're not going to change it anyway
 			else:
 				states.sort( by_priority_descending )
@@ -1081,18 +1123,19 @@ def nfa2dfa( nfa_initial_state ):
 				result = Object( tag( primary_state ) )
 				if tag( primary_state ) == 'REDUCE':
 					result.action_symbol = primary_state.action_symbol
-				debug( "Result is %r", result )
 				for state in states:
 					if state.get( priority_symbol, 0 ) == top_priority:
-						if tag( state ) != tag( result ):
-							raise ConflictError( "Conflict between %r and %r", result, state )
+						if tag( state ) in superposable_states and tag( result ) in superposable_states:
+							pass
+						elif tag( state ) != tag( result ):
+							raise ConflictError( "Conflict between %s and %s at %d %d", result, state, state[ priority_symbol ], top_priority )
 						elif tag( result ) == 'REDUCE' and result.action_symbol != state.action_symbol:
 							raise ConflictError( "Reduce conflict between %r and %r", result.action_symbol, state.action_symbol )
 			dfa_states_by_superposition[ superposition ] = result
 			return result
 
 	def closure( nfa_states ):
-		nfa_states = filter( lambda s: tag(s) in ['SHIFT','LOOKAHEAD1','REDUCE','ACCEPT'], nfa_states )
+		nfa_states = filter( lambda s: tag(s) in state_tags, nfa_states )
 		result = set( nfa_states )
 		work_stack = list( nfa_states )[:]
 		def visit( state, key ):
@@ -1117,22 +1160,30 @@ def nfa2dfa( nfa_initial_state ):
 	def union( sets ):
 		return reduce( lambda x,y: x|y, sets, frozenset() )
 
+	debug_n2d( "nfa2dfa on the following DFA:\n%s", nfa_initial_state._description() )
+	debug_indent()
 	initial_superposition = closure([ nfa_initial_state ])
+	debug_n2d( "initial_superposition: %r", initial_superposition )
 	work_stack = [ initial_superposition ] # invariant: work_stack contains only closed superpositions
-	nfa_only = frozenset([ epsilon, eta ])
+	symbols_not_in_dfa = frozenset([ epsilon, eta ])
 	while work_stack:
 		superposition = work_stack.pop()
 		dfa_state = dfa( superposition )
 		debug_n2d( "Visiting %r: %s", dfa_state, list( superposition ) )
-		unique_keys = union([ frozenset( nfa_state._iterkeys() ) - nfa_only for nfa_state in superposition ])
+		debug_indent()
+		unique_keys = union([ frozenset( nfa_state._iterkeys() ) - symbols_not_in_dfa for nfa_state in superposition ])
 		for key in unique_keys:
+			debug_indent()
 			next_superposition = closure([ nfa_state[ key ] for nfa_state in superposition if key in nfa_state ])
+			debug_n2d( "%r[ %r ] contains %r", dfa_state, key, next_superposition )
 			if next_superposition:
 				if next_superposition not in dfa_states_by_superposition:
 					work_stack.append( next_superposition )
 				dfa_state[ key ] = dfa( next_superposition )
-				debug_n2d( "  %r[ %r ] = %r  <==> %r[ %r ] = %r", dfa_state, key, dfa_state[ key ], list( superposition ), key, list( next_superposition ) )
-					
+				debug_n2d( "%r[ %r ] = %r  <==> %r[ %r ] = %r", dfa_state, key, dfa_state[ key ], list( superposition ), key, list( next_superposition ) )
+			debug_indent(-1)
+		debug_indent(-1)
+	debug_indent(-1)
 	return dfa( initial_superposition )
 
 def by_priority_descending( s1, s2 ):
@@ -1321,14 +1372,52 @@ def test_nfa2dfa():
 	print " -- DFA --"
 	print dfa._description()
 
+def parenthesized_arithmetic_parsing_automaton():
+	int_station = Object( 'STATION' )
+	def dfa( symbols, action_symbol, priority, penultimate=None ):
+		if penultimate is None:
+			penultimate = []
+		else:
+			penultimate = [ penultimate ]
+		shifts = [ Shift() for s in symbols ]
+		states = shifts + penultimate + [ Reduce( action_symbol ) ]
+		for ( i, state ) in enumerate( shifts ):
+			state[ symbols[i] ] = states[ i+1 ]
+			if symbols[i] == ':INT':
+				state[ epsilon ] = int_station
+		if penultimate:
+			states[ -2 ][ epsilon ] = states[ -1 ]
+		for state in states:
+			state[ priority_symbol ] = priority
+		for state in shifts:
+			state[ priority_symbol ] = priority + 1 # Prefer shift over reduce to get left-to-right precedence
+		return states[0]
+	add = dfa([ ':INT', '+', ':INT' ], '+', 10, Lookahead1() )
+	sub = dfa([ ':INT', '-', ':INT' ], '-', 10, Lookahead1() )
+	mul = dfa([ ':INT', '*', ':INT' ], '*', 20, Lookahead1() )
+	div = dfa([ ':INT', '/', ':INT' ], '/', 20, Lookahead1() )
+	rem = dfa([ ':INT', '%', ':INT' ], '%', 20, Lookahead1() )
+	parens = dfa([ '(', ':INT', ')' ], '()', 0 )
+	patterns = [ add, sub, mul, div, rem, parens ]
+	states = [ Object( 'CETERA' ) for p in patterns ]
+	int_station[ eta ] = states[0]
+	for (i,state) in enumerate( states[:-1] ):
+		state[ eta ] = states[ i+1 ]
+	for (i,pattern) in enumerate( patterns ):
+		states[ i ][ epsilon ] = pattern
+	debug( "papa: %s :papa", int_station._description() )
+	return nfa2dfa( int_station )
+
 
 #####################################
 #
 # Proper parser generator.
 #
 
-def PRODUCTION( lhs, rhs, action_symbol ): return Object( 'PRODUCTION', lhs=lhs, rhs=rhs, action_symbol=action_symbol )
 def GRAMMAR( goal_symbol, productions ):   return Object( 'GRAMMAR', goal_symbol=goal_symbol, productions=productions )
+def PRODUCTION( lhs, rhs_stack, action_symbol ):
+	rhs = List( list( reversed( python_list( rhs_stack ) ) ) )
+	return Object( 'PRODUCTION', lhs=lhs, rhs=rhs, rhs_stack=rhs_stack, action_symbol=action_symbol )
 
 def or_changed( target, source ):
 	if target >= source:
@@ -1374,7 +1463,7 @@ def first_sets( grammar, nullable_symbols ):
 		something_changed = False
 		for production in grammar.productions:
 			lhs = production.lhs
-			for symbol in production.rhs: #OOPS this is backward
+			for symbol in production.rhs:
 				changed = or_changed( first(lhs), first(symbol) )
 				if changed:
 					debug( "included first( %r ) in first( %r ): %r", symbol, lhs, first(symbol) )
@@ -1384,6 +1473,7 @@ def first_sets( grammar, nullable_symbols ):
 	return first_by_symbol
 
 def follow_sets( grammar, nullable_symbols, first_by_symbol ):
+	debug( "follow_sets:" )
 	follow_by_symbol = {}
 	def follow( symbol ):
 		try:
@@ -1396,17 +1486,20 @@ def follow_sets( grammar, nullable_symbols, first_by_symbol ):
 		something_changed = False
 		for production in grammar.productions:
 			lhs = production.lhs
-			rhs = production.rhs
-			if len( rhs ) >= 1:
-				# Oh dear.  rhs[-1] is not supported on a Sheppard list.  Also we're processing rhs backward.
-				# I think what I want to do is make a trivial little parsing automaton for each rhs that I can knit together into an NFA,
-				# except that it's awkward to ask for the nth edge in a Sheppard graph.
-				something_changed != or_changed( follow( rhs[-1] ), follow( lhs ) )
-				for ( i, symbol ) in reversed(list(enumerate( production.rhs[:-1] ))):
-					next_symbol = production.rhs[ i+1 ]
-					something_changed |= or_changed( follow( symbol ), first( next_symbol ) )
-					if next_symbol in nullable_symbols:
-						something_changed |= or_changed( follow( symbol ), follow( next_symbol ) )
+			rhs_stack = production.rhs_stack
+			debug( "  production %r -> %r  --  %r", lhs, list_str( production.rhs ), list_str( production.rhs_stack ) )
+			if rhs_stack is not null:
+				debug( "    propagate follow( %r ) from follow( %r )", rhs_stack.head, lhs )
+				something_changed != or_changed( follow( rhs_stack.head ), follow( lhs ) )
+				for link in rhs_stack._links():
+					if link.tail is not null:
+						symbol = link.head
+						prev_symbol = link.tail.head
+						debug( "      propagate follow( %r ) from first( %r )", prev_symbol, symbol )
+						something_changed |= or_changed( follow( prev_symbol ), first_by_symbol[ symbol ] )
+						if prev_symbol in nullable_symbols:
+							debug( "      propagate follow( %r ) from follow( %r )", prev_symbol, symbol )
+							something_changed |= or_changed( follow( prev_symbol ), follow( symbol ) )
 	return follow_by_symbol
 
 def test_parser_generator():
@@ -2125,6 +2218,7 @@ if False:
 else:
 	#test_nfa2dfa()
 	#test_parser_generator()
+	#print shogun( parenthesized_arithmetic_parsing_automaton() )
 	main()
 
 
