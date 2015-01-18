@@ -129,8 +129,8 @@ class Object( dict ):
 			self._fields.append( key )
 		dict.__setitem__( self, key, value )
 
-	def __iter__( self ):
-		raise TypeError( "Object %r does not implement iteration" % self )
+	#def __iter__( self ):
+	#	raise TypeError( "Object %r does not implement iteration" % self )
 
 	def __cmp__( self, other ):
 		raise TypeError( "Object %r does not implement comparison" % self )
@@ -1143,7 +1143,7 @@ def nfa2dfa( nfa_initial_state ):
 						if tag( state ) in superposable_states and tag( result ) in superposable_states:
 							pass
 						elif tag( state ) != tag( result ):
-							raise ConflictError( "Conflict between %s and %s at %d %d", result, state, state[ priority_symbol ], top_priority )
+							raise ConflictError( "Conflict between %s and %s at %d %d", result, state, state.get( priority_symbol, 0 ), top_priority )
 						elif tag( result ) == 'REDUCE' and result.action_symbol != state.action_symbol:
 							raise ConflictError( "Reduce conflict between %r and %r", result.action_symbol, state.action_symbol )
 			dfa_states_by_superposition[ superposition ] = result
@@ -1388,13 +1388,13 @@ def test_nfa2dfa():
 	print " -- DFA --"
 	print dfa._description()
 
-def parenthesized_arithmetic_parsing_automaton():
+def parenthesized_arithmetic_parsing_automaton( include_accept_state=False ):
 	if False:
 		return generate_parenthesized_arithmetic_parsing_automaton()
 	else:
 		initial_state = deshogun("""
 		{
-			0 : SHIFT { '(' : @1 eof : @99 ':INT' : @98 }
+			0 : SHIFT { '(' : @1 }
 			1 : SHIFT { '(' : @1 ':INT' : @2 }
 			2 : SHIFT { ')' : @21 '+' : @3 '-' : @5 '*' : @11 '/' : @12 '%' : @13 }
 			3 : SHIFT { '(' : @1 ':INT' : @4 }
@@ -1410,10 +1410,11 @@ def parenthesized_arithmetic_parsing_automaton():
 			24 : REDUCE { 'action_symbol' : '*' }
 			25 : REDUCE { 'action_symbol' : '/' }
 			26 : REDUCE { 'action_symbol' : '%' }
-			98: LOOKAHEAD1 { eof : @99 }
-			99 : ACCEPT { }
 		}[0]
 		""")
+		if include_accept_state:
+			initial_state[ ':INT' ] = lookahead = Lookahead1()
+			lookahead[ eof ] = Accept()
 		return AUTOMATON( initial_state, FALLBACK_FUNCTION() )
 
 def generate_parenthesized_arithmetic_parsing_automaton():
@@ -1465,29 +1466,33 @@ let a % b   be_python << a%b >>
 let a b ()  be_python << b >>
 """
 
-def test_parenthesized_arithmetic():
+def parenthesized_arithmetic_dummy_procedure( include_accept_state=False ):
 	proc = parse_procedure( "Parenthesized_arithmetic", arithmetic_library_text, [] )
 	# Swap in the automaton that knows about precedence
-	proc.automaton = parenthesized_arithmetic_parsing_automaton()
+	proc.automaton = parenthesized_arithmetic_parsing_automaton( include_accept_state )
 	# Cheese up the action bindings and formal arg names
 	for action in proc.action_bindings.values():
 		for link in action.formal_arg_names._links():
 			formal_arg = link.head
-			debug( "Checking formal_arg %r", formal_arg )
+			#debug( "Checking formal_arg %r", formal_arg )
 			if formal_arg is null:
 				link.head = 'a'
 			elif formal_arg not in ['a','b']:
-				debug( "  Binding %r to %r", formal_arg, action )
+				#debug( "  Binding %r to %r", formal_arg, action )
 				proc.action_bindings[ formal_arg ] = action
 				link.head = null
-	debug( "test_parenthesized_arithmetic procedure:\n%s", shogun( proc ) )
+	#debug( "test_parenthesized_arithmetic procedure:\n%s", shogun( proc ) )
+	return proc
+
+def test_parenthesized_arithmetic():
+	proc = base_proc = parenthesized_arithmetic_dummy_procedure( True )
 	try:
 		depth = int( argv[1] )
 	except IndexError:
 		depth = 0
 	for _ in range( depth ):
 		proc = wrap_procedure( proc )
-	tests = [ # The right answer here is alwasys 6
+	tests = [ # The right answer here is always 6
 		"6",
 		"( 6 )",
 		"( ( 6 ) )",
@@ -1504,12 +1509,57 @@ def test_parenthesized_arithmetic():
 		"( 1 + ( 3 + 2 ) )",
 		]
 	for test in tests:
-		proc.script = List( map( maybe_int, test.split() ) )
+		base_proc.script = List( map( maybe_int, test.split() ) )
 		final_stack = execute( proc, proc.action_bindings )
 		if final_stack.head == 6:
 			print "passed", test
 		else:
 			print "FAILED", test, python_list( final_stack )
+
+def graft( main_initial_state, branch_initial_state, branch_goal_symbol ):
+	image_state_map = {}
+	def image_state( obj ):
+		try:
+			return image_state_map[ obj ]
+		except KeyError:
+			obj_tag = tag( obj )
+			if obj_tag in state_tags:
+				result = Object( obj_tag )
+				image_state_map[ obj ] = result
+				for ( field, value ) in obj._iteritems():
+					result[ field ] = image_state( value )
+				return result
+			else:
+				image_state_map[ obj ] = obj
+				return obj
+	image_state = memoized( image_state )
+
+	branch_initial_state = image_state( branch_initial_state )
+	nfa_initial_state = image_state( main_initial_state )
+	work_stack = [ nfa_initial_state ]
+	already_done = set()
+	while work_stack:
+		state = work_stack.pop()
+		already_done.add( state )
+		for ( field, value ) in state._iteritems():
+			if field == branch_goal_symbol:
+				state[ epsilon ] = branch_initial_state
+				break
+			if tag( value ) in state_tags and value not in already_done:
+				work_stack.append( value )
+	return nfa2dfa( nfa_initial_state )
+
+def augmented_with_parenthesized_arithmetic( procedure ):
+	pa = parenthesized_arithmetic_dummy_procedure()
+	augmented_automaton = AUTOMATON( graft( procedure.automaton.initial_state, pa.automaton.initial_state, ':INT' ), procedure.automaton.fallback_function )
+	action_bindings = Object( 'BINDINGS' )
+	#debug( "Adding in %s", procedure.action_bindings )
+	for ( symbol, action ) in procedure.action_bindings._iteritems():
+		action_bindings[ symbol ] = action
+	#debug( "Adding in %s", pa.action_bindings )
+	for ( symbol, action ) in pa.action_bindings._iteritems():
+		action_bindings[ symbol ] = action
+	return PROCEDURE( procedure.name, procedure.script, augmented_automaton, action_bindings, procedure.enclosing_scope )
 
 
 #####################################
@@ -2252,19 +2302,23 @@ fib_text = """
 let fib  n=0  be  0
 let fib  n=1  be  1
 
-let fib  n  be
+let fib  n:INT  be
 	+
-		fib - n 1
-		fib - n 2
+		fib ( n - 1 )
+		fib ( n - 2 )
 
-let + a b   be_python  << a+b >>
-let - a b   be_python  << a-b >>
+let + a:INT b:INT   be_python  << a+b >>
+let - a:INT b:INT   be_python  << a-b >>
 
-to print_result  n  do_python << print "*** RESULT IS", n, "***" >>
+to print_result  n:INT  do_python << print "*** RESULT IS", n, "***" >>
 """
 
 def fib_procedure():
-	return parse_procedure( "fib", fib_text, [ 'print_result', 'fib', 2 ] )
+	result = parse_procedure( "fib", fib_text, [ 'print_result', 'fib', 2 ] )
+	if True:
+		result = augmented_with_parenthesized_arithmetic( result )
+		#print shogun( result )
+	return result
 
 sheppard_interpreter_library = None
 def wrap_procedure( inner_procedure ):
