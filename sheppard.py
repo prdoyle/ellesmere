@@ -132,6 +132,9 @@ class Object( dict ):
 	def __iter__( self ):
 		raise TypeError( "Object %r does not implement iteration" % self )
 
+	def __cmp__( self, other ):
+		raise TypeError( "Object %r does not implement comparison" % self )
+
 	_iterkeys    = dict.iterkeys
 	_itervalues  = dict.itervalues
 	_iteritems   = dict.iteritems
@@ -214,7 +217,7 @@ class Object( dict ):
 
 	# null and zero are false; all else are true
 
-	def __nonzero__( self ): return self != 0 and self != null
+	def __nonzero__( self ): return self is not 0 and self is not null
 
 	# Most Sheppard objects can't be dict keys (i.e. they are not symbols)
 
@@ -225,6 +228,11 @@ class Object( dict ):
 		# make getitem and setitem act like they don't have data for the given
 		# (illegal) "key" object, which I think is usually how we want them to behave.
 		raise KeyError( '%r is not a symbol' % self )
+
+	def __eq__( self, other ):
+		if True:
+			return self is other
+		raise TypeError( "Object %r does not implement comparison" % self )
 
 	# Note: I'd also like to un-define __eq__ because I think having __eq__
 	# default to identity comparison may be unwise.  However, it's so damn handy
@@ -295,6 +303,9 @@ def tag( obj ):
 			result = obj._tag
 	assert( result.isupper() )
 	return result
+
+def take_tag( obj_sharp ):
+	return tag( flat( obj_sharp ) )
 
 def is_a( obj, t ):
 	assert( t.isupper() )
@@ -467,6 +478,7 @@ def deshogun( text ):
 		consume( ":", words )
 		item = words.pop()
 		debug_deshogun( "item is %r", item )
+		debug_indent()
 		try:
 			dictionary[ key ] = deshogun_simple_value( item, words )
 		except NotASimpleValueError, e:
@@ -476,6 +488,7 @@ def deshogun( text ):
 				raise e # Re-raise the exception that brought us here
 			obj = Object( item )
 			dictionary[ key ] = obj
+			debug_deshogun( "created [ %r ] = %r", key, obj )
 			while words[-1] != "}":
 				field = words.pop()
 				if field[0] in [ "'", '"' ]:
@@ -494,8 +507,10 @@ def deshogun( text ):
 					else:
 						raise e
 			consume( "}", words )
+		debug_indent(-1)
 	consume( "}", words )
 	for ( obj, key, index ) in relocations:
+		debug_deshogun( "Relocation %r[ %r ] = @%d %r", obj, key, index, dictionary[ index ] )
 		obj[ key ] = dictionary[ index ]
 	consume( "[", words )
 	result = dictionary[ maybe_int( words.pop() ) ]
@@ -708,7 +723,6 @@ def cons( head_sharp, tail ):
 	return LIST( flat( head_sharp ), tail )
 
 debug_ellision_limit=999
-printing_level_threshold=1
 
 def cursor_description( cursor ):
 	if cursor == dial_tone:
@@ -716,6 +730,7 @@ def cursor_description( cursor ):
 	else:
 		return string.join( [ repr(x) for x in python_list( cursor.tokens ) ], "  " ) + " . " + cursor_description( cursor.resumption )
 
+printing_level_threshold=1
 def print_program( th ):
 	if meta_level( th ) >= printing_level_threshold:
 		frame = th.activation
@@ -1106,7 +1121,7 @@ state_tags = accepting_states | superposable_states
 
 priority_symbol = ANON( 'priority' )
 def nfa2dfa( nfa_initial_state ):
-	debug_n2d = debug
+	debug_n2d = silence
 	dfa_states_by_superposition = {}
 	def dfa( nfa_states ):
 		superposition = frozenset( nfa_states )
@@ -1169,19 +1184,20 @@ def nfa2dfa( nfa_initial_state ):
 	while work_stack:
 		superposition = work_stack.pop()
 		dfa_state = dfa( superposition )
-		debug_n2d( "Visiting %r: %s", dfa_state, list( superposition ) )
-		debug_indent()
-		unique_keys = union([ frozenset( nfa_state._iterkeys() ) - symbols_not_in_dfa for nfa_state in superposition ])
-		for key in unique_keys:
+		if tag( dfa_state ) in superposable_states:
+			debug_n2d( "Visiting %r: %s", dfa_state, list( superposition ) )
 			debug_indent()
-			next_superposition = closure([ nfa_state[ key ] for nfa_state in superposition if key in nfa_state ])
-			debug_n2d( "%r[ %r ] contains %r", dfa_state, key, next_superposition )
-			if next_superposition:
-				if next_superposition not in dfa_states_by_superposition:
-					work_stack.append( next_superposition )
-				dfa_state[ key ] = dfa( next_superposition )
-				debug_n2d( "%r[ %r ] = %r  <==> %r[ %r ] = %r", dfa_state, key, dfa_state[ key ], list( superposition ), key, list( next_superposition ) )
-			debug_indent(-1)
+			unique_keys = union([ frozenset( nfa_state._iterkeys() ) - symbols_not_in_dfa for nfa_state in superposition ])
+			for key in unique_keys:
+				debug_indent()
+				next_superposition = closure([ nfa_state[ key ] for nfa_state in superposition if key in nfa_state ])
+				debug_n2d( "%r[ %r ] contains %r", dfa_state, key, next_superposition )
+				if next_superposition:
+					if next_superposition not in dfa_states_by_superposition:
+						work_stack.append( next_superposition )
+					dfa_state[ key ] = dfa( next_superposition )
+					debug_n2d( "%r[ %r ] = %r  <==> %r[ %r ] = %r", dfa_state, key, dfa_state[ key ], list( superposition ), key, list( next_superposition ) )
+				debug_indent(-1)
 		debug_indent(-1)
 	debug_indent(-1)
 	return dfa( initial_superposition )
@@ -1373,6 +1389,35 @@ def test_nfa2dfa():
 	print dfa._description()
 
 def parenthesized_arithmetic_parsing_automaton():
+	if False:
+		return generate_parenthesized_arithmetic_parsing_automaton()
+	else:
+		initial_state = deshogun("""
+		{
+			0 : SHIFT { '(' : @1 eof : @99 ':INT' : @98 }
+			1 : SHIFT { '(' : @1 ':INT' : @2 }
+			2 : SHIFT { ')' : @21 '+' : @3 '-' : @5 '*' : @11 '/' : @12 '%' : @13 }
+			3 : SHIFT { '(' : @1 ':INT' : @4 }
+			4 : LOOKAHEAD1 { '+' : @22 '-' : @22 ')' : @22 '*' : @2 '/' : @2 '%' : @2 }
+			5 : SHIFT { '(' : @1 ':INT' : @6 }
+			6 : LOOKAHEAD1 { '+' : @23 '-' : @23 ')' : @23 '*' : @2 '/' : @2 '%' : @2 }
+			11 : SHIFT { '(' : @1 ':INT' : @24 }
+			12 : SHIFT { '(' : @1 ':INT' : @25 }
+			13 : SHIFT { '(' : @1 ':INT' : @26 }
+			21 : REDUCE { 'action_symbol' : '()' }
+			22 : REDUCE { 'action_symbol' : '+' }
+			23 : REDUCE { 'action_symbol' : '-' }
+			24 : REDUCE { 'action_symbol' : '*' }
+			25 : REDUCE { 'action_symbol' : '/' }
+			26 : REDUCE { 'action_symbol' : '%' }
+			98: LOOKAHEAD1 { eof : @99 }
+			99 : ACCEPT { }
+		}[0]
+		""")
+		return AUTOMATON( initial_state, FALLBACK_FUNCTION() )
+
+def generate_parenthesized_arithmetic_parsing_automaton():
+	# Doesn't work yet
 	int_station = Object( 'STATION' )
 	def dfa( symbols, action_symbol, priority, penultimate=None ):
 		if penultimate is None:
@@ -1400,14 +1445,71 @@ def parenthesized_arithmetic_parsing_automaton():
 	rem = dfa([ ':INT', '%', ':INT' ], '%', 20, Lookahead1() )
 	parens = dfa([ '(', ':INT', ')' ], '()', 0 )
 	patterns = [ add, sub, mul, div, rem, parens ]
-	states = [ Object( 'CETERA' ) for p in patterns ]
-	int_station[ eta ] = states[0]
-	for (i,state) in enumerate( states[:-1] ):
-		state[ eta ] = states[ i+1 ]
+	ceteras = [ Object( 'CETERA' ) for p in patterns ]
+	int_station[ eta ] = ceteras[0]
+	for (i,state) in enumerate( ceteras[:-1] ):
+		state[ eta ] = ceteras[ i+1 ]
 	for (i,pattern) in enumerate( patterns ):
-		states[ i ][ epsilon ] = pattern
-	debug( "papa: %s :papa", int_station._description() )
-	return nfa2dfa( int_station )
+		ceteras[ i ][ epsilon ] = pattern
+	return nfa2dfa( parens )
+
+arithmetic_library_text = """
+/* Cheesy way to use build_keyword_based_automaton to get almost the right actions constructed */
+/* Must use variable names "a" and "b" for the re-binding operation performed by test_parenthesized_arithmetic */
+/* Also the first of each one will be hard-coded to "a" so might as well call it that */
+let a + b   be_python << a+b >>
+let a - b   be_python << a-b >>
+let a * b   be_python << a*b >>
+let a / b   be_python << a/b >>
+let a % b   be_python << a%b >>
+let a b ()  be_python << b >>
+"""
+
+def test_parenthesized_arithmetic():
+	proc = parse_procedure( "Parenthesized_arithmetic", arithmetic_library_text, [] )
+	# Swap in the automaton that knows about precedence
+	proc.automaton = parenthesized_arithmetic_parsing_automaton()
+	# Cheese up the action bindings and formal arg names
+	for action in proc.action_bindings.values():
+		for link in action.formal_arg_names._links():
+			formal_arg = link.head
+			debug( "Checking formal_arg %r", formal_arg )
+			if formal_arg is null:
+				link.head = 'a'
+			elif formal_arg not in ['a','b']:
+				debug( "  Binding %r to %r", formal_arg, action )
+				proc.action_bindings[ formal_arg ] = action
+				link.head = null
+	debug( "test_parenthesized_arithmetic procedure:\n%s", shogun( proc ) )
+	try:
+		depth = int( argv[1] )
+	except IndexError:
+		depth = 0
+	for _ in range( depth ):
+		proc = wrap_procedure( proc )
+	tests = [ # The right answer here is alwasys 6
+		"6",
+		"( 6 )",
+		"( ( 6 ) )",
+		"( 4 + 2 )",
+		"( 8 - 2 )",
+		"( 3 * 2 )",
+		"( 12 / 2 )",
+		"( 16 % 10 )",
+		"( 4 + 3 - 1 )",
+		"( 8 - 1 - 1 )",
+		"( 2 + 2 * 2 )",
+		"( 2 + 8 / 2 )",
+		"( 1 + 15 % 10 )",
+		"( 1 + ( 3 + 2 ) )",
+		]
+	for test in tests:
+		proc.script = List( map( maybe_int, test.split() ) )
+		final_stack = execute( proc, proc.action_bindings )
+		if final_stack.head == 6:
+			print "passed", test
+		else:
+			print "FAILED", test, python_list( final_stack )
 
 
 #####################################
@@ -1554,32 +1656,35 @@ def execute( procedure, action_bindings ): # One day we can get partial evaluati
 	debug( "starting thread: %r with digression:\n\t%s", thread, frame.cursor )
 	print_program( thread )
 	execute2( frame, 'CONTINUE_INTERPRETING' )
+	return frame.operands
 
 def execute2( frame, x ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
 	while x == 'CONTINUE_INTERPRETING':
 		#print_stuff( frame.thread )
-		process_func = process[ tag( frame.history.head ) ]
-		x = process_func( frame.history.head, frame )
+		x = process( frame.history.head, frame )
+
+def process( state, frame ):
+	return process_dispatch_map[ tag(state) ]( state, frame )
 
 def process_accept( state, frame ):
 	debug( 'accept' )
 	return 'EXIT_INTERPRETER'
 
+debug_shift = silence
 shift_count = 0
 def process_shift( state, frame ):
 	global shift_count
 	shift_count += 1
-	#debug_shift = silence
-	#debug_shift( 'shift' )
-	#debug_shift( "  cursor: %r", frame.cursor )
-	#debug_shift( "  state: %s", state )
+	if debug_shift is not silence:
+		print_stuff( frame.thread )
 	token_sharp = bound_value( get_token( pop_list( frame.cursor, "tokens#" ) ), frame.cursor.local_scope )
 	end_digression_if_finished( frame.cursor.tokens, frame )
-	#debug_shift( "    value: %r", flat( token_sharp ) )
 	frame[ 'operands' ] = cons( token_sharp, frame.operands )
-	frame[ 'history' ] = cons( next_state( state, token_sharp, frame.fallback_function, token_sharp ), frame.history )
-	#debug_shift( "  new_state: %r", state )
+	frame[ 'history' ] = cons( get_next_state( state, token_sharp, frame.fallback_function, token_sharp ), frame.history )
+	if debug_shift is not silence:
+		debug_shift( "    bound_value: %r", flat( token_sharp ) )
+		debug_shift( "  new_state: %r", frame.history.head )
 	if list_length( frame.operands ) > 50:
 		error( frame.thread, RuntimeError( "Operand stack overflow" ) )
 	return 'CONTINUE_INTERPRETING'
@@ -1587,8 +1692,13 @@ def process_shift( state, frame ):
 def process_lookahead1( state, frame ):
 	# Note that the token binding gets looked up twice in this case: once for
 	# the lookup, and once for the next shift.
-	token_sharp = bound_value( get_token( frame.cursor.tokens.head ), frame.cursor.local_scope )
-	return process( next_state( state, token_sharp, frame.fallback_function, token_sharp ), frame )
+	if debug_shift is not silence:
+		print_stuff( frame.thread )
+		debug_shift( "Lookahead token: %r", get_token( take( frame.cursor.tokens, "head#" ) ) )
+		debug_shift( "  bindings: %s", frame.cursor.local_scope.bindings._description() )
+	token_sharp = bound_value( get_token( take( frame.cursor.tokens, "head#" ) ), frame.cursor.local_scope )
+	#debug_shift( "  bound_value: %r", flat( token_sharp ) )
+	return process( get_next_state( state, token_sharp, frame.fallback_function, token_sharp ), frame )
 
 def process_reduce( state, frame ):
 	if meta_level( frame.thread ) >= printing_level_threshold:
@@ -1615,7 +1725,7 @@ def process_reduce( state, frame ):
 	print_program( frame.thread )
 	return 'CONTINUE_INTERPRETING'
 
-process = {
+process_dispatch_map = {
 	'ACCEPT':      process_accept,
 	'SHIFT':       process_shift,
 	'LOOKAHEAD1':  process_lookahead1,
@@ -1658,7 +1768,8 @@ def end_digression_if_finished( remaining_tokens, frame ):
 		#debug_digressions( "  (finished %r %r %s)", frame.cursor, frame.cursor.local_scope, frame.cursor.local_scope.bindings  )
 		frame[ 'cursor' ] = frame.cursor.resumption
 
-def next_state( state, obj_sharp, fallback_function, original_obj_for_error_reporting ):
+debug_get_next_state = silence
+def get_next_state( state, obj_sharp, fallback_function, original_obj_for_error_reporting ):
 	# Pseudocode:
 	#
 	# if take( state, obj_sharp ):
@@ -1672,24 +1783,26 @@ def next_state( state, obj_sharp, fallback_function, original_obj_for_error_repo
 	#          t = fallback_function[ t ]
 	# raise Unexpected_token
 	#
-	return next_state2( state, obj_sharp, take( state, obj_sharp ), fallback_function, original_obj_for_error_reporting )
+	debug_get_next_state( "get_next_state( %r, %r, fallback, %r )", state, obj_sharp, original_obj_for_error_reporting )
+	return get_next_state2( state, obj_sharp, take( state, obj_sharp ), fallback_function, original_obj_for_error_reporting )
 
-def next_state2( state, obj_sharp, possible_match, fallback_function, original_obj_for_error_reporting ):
+def get_next_state2( state, obj_sharp, possible_match, fallback_function, original_obj_for_error_reporting ):
 	if possible_match is take_failed:
-		tag_sharp = sharp( tag( obj_sharp ) )
-		return next_state_by_tag( state, tag_sharp, fallback_function, original_obj_for_error_reporting )
+		tag_sharp = sharp( take_tag( obj_sharp ) )
+		return get_next_state_by_tag( state, tag_sharp, fallback_function, original_obj_for_error_reporting )
 	else:
 		return possible_match
 
-def next_state_by_tag( state, tag_sharp, fallback_function, original_obj_for_error_reporting ):
+def get_next_state_by_tag( state, tag_sharp, fallback_function, original_obj_for_error_reporting ):
+	debug_get_next_state( "get_next_state_by_tag( %r, %r, fallback, %r )", state, tag_sharp, original_obj_for_error_reporting )
 	if tag_sharp is take_failed:
 		raise Unexpected_token( state, original_obj_for_error_reporting )
 	else:
-		return next_state_by_tag2( state, tag_sharp, take( state, tag_edge_symbol( tag_sharp ) ), fallback_function, original_obj_for_error_reporting )
+		return get_next_state_by_tag2( state, tag_sharp, take( state, tag_edge_symbol( tag_sharp ) ), fallback_function, original_obj_for_error_reporting )
 
-def next_state_by_tag2( state, tag_sharp, possible_next_state, fallback_function, original_obj_for_error_reporting ):
+def get_next_state_by_tag2( state, tag_sharp, possible_next_state, fallback_function, original_obj_for_error_reporting ):
 	if possible_next_state is take_failed:
-		return next_state_by_tag( state, get_fallback( fallback_function, tag_sharp, take( fallback_function, tag_sharp ) ), fallback_function, original_obj_for_error_reporting )
+		return get_next_state_by_tag( state, get_fallback( fallback_function, tag_sharp, take( fallback_function, tag_sharp ) ), fallback_function, original_obj_for_error_reporting )
 	else:
 		return possible_next_state
 
@@ -1725,6 +1838,7 @@ def bind_args( frame, arg_bindings, formal_arg_names ):
 def bound_value( obj_sharp, environment ):
 	#debug( "bound_value( %r, %r )", obj_sharp, environment )
 	if environment is null:
+		#debug( "  returning original obj_sharp %r", obj_sharp )
 		return obj_sharp
 	else:
 		return bound_value2( obj_sharp, environment, take( environment.bindings, obj_sharp ) )
@@ -2216,10 +2330,11 @@ def main():
 if False:
 	import cProfile
 	cProfile.run( "main()", None, "time" )
+elif False:
+	test_parenthesized_arithmetic()
 else:
 	#test_nfa2dfa()
 	#test_parser_generator()
-	#print shogun( parenthesized_arithmetic_parsing_automaton() )
 	main()
 
 
