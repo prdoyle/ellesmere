@@ -1417,43 +1417,6 @@ def parenthesized_arithmetic_parsing_automaton( include_accept_state=False ):
 			lookahead[ eof ] = Accept()
 		return AUTOMATON( initial_state, FALLBACK_FUNCTION() )
 
-def generate_parenthesized_arithmetic_parsing_automaton():
-	# Doesn't work yet
-	int_station = Object( 'STATION' )
-	def dfa( symbols, action_symbol, priority, penultimate=None ):
-		if penultimate is None:
-			penultimate = []
-		else:
-			penultimate = [ penultimate ]
-		shifts = [ Shift() for s in symbols ]
-		states = shifts + penultimate + [ Reduce( action_symbol ) ]
-		for ( i, state ) in enumerate( shifts ):
-			state[ symbols[i] ] = states[ i+1 ]
-			if symbols[i] == ':INT':
-				state[ epsilon ] = int_station
-		if penultimate:
-			states[ -2 ][ epsilon ] = states[ -1 ]
-		for state in states:
-			tag_bonus = 0
-			if tag( state ) == 'REDUCE':
-				tag_bonus = 1 # Left-to-right evaluation prefers reduce over others
-			state[ priority_symbol ] = priority + tag_bonus
-		return states[0]
-	add = dfa([ ':INT', '+', ':INT' ], '+', 10, Lookahead1() )
-	sub = dfa([ ':INT', '-', ':INT' ], '-', 10, Lookahead1() )
-	mul = dfa([ ':INT', '*', ':INT' ], '*', 20, Lookahead1() )
-	div = dfa([ ':INT', '/', ':INT' ], '/', 20, Lookahead1() )
-	rem = dfa([ ':INT', '%', ':INT' ], '%', 20, Lookahead1() )
-	parens = dfa([ '(', ':INT', ')' ], '()', 0 )
-	patterns = [ add, sub, mul, div, rem, parens ]
-	ceteras = [ Object( 'CETERA' ) for p in patterns ]
-	int_station[ eta ] = ceteras[0]
-	for (i,state) in enumerate( ceteras[:-1] ):
-		state[ eta ] = ceteras[ i+1 ]
-	for (i,pattern) in enumerate( patterns ):
-		ceteras[ i ][ epsilon ] = pattern
-	return nfa2dfa( parens )
-
 arithmetic_library_text = """
 /* Cheesy way to use build_keyword_based_automaton to get almost the right actions constructed */
 /* Must use variable names "a" and "b" for the re-binding operation performed by test_parenthesized_arithmetic */
@@ -1516,6 +1479,43 @@ def test_parenthesized_arithmetic():
 		else:
 			print "FAILED", test, python_list( final_stack )
 
+def generate_parenthesized_arithmetic_parsing_automaton():
+	# Doesn't work yet
+	int_station = Object( 'STATION' )
+	def dfa( symbols, action_symbol, priority, penultimate=None ):
+		if penultimate is None:
+			penultimate = []
+		else:
+			penultimate = [ penultimate ]
+		shifts = [ Shift() for s in symbols ]
+		states = shifts + penultimate + [ Reduce( action_symbol ) ]
+		for ( i, state ) in enumerate( shifts ):
+			state[ symbols[i] ] = states[ i+1 ]
+			if symbols[i] == ':INT':
+				state[ epsilon ] = int_station
+		if penultimate:
+			states[ -2 ][ epsilon ] = states[ -1 ]
+		for state in states:
+			tag_bonus = 0
+			if tag( state ) == 'REDUCE':
+				tag_bonus = 1 # Left-to-right evaluation prefers reduce over others
+			state[ priority_symbol ] = priority + tag_bonus
+		return states[0]
+	add = dfa([ ':INT', '+', ':INT' ], '+', 10, Lookahead1() )
+	sub = dfa([ ':INT', '-', ':INT' ], '-', 10, Lookahead1() )
+	mul = dfa([ ':INT', '*', ':INT' ], '*', 20, Lookahead1() )
+	div = dfa([ ':INT', '/', ':INT' ], '/', 20, Lookahead1() )
+	rem = dfa([ ':INT', '%', ':INT' ], '%', 20, Lookahead1() )
+	parens = dfa([ '(', ':INT', ')' ], '()', 0 )
+	patterns = [ add, sub, mul, div, rem, parens ]
+	ceteras = [ Object( 'CETERA' ) for p in patterns ]
+	int_station[ eta ] = ceteras[0]
+	for (i,state) in enumerate( ceteras[:-1] ):
+		state[ eta ] = ceteras[ i+1 ]
+	for (i,pattern) in enumerate( patterns ):
+		ceteras[ i ][ epsilon ] = pattern
+	return nfa2dfa( parens )
+
 def graft( main_initial_state, branch_initial_state, branch_goal_symbol ):
 	image_state_map = {}
 	def image_state( obj ):
@@ -1561,6 +1561,119 @@ def augmented_with_parenthesized_arithmetic( procedure ):
 		action_bindings[ symbol ] = action
 	return PROCEDURE( procedure.name, procedure.script, augmented_automaton, action_bindings, procedure.enclosing_scope )
 
+def quasiquote_dummy_procedure( include_accept_state=False ):
+	result = deshogun(""" {
+		1 : SHIFT { '{' : @21 ':QUASIQUOTER' : @2 }
+		2 : SHIFT_RAW { ':SYMBOL' : @31 '}' : @23 '${' : @11 '$' : @15 }
+		11 : SHIFT { ':ANY' : @12 }
+		12 : SHIFT { '}$' : @33 }
+		15 : SHIFT { ':ANY' : @32 }
+		21 : REDUCE { 'action_symbol' : 'create_empty_quasiquoter' }
+		23 : REDUCE { 'action_symbol' : 'close_quotation' }
+		31 : REDUCE { 'action_symbol' : 'append_item' }
+		32 : REDUCE { 'action_symbol' : 'append_item2' }
+		33 : REDUCE { 'action_symbol' : 'append_item3' }
+		101 : PROCEDURE {
+			'action_bindings' : @104
+			'automaton' : @150
+			'enclosing_scope' : @102
+			'name' : 'quasiquote'
+			'script' : null
+		}
+		102 : ENVIRONMENT {
+			'bindings' : @103
+			'outer' : null
+		}
+		103 : BINDINGS {
+			'dial_tone' : dial_tone
+			'eof' : eof
+			'eta' : eta
+			'false' : false
+			'null' : null
+			'true' : true
+		}
+		104 : BINDINGS {
+			'create_empty_quasiquoter' : @105
+			'close_quotation' : @107
+			'append_item' : @106
+			'append_item2' : @109
+			'append_item3' : @108
+		}
+		105 : PYTHON_EVAL {
+			'enclosing_scope' : @102
+			'formal_arg_names' : [ null ]
+			'expression' : 'QUASIQUOTER()'
+		}
+		106 : PYTHON_EVAL {
+			'enclosing_scope' : @102
+			'formal_arg_names' : [ 'symbol' , 'qq' ]
+			'expression' : 'append_item_to_quasiquoter( qq, symbol )'
+		}
+		107 : PYTHON_EVAL {
+			'enclosing_scope' : @102
+			'formal_arg_names' : [ null , 'qq' ]
+			'expression' : 'qq.start_marker.tail'
+		}
+		108 : PYTHON_EVAL {
+			'enclosing_scope' : @102
+			'formal_arg_names' : [ null , 'symbol' , null , 'qq' ]
+			'expression' : 'append_item_to_quasiquoter( qq, symbol )'
+		}
+		109 : PYTHON_EVAL {
+			'enclosing_scope' : @102
+			'formal_arg_names' : [ 'symbol' , null , 'qq' ]
+			'expression' : 'append_item_to_quasiquoter( qq, symbol )'
+		}
+		150 : AUTOMATON {
+			'initial_state' : @1
+		}
+	}[101] """)
+	result.automaton.fallback_function = FALLBACK_FUNCTION()
+	if include_accept_state:
+		result.automaton.initial_state[ ':LIST' ] = lookahead = Lookahead1()
+		lookahead[ eof ] = Accept()
+	return result
+
+def QUASIQUOTER():
+	start_marker = end = LIST( null, null )
+	return Object( 'QUASIQUOTER', start_marker=start_marker, end=end )
+
+def append_item_to_quasiquoter( qq, symbol ):
+	new_tail = LIST( symbol, null )
+	qq.end.tail = new_tail
+	qq.end = new_tail
+	return qq
+
+def test_quasiquote():
+	p = quasiquote_dummy_procedure( True )
+	p.script = List([ '{', 'hello', 'world', '}' ])
+	final_stack = execute( p, p.action_bindings )
+	check_result( python_list( final_stack.head ), [ 'hello', 'world' ] )
+	p.script = List([ '{', 'null', '$', 'null', 'null', '}' ])
+	final_stack = execute( p, p.action_bindings )
+	check_result( python_list( final_stack.head ), [ 'null', null, 'null' ] )
+	p.script = List([ '{', 'null', '${', 'null', '}$', 'null', '}' ])
+	final_stack = execute( p, p.action_bindings )
+	check_result( python_list( final_stack.head ), [ 'null', null, 'null' ] )
+
+def check_result( ideal, actual ):
+	print "Result:", actual
+	try:
+		if isinstance( ideal, list ):
+			if len( ideal ) != len( actual ):
+				raise Exception
+			for ( i, x ) in enumerate( ideal ):
+				y = actual[ i ]
+				if isinstance( x, Object ):
+					if x is not y:
+						raise Exception
+				else:
+					if x != y:
+						raise Exception
+		elif ideal != actual:
+			return
+	except Exception:
+		raise Exception( "Test failure.  Expected: %r  Actual: %r" % ( ideal, actual ) )
 
 #####################################
 #
@@ -1728,7 +1841,10 @@ def process_shift( state, frame ):
 	shift_count += 1
 	if debug_shift is not silence:
 		print_stuff( frame.thread )
-	token_sharp = bound_value( get_token( pop_list( frame.cursor, "tokens#" ) ), frame.cursor.local_scope )
+	if tag( state ) == 'SHIFT_RAW':
+		token_sharp = get_token( pop_list( frame.cursor, "tokens#" ) )
+	else:
+		token_sharp = bound_value( get_token( pop_list( frame.cursor, "tokens#" ) ), frame.cursor.local_scope )
 	end_digression_if_finished( frame.cursor.tokens, frame )
 	frame[ 'operands' ] = cons( token_sharp, frame.operands )
 	frame[ 'history' ] = cons( get_next_state( state, token_sharp, frame.fallback_function, token_sharp ), frame.history )
@@ -1778,6 +1894,7 @@ def process_reduce( state, frame ):
 process_dispatch_map = {
 	'ACCEPT':      process_accept,
 	'SHIFT':       process_shift,
+	'SHIFT_RAW':   process_shift,
 	'LOOKAHEAD1':  process_lookahead1,
 	'REDUCE':      process_reduce,
 	}
@@ -2393,6 +2510,7 @@ elif False:
 else:
 	#test_nfa2dfa()
 	#test_parser_generator()
+	#test_quasiquote()
 	main()
 
 
