@@ -86,11 +86,12 @@ class Object( dict ):
 		_self._tag = _tag
 		if tag_counters is not None:
 			tag_counters[ _tag ] = 1 + tag_counters.get( _tag, 0 )
-		_self._fields = sorted([ k for k in edges ]) # _fields can be adjusted if we want a particular field ordering
 		_self._id = object_counter
+		_self._fields = []
 		object_counter += 1
 		for ( name, value ) in edges.iteritems():
 			_self[ name ] = value
+		_self._fields = sorted( _self._fields ) # _fields can be adjusted if we want a particular field ordering
 
 	# Note that this is not in sharp-land.  When we're interpreting be_python or
 	# do_python, the code needs to act like Python or it will be too confusing.
@@ -123,7 +124,7 @@ class Object( dict ):
 				raise AttributeError( repr(key) )
 
 	def __setitem__( self, key, value ):
-		assert( key[0] != "_" )
+		assert( not isinstance( key, str ) or key[0] != "_" )
 		if not dict.__contains__( self, key ):
 			assert( key not in self._fields )
 			self._fields.append( key )
