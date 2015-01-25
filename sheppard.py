@@ -1826,18 +1826,18 @@ def execute2( frame, x ):
 	# Actual Sheppard would use tail recursion, but Python doesn't have that, so we have to loop
 	while x == 'CONTINUE_INTERPRETING':
 		#print_stuff( frame.thread )
-		x = process( frame.history.head, frame )
+		x = leave( frame.history.head, frame )
 
-def process( state, frame ):
-	return process_dispatch_map[ tag(state) ]( state, frame )
+def leave( state, frame ):
+	return leave_dispatch_map[ tag(state) ]( state, frame )
 
-def process_accept( state, frame ):
+def leave_accept( state, frame ):
 	debug( 'accept' )
 	return 'EXIT_INTERPRETER'
 
 debug_shift = silence
 shift_count = 0
-def process_shift( state, frame ):
+def leave_shift( state, frame ):
 	global shift_count
 	shift_count += 1
 	if debug_shift is not silence:
@@ -1856,7 +1856,7 @@ def process_shift( state, frame ):
 		error( frame.thread, RuntimeError( "Operand stack overflow" ) )
 	return 'CONTINUE_INTERPRETING'
 
-def process_lookahead1( state, frame ):
+def leave_lookahead1( state, frame ):
 	# Note that the token binding gets looked up twice in this case: once for
 	# the lookup, and once for the next shift.
 	if debug_shift is not silence:
@@ -1865,9 +1865,9 @@ def process_lookahead1( state, frame ):
 		debug_shift( "  bindings: %s", frame.cursor.local_scope.bindings._description() )
 	token_sharp = bound_value( get_token( take( frame.cursor.tokens, "head#" ) ), frame.cursor.local_scope )
 	#debug_shift( "  bound_value: %r", flat( token_sharp ) )
-	return process( get_next_state( state, token_sharp, frame.fallback_function, token_sharp ), frame )
+	return leave( get_next_state( state, token_sharp, frame.fallback_function, token_sharp ), frame )
 
-def process_reduce( state, frame ):
+def leave_reduce( state, frame ):
 	if meta_level( frame.thread ) >= printing_level_threshold:
 		debug_reduce = debug
 		debug2_reduce = silence
@@ -1892,12 +1892,12 @@ def process_reduce( state, frame ):
 	print_program( frame.thread )
 	return 'CONTINUE_INTERPRETING'
 
-process_dispatch_map = {
-	'ACCEPT':      process_accept,
-	'SHIFT':       process_shift,
-	'SHIFT_RAW':   process_shift,
-	'LOOKAHEAD1':  process_lookahead1,
-	'REDUCE':      process_reduce,
+leave_dispatch_map = {
+	'ACCEPT':      leave_accept,
+	'SHIFT':       leave_shift,
+	'SHIFT_RAW':   leave_shift,
+	'LOOKAHEAD1':  leave_lookahead1,
+	'REDUCE':      leave_reduce,
 	}
 
 def perform( action, frame, reduce_environment ):
@@ -2071,7 +2071,7 @@ to execute2
 do
 	execute2
 		frame
-		process
+		leave
 			get2 frame history head
 			frame
 
@@ -2081,14 +2081,14 @@ do
 	/* Nothing left to do */
 
 
-/* The routine "process" performs one execution step of the program, as indicated by the current automaton state */
+/* The routine "leave" performs one execution step of the program, thereby exiting the current state and moving into the next one */
 
-let process 
+let leave 
 	state:ACCEPT frame
 be
 	EXIT_INTERPRETER
 
-let process 
+let leave 
 	state:SHIFT frame
 be
 	set token_sharp
@@ -2115,7 +2115,7 @@ be
 			get frame history
 	CONTINUE_INTERPRETING
 
-let process 
+let leave 
 	state:LOOKAHEAD1 frame
 be
 	set token_sharp
@@ -2125,7 +2125,7 @@ be
 					get2 frame cursor tokens
 					head#
 			get2 frame cursor local_scope
-	process
+	leave
 		get_next_state
 			state
 			token_sharp
@@ -2133,7 +2133,7 @@ be
 			token_sharp
 		frame
 
-let process 
+let leave 
 	state:REDUCE frame
 be
 	print_stuff frame
@@ -2317,7 +2317,7 @@ be
 to return
 	value
 do
-	/* TODO: Take of my operand stack and put on the caller's */
+	/* TODO: Take off my operand stack and put on the caller's */
 
 /* Constructors for data types used by the interpreter */
 
