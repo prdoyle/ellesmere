@@ -1117,7 +1117,7 @@ class ConflictError( Exception ):
 	pass
 
 accepting_states    = frozenset([ 'ACCEPT', 'REDUCE' ])
-superposable_states = frozenset([ 'SHIFT', 'LOOKAHEAD1', 'CETERA', 'STATION' ])
+superposable_states = frozenset([ 'SHIFT', 'SHIFT_RAW', 'LOOKAHEAD1', 'CETERA', 'STATION' ])
 state_tags = accepting_states | superposable_states
 
 priority_symbol = ANON( 'priority' )
@@ -1144,9 +1144,9 @@ def nfa2dfa( nfa_initial_state ):
 						if tag( state ) in superposable_states and tag( result ) in superposable_states:
 							pass
 						elif tag( state ) != tag( result ):
-							raise ConflictError( "Conflict between %s and %s at %d %d", result, state, state.get( priority_symbol, 0 ), top_priority )
+							raise ConflictError( "Conflict between %s and %s at %d %d" % ( result, state, state.get( priority_symbol, 0 ), top_priority ) )
 						elif tag( result ) == 'REDUCE' and result.action_symbol != state.action_symbol:
-							raise ConflictError( "Reduce conflict between %r and %r", result.action_symbol, state.action_symbol )
+							raise ConflictError( "Reduce conflict between %r and %r" % ( result.action_symbol, state.action_symbol ) )
 			dfa_states_by_superposition[ superposition ] = result
 			return result
 
@@ -1446,6 +1446,12 @@ def parenthesized_arithmetic_dummy_procedure( include_accept_state=False ):
 				proc.action_bindings[ formal_arg ] = action
 				link.head = null
 	#debug( "test_parenthesized_arithmetic procedure:\n%s", shogun( proc ) )
+	if False:
+		print proc.automaton.initial_state._description()
+		for x in iterate_states( proc.automaton.initial_state ):
+			print repr(x)
+		for x in iterate_state_transitions( proc.automaton.initial_state ):
+			print repr(x)
 	return proc
 
 def test_parenthesized_arithmetic():
@@ -1517,6 +1523,61 @@ def generate_parenthesized_arithmetic_parsing_automaton():
 		ceteras[ i ][ epsilon ] = pattern
 	return nfa2dfa( parens )
 
+def iterate_states( initial_state, already_visited=set() ):
+	yield initial_state
+	for (k,v) in initial_state._iteritems():
+		if tag(v) in state_tags and v not in already_visited:
+				already_visited.add( v )
+				for x in iterate_states( v, already_visited ):
+					yield x
+
+def iterate_state_transitions( initial_state, already_visited=None ):
+	if already_visited is None:
+		already_visited = set()
+	for (k,v) in initial_state._iteritems():
+		if tag(v) in state_tags:
+			yield ( initial_state, k, v )
+			if v not in already_visited:
+				already_visited.add( v )
+				for x in iterate_state_transitions( v, already_visited ):
+					yield x
+
+def duplicate_states( initial_state ):
+	image_state_map = {}
+	def image_state( obj ):
+		try:
+			return image_state_map[ obj ]
+		except KeyError:
+			obj_tag = tag( obj )
+			if obj_tag in state_tags:
+				result = Object( obj_tag )
+				image_state_map[ obj ] = result
+				for ( field, value ) in obj._iteritems():
+					result[ field ] = image_state( value )
+				return result
+			else:
+				image_state_map[ obj ] = obj
+				return obj
+
+	for ( source, symbol, target ) in iterate_state_transitions( initial_state ):
+		image_state( source )[ symbol ] = image_state( target )
+	return image_state( initial_state )
+
+def augmented( initial_state ):
+	nfa_initial_state = duplicate_states( initial_state )
+	pa = parenthesized_arithmetic_dummy_procedure()
+	pa_nfa_initial_state = duplicate_states( pa.automaton.initial_state )
+	states_expecting_int = [ source for ( source, symbol, target ) in iterate_state_transitions( nfa_initial_state ) if symbol == ':INT' ]
+	pa_states_expecting_int = [ source for ( source, symbol, target ) in iterate_state_transitions( pa_nfa_initial_state ) if symbol == ':INT' ]
+	for s in states_expecting_int:
+		s[ epsilon ] = pa_nfa_initial_state
+	fib_state = nfa_initial_state[ 'fib' ]
+	for s in pa_states_expecting_int:
+		s[ eta ] = fib_state
+	result = nfa2dfa( nfa_initial_state )
+	debug( result._description() )
+	return result
+
 def graft( main_initial_state, branch_initial_state, branch_goal_symbol ):
 	image_state_map = {}
 	def image_state( obj ):
@@ -1552,7 +1613,9 @@ def graft( main_initial_state, branch_initial_state, branch_goal_symbol ):
 
 def augmented_with_parenthesized_arithmetic( procedure ):
 	pa = parenthesized_arithmetic_dummy_procedure()
-	augmented_automaton = AUTOMATON( graft( procedure.automaton.initial_state, pa.automaton.initial_state, ':INT' ), procedure.automaton.fallback_function )
+	grafted = graft( procedure.automaton.initial_state, pa.automaton.initial_state, ':INT' )
+	#grafted = augmented( procedure.automaton.initial_state ) # Attempt to support infix + between fib calls
+	augmented_automaton = AUTOMATON( grafted, procedure.automaton.fallback_function )
 	action_bindings = Object( 'BINDINGS' )
 	#debug( "Adding in %s", procedure.action_bindings )
 	for ( symbol, action ) in procedure.action_bindings._iteritems():
