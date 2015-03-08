@@ -13,7 +13,7 @@ debug_indent_level = 0
 def debug( message, *args ):
 	if args:
 		message = message % args
-	print debug_indent_level * "  " + message
+	print debug_indent_level * "| " + message
 
 def silence( message, *args ):
 	pass
@@ -1096,6 +1096,52 @@ def parse_grammar( grammar_text ):
 
 #####################################
 #
+# NFA management with eta edges
+#
+
+debug_cetera = silence
+
+def nfa_successors( obj, key ):
+	for cetera in nfa_cetera_chain( obj ):
+		try:
+			yield cetera[ key ]
+		except KeyError:
+			pass # Next object in the eta chain might have this key
+
+def nfa_add_successor( obj, key, value ):
+	for cetera in nfa_cetera_chain( obj ):
+		if key not in cetera:
+			cetera[ key ] = value
+			return
+	# Need a new cetera object
+	cetera = Object( 'CETERA' )
+	if eta in obj:
+		cetera[ eta ] = obj[ eta ]
+	obj[ eta ] = cetera
+	cetera[ key ] = value
+
+def nfa_remove_successor( obj, key, value ):
+	for cetera in nfa_cetera_chain( obj ):
+		try:
+			if cetera[ key ] == value:
+				del cetera[ key ]
+				return
+		except KeyError:
+			pass # Next object in the eta chain might have this key
+	raise KeyError( "Successor %r not found at %r[ %r ]" % ( value, obj, key ) )
+
+def nfa_cetera_chain( obj ):
+	current = obj
+	while True:
+		debug_cetera( "(nfa_cetera_chain on %r yielding %r)", obj, current )
+		yield current
+		try:
+			current = current[ eta ]
+		except KeyError:
+			break
+
+#####################################
+#
 # Subset algorithm to convert NFA -> DFA
 #
 
@@ -1117,7 +1163,7 @@ class ConflictError( Exception ):
 	pass
 
 accepting_states    = frozenset([ 'ACCEPT', 'REDUCE' ])
-superposable_states = frozenset([ 'SHIFT', 'SHIFT_RAW', 'LOOKAHEAD1', 'CETERA', 'STATION' ])
+superposable_states = frozenset([ 'SHIFT', 'SHIFT_RAW', 'LOOKAHEAD1', 'CETERA', 'STATION', 'ARRIVAL_GATE', 'DEPARTURE_GATE' ])
 state_tags = accepting_states | superposable_states
 
 priority_symbol = ANON( 'priority' )
@@ -1523,7 +1569,9 @@ def generate_parenthesized_arithmetic_parsing_automaton():
 		ceteras[ i ][ epsilon ] = pattern
 	return nfa2dfa( parens )
 
-def iterate_states( initial_state, already_visited=set() ):
+def iterate_states( initial_state, already_visited=None ):
+	if already_visited is None:
+		already_visited = set()
 	yield initial_state
 	for (k,v) in initial_state._iteritems():
 		if tag(v) in state_tags and v not in already_visited:
@@ -1741,13 +1789,117 @@ def check_result( ideal, actual ):
 
 #####################################
 #
-# Proper parser generator.
+# Parser generation using arrival and departure gates
+#
+# I haven't thought of a snappy name for the NFA constructed this way.  If you
+# picture a nondeterministic infinite automaton that parses the language, this
+# one is like a projection of that automaton into an NFA, so let me call it a
+# projection graph for now.
+#
+# This code is making a lot of use of the hashability of Sheppard objects,
+# which makes me a little uneasy, but I'm gradually accepting the notion that
+# perhaps hashability is an important general notion.
 #
 
 def GRAMMAR( goal_symbol, productions ):   return Object( 'GRAMMAR', goal_symbol=goal_symbol, productions=productions )
 def PRODUCTION( lhs, rhs_stack, action_symbol ):
 	rhs = List( list( reversed( python_list( rhs_stack ) ) ) )
 	return Object( 'PRODUCTION', lhs=lhs, rhs=rhs, rhs_stack=rhs_stack, action_symbol=action_symbol )
+
+def PROJECTION():
+	return Object( 'PROJECTION', arrival_gates=Object( 'GATE_MAP' ), departure_gates=Object( 'GATE_MAP' ), start=Object( 'ARRIVAL_GATE' ), end=Object( 'DEPARTURE_GATE' ), terminals=Object( 'SET_OF_SYMBOLS' ) )
+
+def new_projection_graph( grammar ):
+	result = PROJECTION()
+
+	# Gates for nonterminals
+	for p in grammar.productions:
+		if p.lhs not in result.arrival_gates:
+			result.arrival_gates  [ p.lhs ] = Object( 'ARRIVAL_GATE' )
+			result.departure_gates[ p.lhs ] = Object( 'DEPARTURE_GATE' )
+
+	# The path for each RHS
+	for p in grammar.productions:
+		ag = result.arrival_gates[ p.lhs ]
+		dg = result.departure_gates[ p.lhs ]
+		# Build the path
+		current_state = ag
+		for symbol in p.rhs:
+			new_state = Object( 'SHIFT' )
+			current_state[ symbol ] = new_state
+			if symbol in result.arrival_gates:
+				nfa_add_successor( current_state, epsilon, result.arrival_gates[ symbol ] )
+				nfa_add_successor( result.departure_gates[ symbol ], epsilon, new_state )
+			else:
+				result.terminals[ symbol ] = symbol
+			current_state = new_state
+		nfa_add_successor( current_state, epsilon, dg )
+
+	# The path for the goal_symbol
+	s = Object( 'SHIFT' )
+	result.start[ grammar.goal_symbol ] = s
+	nfa_add_successor( result.start, epsilon, result.arrival_gates[ grammar.goal_symbol ] )
+	nfa_add_successor( result.departure_gates[ grammar.goal_symbol ], epsilon, s )
+	s[ eof ] = result.end
+	result.terminals[ eof ] = eof
+
+	return result
+
+def compute_transitive_closure_of_terminals( projection_graph ):
+	# DeRemer and Penello Digraph algorithm
+	debug_digraph = silence
+
+	def traverse( x ):
+		debug_digraph( "traverse( %r )", x )
+		debug_indent()
+		stack.append( x )
+		d = len( stack )
+		n[ x ] = d
+		for y in nfa_successors( x, epsilon ):
+			debug_digraph( " x:%r y:%r", x, y )
+			if n[y] == 0:
+				traverse( y )
+			if x is not y:
+				n[x] = min( n[x], n[y] )
+				add_terminal_transitions( x, y )
+		if n[x] == d:
+			while True:
+				top = stack.pop()
+				n[top] = 1e9999
+				if top == x:
+					break
+				else:
+					add_terminal_transitions( top, x )
+		debug_indent( -1 )
+
+	def add_terminal_transitions( target, source ):
+		debug_digraph( "add_terminal_transitions( %r, %r )", target, source )
+		for ( k,v ) in source._iteritems():
+			if k in projection_graph.terminals and k not in target:
+				debug_digraph( "  %r", k )
+				target[ k ] = v
+
+	stack = []
+	n = {}
+	for state in iterate_states( projection_graph.start ):
+		n[ state ] = 0
+	for state in iterate_states( projection_graph.start ):
+		debug_digraph( "iterating state %r", state )
+		debug_indent()
+		if n[ state ] == 0:
+			traverse( state )
+		else:
+			debug_digraph( "already traversed %r", state )
+		debug_indent( -1 )
+
+def follow_set( projection_graph, nonterminal ):
+	filter_out = set( [ eta, epsilon ] )
+	return [ k for k in projection_graph.departure_gates[ nonterminal ]._iterkeys() if k not in filter_out ]
+
+#####################################
+#
+# Traditional Dragon book parser generation
+#
 
 def or_changed( target, source ):
 	if target >= source:
@@ -1842,13 +1994,38 @@ def test_parser_generator():
 		F -> :INT     ;
 		F -> ( E )    ;
 		"""
+
+	# Example 4.17 dragon p.189
+	grammar_text = """
+		E  -> T E'     ;
+		E' -> + T E'   ;
+		E' ->          ;
+		T  -> F T'     ;
+		T' -> * F T'   ;
+		T' ->          ;
+		F  -> :INT     ;
+		F  -> ( E )    ;
+		"""
 	grammar = parse_grammar( grammar_text )
-	n = nullable_symbols( grammar )
-	print "nullable_symbols: ", n
-	first = first_sets( grammar, n )
-	print "first: ", first
-	follow = follow_sets( grammar, n, first )
-	print "follow: ", follow
+
+	if False:
+		n = nullable_symbols( grammar )
+		print "nullable_symbols: ", n
+		first = first_sets( grammar, n )
+		print "first: ", first
+		follow = follow_sets( grammar, n, first )
+		print "follow: ", follow
+
+	if True:
+		print "=== BEFORE ==="
+		p = new_projection_graph( grammar )
+		print p._description()
+		print "=== AFTER ==="
+		compute_transitive_closure_of_terminals( p )
+		print p._description()
+		print "=== FOLLOW ==="
+		for nonterminal in p.departure_gates._iterkeys():
+			print "\t%r\t%s" % ( nonterminal, follow_set( p, nonterminal ) )
 
 #####################################
 #
