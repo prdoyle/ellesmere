@@ -1819,6 +1819,7 @@ def new_projection_graph( grammar ):
 			result.departure_gates[ p.lhs ] = Object( 'DEPARTURE_GATE' )
 
 	# The path for each RHS
+	deferred = []
 	for p in grammar.productions:
 		ag = result.arrival_gates[ p.lhs ]
 		dg = result.departure_gates[ p.lhs ]
@@ -1833,7 +1834,7 @@ def new_projection_graph( grammar ):
 			else:
 				result.terminals[ symbol ] = symbol
 			current_state = new_state
-		nfa_add_successor( current_state, epsilon, dg )
+		deferred.append( ( current_state, epsilon, dg ) )
 
 	# The path for the goal_symbol
 	s = Object( 'SHIFT' )
@@ -1842,6 +1843,11 @@ def new_projection_graph( grammar ):
 	nfa_add_successor( result.departure_gates[ grammar.goal_symbol ], epsilon, s )
 	s[ eof ] = result.end
 	result.terminals[ eof ] = eof
+
+	# At this point, the projection graph is actually the characteristic graph
+	# because we haven't hooked up the RHS paths to the departure gates.
+	for ( source, symbol, target ) in deferred:
+		nfa_add_successor( source, symbol, target )
 
 	return result
 
