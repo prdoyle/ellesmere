@@ -375,7 +375,7 @@ def init_shogun_predefined_objects():
 	shogun_predefined_names_by_object = dict([ (v,k) for (k,v) in shogun_predefined_objects.iteritems() ])
 
 def shogun( obj ):
-	"""Sheppard Object Graph Unicode Notation"""
+	"""Sheppard Object Graph UTF-8 Notation"""
 	debug_shogun( "shogun( %r )", obj )
 	init_shogun_predefined_objects()
 	objects = [ obj ]
@@ -456,15 +456,6 @@ def consume( expectation, words ):
 		raise ParseError( "Encountered %r instead of %r before %r" % ( word, expectation, words ) )
 
 def deshogun( text ):
-	# Note that we prime the dictionary with the null object.  We don't want
-	# just any instance of NULL: we want the same "mull" that the rest of the
-	# program will be using.  Without special handling, we can easily end up
-	# with multiple instances of NULL floating around.
-	#
-	# HOWEVER, this is not sufficient.  Other singletons (notably those from
-	# add_predefined_bindings) might need the same treatment, and I'm not
-	# sure what else.
-	#
 	init_shogun_predefined_objects()
 	dictionary = { }
 
@@ -820,7 +811,7 @@ prologue_text += arithmetic_text
 
 #####################################
 #
-# Parsing
+# Parsing sheppard program text
 #
 
 debug_parse = silence
@@ -1590,7 +1581,7 @@ def iterate_state_transitions( initial_state, already_visited=None ):
 				for x in iterate_state_transitions( v, already_visited ):
 					yield x
 
-def duplicate_states( initial_state ):
+def clone_states( initial_state, transition_filter=None ):
 	image_state_map = {}
 	def image_state( obj ):
 		try:
@@ -1601,20 +1592,22 @@ def duplicate_states( initial_state ):
 				result = Object( obj_tag )
 				image_state_map[ obj ] = result
 				for ( field, value ) in obj._iteritems():
-					result[ field ] = image_state( value )
+					image = image_state( value )
+					if transition_filter( ( result, field, image ) ):
+						result[ field ] = image
 				return result
 			else:
 				image_state_map[ obj ] = obj
 				return obj
 
-	for ( source, symbol, target ) in iterate_state_transitions( initial_state ):
+	for ( source, symbol, target ) in filter( transition_filter, iterate_state_transitions( initial_state ) ):
 		image_state( source )[ symbol ] = image_state( target )
 	return image_state( initial_state )
 
 def augmented( initial_state ):
-	nfa_initial_state = duplicate_states( initial_state )
+	nfa_initial_state = clone_states( initial_state )
 	pa = parenthesized_arithmetic_dummy_procedure()
-	pa_nfa_initial_state = duplicate_states( pa.automaton.initial_state )
+	pa_nfa_initial_state = clone_states( pa.automaton.initial_state )
 	states_expecting_int = [ source for ( source, symbol, target ) in iterate_state_transitions( nfa_initial_state ) if symbol == ':INT' ]
 	pa_states_expecting_int = [ source for ( source, symbol, target ) in iterate_state_transitions( pa_nfa_initial_state ) if symbol == ':INT' ]
 	for s in states_expecting_int:
@@ -2023,15 +2016,24 @@ def test_parser_generator():
 		print "follow: ", follow
 
 	if True:
-		print "=== BEFORE ==="
+		print "=== PROJECTION ==="
 		p = new_projection_graph( grammar )
 		print p._description()
-		print "=== AFTER ==="
+		print "=== CHARACTERISTIC NFA ==="
+		nfa_start = clone_states( p.start, lambda (x, s, y): not is_a( x, 'DEPARTURE_GATE' ) )
+		print nfa_start._description()
+		print "=== CLOSURE ==="
 		compute_transitive_closure_of_terminals( p )
 		print p._description()
 		print "=== FOLLOW ==="
 		for nonterminal in p.departure_gates._iterkeys():
 			print "\t%r\t%s" % ( nonterminal, follow_set( p, nonterminal ) )
+		print "=== CHARACTERISTIC DFA ==="
+		# TODO: Pass in the follow set to let nfa2dfa resolve ambiguities
+		# TODO: Resolve conflicts using the inheritance hierarchy
+		# TODO: Generate the REDUCE states
+		dfa_start = nfa2dfa( nfa_start )
+		print dfa_start._description()
 
 #####################################
 #
