@@ -1156,6 +1156,7 @@ class ConflictError( Exception ):
 accepting_states    = frozenset([ 'ACCEPT', 'REDUCE' ])
 superposable_states = frozenset([ 'SHIFT', 'SHIFT_RAW', 'LOOKAHEAD1', 'CETERA', 'STATION', 'ARRIVAL_GATE', 'DEPARTURE_GATE' ])
 state_tags = accepting_states | superposable_states
+shift_states        = frozenset([ 'SHIFT', 'STATION', 'CETERA', 'ARRIVAL_GATE', 'DEPARTURE_GATE' ])
 
 priority_symbol = ANON( 'priority' )
 def nfa2dfa( nfa_initial_state ):
@@ -1166,6 +1167,8 @@ def nfa2dfa( nfa_initial_state ):
 		try:
 			return dfa_states_by_superposition[ superposition ]
 		except KeyError:
+			debug_n2d( "Computing dfa( %r )", nfa_states )
+			debug_indent()
 			states = list( superposition )
 			if len( states ) == 1 and tag( states[0] ) in accepting_states:
 				result = states[0] # Use the actual object since we're not going to change it anyway
@@ -1173,8 +1176,12 @@ def nfa2dfa( nfa_initial_state ):
 				states.sort( by_priority_descending )
 				primary_state = states[0]
 				top_priority = primary_state.get( priority_symbol, 0 )
-				result = Object( tag( primary_state ) )
-				if tag( primary_state ) == 'REDUCE':
+				result_tag = tag( primary_state )
+				if result_tag in shift_states:
+					result_tag = 'SHIFT'
+				result = Object( result_tag )
+				debug_n2d( "DFA state is %r", result )
+				if result_tag == 'REDUCE':
 					result.action_symbol = primary_state.action_symbol
 				for state in states:
 					if state.get( priority_symbol, 0 ) == top_priority:
@@ -1185,6 +1192,7 @@ def nfa2dfa( nfa_initial_state ):
 						elif tag( result ) == 'REDUCE' and result.action_symbol != state.action_symbol:
 							raise ConflictError( "Reduce conflict between %r and %r" % ( result.action_symbol, state.action_symbol ) )
 			dfa_states_by_superposition[ superposition ] = result
+			debug_indent(-1)
 			return result
 
 	def closure( nfa_states ):
@@ -1213,7 +1221,7 @@ def nfa2dfa( nfa_initial_state ):
 	def union( sets ):
 		return reduce( lambda x,y: x|y, sets, frozenset() )
 
-	debug_n2d( "nfa2dfa on the following DFA:\n%s", nfa_initial_state._description() )
+	debug_n2d( "nfa2dfa on the following NFA:\n%s", nfa_initial_state._description() )
 	debug_indent()
 	initial_superposition = closure([ nfa_initial_state ])
 	debug_n2d( "initial_superposition: %r", initial_superposition )
@@ -1800,9 +1808,13 @@ def PRODUCTION( lhs, rhs_stack, action_symbol ):
 	return Object( 'PRODUCTION', lhs=lhs, rhs=rhs, rhs_stack=rhs_stack, action_symbol=action_symbol )
 
 def PROJECTION():
-	return Object( 'PROJECTION', arrival_gates=Object( 'GATE_MAP' ), departure_gates=Object( 'GATE_MAP' ), start=Object( 'ARRIVAL_GATE' ), end=Object( 'DEPARTURE_GATE' ), terminals=Object( 'SET_OF_SYMBOLS' ) )
+	return Object( 'PROJECTION', arrival_gates=Object( 'GATE_MAP' ), departure_gates=Object( 'GATE_MAP' ), start=Object( 'ARRIVAL_GATE' ), end=Object( 'ACCEPT' ), terminals=Object( 'SET_OF_SYMBOLS' ) )
 
 def new_projection_graph( grammar ):
+	debug_pg = debug
+	debug_pg( "new_projection_graph( %r ) goal symbol %r", grammar, grammar.goal_symbol )
+	debug_indent()
+
 	result = PROJECTION()
 
 	# Gates for nonterminals
@@ -1814,20 +1826,14 @@ def new_projection_graph( grammar ):
 	# The path for each RHS
 	deferred = []
 	for p in grammar.productions:
+		debug_pg( "Production: %r -> %s", p.lhs, list_str( p.rhs ) )
+		debug_indent()
 		ag = result.arrival_gates[ p.lhs ]
 		dg = result.departure_gates[ p.lhs ]
-		# Build the path
-		current_state = ag
-		for symbol in p.rhs:
-			new_state = Object( 'SHIFT' )
-			current_state[ symbol ] = new_state
-			if symbol in result.arrival_gates:
-				nfa_add_successor( current_state, epsilon, result.arrival_gates[ symbol ] )
-				nfa_add_successor( result.departure_gates[ symbol ], epsilon, new_state )
-			else:
-				result.terminals[ symbol ] = symbol
-			current_state = new_state
-		deferred.append( ( current_state, epsilon, dg ) )
+		oa = obvious_automaton( p, p.rhs, result, dg )
+		debug_pg( "%r -> %r", ag, oa )
+		nfa_add_successor( ag, epsilon, oa )
+		debug_indent( -1 )
 
 	# The path for the goal_symbol
 	s = Object( 'SHIFT' )
@@ -1837,12 +1843,25 @@ def new_projection_graph( grammar ):
 	s[ eof ] = result.end
 	result.terminals[ eof ] = eof
 
-	# At this point, the projection graph is actually the characteristic graph
-	# because we haven't hooked up the RHS paths to the departure gates.
-	for ( source, symbol, target ) in deferred:
-		nfa_add_successor( source, symbol, target )
-
+	debug_indent(-1)
 	return result
+
+def obvious_automaton( production, symbol_list, projection_graph, departure_gate ):
+	if symbol_list is null:
+		reduce_state = Reduce( production.action_symbol )
+		reduce_state[ epsilon ] = departure_gate
+		return reduce_state
+	else:
+		shift_state = Shift()
+		symbol = symbol_list.head
+		successor = obvious_automaton( production, symbol_list.tail, projection_graph, departure_gate )
+		shift_state[ symbol ] = successor
+		if symbol in projection_graph.arrival_gates:
+			nfa_add_successor( shift_state, epsilon, projection_graph.arrival_gates[ symbol ] )
+			nfa_add_successor( projection_graph.departure_gates[ symbol ], epsilon, successor )
+		else:
+			projection_graph.terminals[ symbol ] = symbol
+		return shift_state
 
 def compute_transitive_closure_of_terminals( projection_graph ):
 	# DeRemer and Penello Digraph algorithm
@@ -2016,19 +2035,19 @@ def test_parser_generator():
 		print "follow: ", follow
 
 	if True:
-		print "=== PROJECTION ==="
+		print "\n=== PROJECTION ==="
 		p = new_projection_graph( grammar )
 		print p._description()
-		print "=== CHARACTERISTIC NFA ==="
+		print "\n=== CHARACTERISTIC NFA ==="
 		nfa_start = clone_states( p.start, lambda (x, s, y): not is_a( x, 'DEPARTURE_GATE' ) )
 		print nfa_start._description()
-		print "=== CLOSURE ==="
+		print "\n=== CLOSURE ==="
 		compute_transitive_closure_of_terminals( p )
 		print p._description()
-		print "=== FOLLOW ==="
+		print "\n=== FOLLOW ==="
 		for nonterminal in p.departure_gates._iterkeys():
 			print "\t%r\t%s" % ( nonterminal, follow_set( p, nonterminal ) )
-		print "=== CHARACTERISTIC DFA ==="
+		print "\n=== CHARACTERISTIC DFA ==="
 		# TODO: Pass in the follow set to let nfa2dfa resolve ambiguities
 		# TODO: Resolve conflicts using the inheritance hierarchy
 		# TODO: Generate the REDUCE states
