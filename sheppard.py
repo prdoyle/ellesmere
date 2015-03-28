@@ -2050,7 +2050,6 @@ def test_parser_generator():
 		print "\n=== CHARACTERISTIC DFA ==="
 		# TODO: Pass in the follow set to let nfa2dfa resolve ambiguities
 		# TODO: Resolve conflicts using the inheritance hierarchy
-		# TODO: Generate the REDUCE states
 		dfa_start = nfa2dfa( nfa_start )
 		print dfa_start._description()
 
@@ -2785,16 +2784,43 @@ else:
 # Directions to pursue:
 #
 # Cleanup:
-# - Change get/set/put so the only way to get a flat symbol on the operand stack is by calling "flat"
-# - Figure out a way to have Sheppard procedures return a value.  Currently, we only reach Accept on EOF, so the final crud pushed on the stack may not be parseable.
+# - Figure out a way to have Sheppard procedures return a value.  Currently, we
+#   only reach Accept on EOF, so the final crud pushed on the stack may not be
+#   parseable.
 #
-# Possible:
-# - Write an SLR parser generator in python?
-# - Handle quasiquoting in python?  Then I could use it in Sheppard programs, so I could have if statements and foreach and loops.
-#
-# Cleaning up get/put
-# - get should sharp its result, and put should take a sharp value.  Difference from give/take would be that get/put take un-sharped field symbols.
-# - getattr/setattr and getitem/setitem on Object probably should NOT sharp/flat things.  When we're in Python code, it should act like Python code, or it's too confusing.
-# - probably remove the _sharp suffixes everywhere because that can be taken for granted.
+# Object model questions:
+# - The eta concept shows that NFAs (even mutable NFAs) can be implemented on
+#   top of an object model that only supports DFAs.  In that case, why make
+#   people do it manually?  Should the basic object model support multiple
+#   out-edges with the same symbol?  The "take" primitive already returns
+#   TAKE_FAILED if there are no hits, perhaps there should be separate NO_EDGE
+#   and MULTIPLE_EDGES return values?
+# - Objects with identity can be used as hash keys, as with Java's
+#   identityHashCode.  Perhaps the object model should allow objects with
+#   identity to be used as edge symbols?  If so, should those keys be kept
+#   alive, or should those be weak references that don't prevent objects from
+#   being collected?
+# - Value objects (without identity) that can be serialized can also be used as
+#   hash keys, simply by hashing and comparing the serialized representation.
+#   In fact, value types can be considered references to an abstract infinite
+#   space containing all possible values, and then suddenly all objects have
+#   identity (where value types' values are their identity).  Does that mean
+#   any object at all could be an edge symbol?
+# - If anything can be used as an edge symbol, is there any reason to restrict
+#   what can be used as an object tag?
+# - Having independently somewhat discovered the Kernel language's concept of
+#   equality under mutability (in the context of eta edges), I also kind of
+#   like how Kernel's primitive operations do certain kinds of hard work in the
+#   presence of object graphs with cycles, freeing the user from worrying about
+#   corner cases and infinite loops.  Things that work for trees also work for
+#   arbitrary graphs.  That's neat.  Reverse postorder comes to mind, as well
+#   as breath-first searches.
+# - I'm interested in the duality between edges implemented as fields in a
+#   struct versus entries in a hash table, and how to expose that to the
+#   programmer.  I just had an idea of "local edges" or "local fields", so you
+#   can kind of decorate an object graph with extra edges that are only visible
+#   within a scope.  This could be implemented using a hash table, or by
+#   extending the objects' structure with extra fields, and the effect would be
+#   the same. - Mar 21 2015
 #
 
