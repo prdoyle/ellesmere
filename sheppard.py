@@ -130,6 +130,10 @@ class Object( dict ):
 			self._fields.append( key )
 		dict.__setitem__( self, key, value )
 
+	def _with( self, key, value ):
+		self[ key ] = value
+		return self
+
 	#def __iter__( self ):
 	#	raise TypeError( "Object %r does not implement iteration" % self )
 
@@ -1176,6 +1180,7 @@ def nfa2dfa( nfa_initial_state ):
 				states.sort( by_priority_descending )
 				primary_state = states[0]
 				top_priority = primary_state.get( priority_symbol, 0 )
+				top_priority_states = prefix_where( lambda s: s.get( priority_symbol, 0 ) >= top_priority, states )
 				result_tag = tag( primary_state )
 				if result_tag in shift_states:
 					result_tag = 'SHIFT'
@@ -1183,14 +1188,13 @@ def nfa2dfa( nfa_initial_state ):
 				debug_n2d( "DFA state is %r", result )
 				if result_tag == 'REDUCE':
 					result.action_symbol = primary_state.action_symbol
-				for state in states:
-					if state.get( priority_symbol, 0 ) == top_priority:
-						if tag( state ) in superposable_states and tag( result ) in superposable_states:
-							pass
-						elif tag( state ) != tag( result ):
-							raise ConflictError( "Conflict between %s and %s at %d %d" % ( result, state, state.get( priority_symbol, 0 ), top_priority ) )
-						elif tag( result ) == 'REDUCE' and result.action_symbol != state.action_symbol:
-							raise ConflictError( "Reduce conflict between %r and %r" % ( result.action_symbol, state.action_symbol ) )
+				for state in top_priority_states:
+					if tag( state ) in superposable_states and tag( result ) in superposable_states:
+						pass
+					elif tag( state ) != tag( result ):
+						raise ConflictError( "Conflict between %s and %s at %d %d" % ( result, state, state.get( priority_symbol, 0 ), top_priority ) )
+					elif tag( result ) == 'REDUCE' and result.action_symbol != state.action_symbol:
+						raise ConflictError( "Reduce conflict between %r and %r" % ( result.action_symbol, state.action_symbol ) )
 			dfa_states_by_superposition[ superposition ] = result
 			debug_indent(-1)
 			return result
@@ -1250,6 +1254,12 @@ def nfa2dfa( nfa_initial_state ):
 
 def by_priority_descending( s1, s2 ):
 	return -cmp( s1.get( priority_symbol, 0 ), s2.get( priority_symbol, 0 ) )
+
+def prefix_where( condition, lst ):
+	for ( i, item ) in enumerate( lst ):
+		if not condition( item ):
+			return lst[ 0:i ]
+	return lst
 
 def the_element( x ):
 	( element, ) = x
@@ -1465,7 +1475,7 @@ def parenthesized_arithmetic_parsing_automaton( include_accept_state=False ):
 
 arithmetic_library_text = """
 /* Cheesy way to use build_keyword_based_automaton to get almost the right actions constructed */
-/* Must use variable names "a" and "b" for the re-binding operation performed by test_parenthesized_arithmetic */
+/* Must use variable names "a" and "b" for the re-binding operation performed by parenthesized_arithmetic_dummy_procedure */
 /* Also the first of each one will be hard-coded to "a" so might as well call it that */
 let a + b   be_python << a+b >>
 let a - b   be_python << a-b >>
@@ -1810,6 +1820,7 @@ def PRODUCTION( lhs, rhs_stack, action_symbol ):
 def PROJECTION():
 	return Object( 'PROJECTION', arrival_gates=Object( 'GATE_MAP' ), departure_gates=Object( 'GATE_MAP' ), start=Object( 'ARRIVAL_GATE' ), end=Object( 'ACCEPT' ), terminals=Object( 'SET_OF_SYMBOLS' ) )
 
+production_symbol = ANON( 'production' )
 def new_projection_graph( grammar ):
 	debug_pg = debug
 	debug_pg( "new_projection_graph( %r ) goal symbol %r", grammar, grammar.goal_symbol )
@@ -1820,8 +1831,8 @@ def new_projection_graph( grammar ):
 	# Gates for nonterminals
 	for p in grammar.productions:
 		if p.lhs not in result.arrival_gates:
-			result.arrival_gates  [ p.lhs ] = Object( 'ARRIVAL_GATE' )
-			result.departure_gates[ p.lhs ] = Object( 'DEPARTURE_GATE' )
+			result.arrival_gates  [ p.lhs ] = Object( 'ARRIVAL_GATE'   )._with( production_symbol, p )
+			result.departure_gates[ p.lhs ] = Object( 'DEPARTURE_GATE' )._with( production_symbol, p )
 
 	# The path for each RHS
 	deferred = []
@@ -1848,11 +1859,11 @@ def new_projection_graph( grammar ):
 
 def obvious_automaton( production, symbol_list, projection_graph, departure_gate ):
 	if symbol_list is null:
-		reduce_state = Reduce( production.action_symbol )
+		reduce_state = Reduce( production.action_symbol )._with( production_symbol, production )
 		reduce_state[ epsilon ] = departure_gate
 		return reduce_state
 	else:
-		shift_state = Shift()
+		shift_state = Shift()._with( production_symbol, production )
 		symbol = symbol_list.head
 		successor = obvious_automaton( production, symbol_list.tail, projection_graph, departure_gate )
 		shift_state[ symbol ] = successor
@@ -2478,7 +2489,7 @@ be
 		original_obj_for_error_reporting
 
 
-let get_next_state_by_tag
+to get_next_state_by_tag
 	state tag_sharp=TAKE_FAILED fallback_function original_obj_for_error_reporting
 do_python
 	<< raise Unexpected_token( state, original_obj_for_error_reporting ) >>
