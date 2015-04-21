@@ -1103,6 +1103,13 @@ def nfa_successors( obj, key ):
 		except KeyError:
 			pass # Next object in the eta chain might have this key
 
+def nfa_has_successor( obj, key ):
+	try:
+		nfa_successors( obj, key ).next()
+		return True
+	except StopIteration:
+		return False
+
 def nfa_add_successor( obj, key, value ):
 	for cetera in nfa_cetera_chain( obj ):
 		if key not in cetera:
@@ -1135,6 +1142,11 @@ def nfa_cetera_chain( obj ):
 		except KeyError:
 			break
 
+def nfa_iteritems( obj ):
+	for x in nfa_cetera_chain( obj ):
+		for i in x._iteritems():
+			yield i
+
 #####################################
 #
 # Subset algorithm to convert NFA -> DFA
@@ -1157,24 +1169,24 @@ eta     = ANON('eta')
 class ConflictError( Exception ):
 	pass
 
-accepting_states    = frozenset([ 'ACCEPT', 'REDUCE' ])
-superposable_states = frozenset([ 'SHIFT', 'SHIFT_RAW', 'LOOKAHEAD1', 'CETERA', 'STATION', 'ARRIVAL_GATE', 'DEPARTURE_GATE' ])
-state_tags = accepting_states | superposable_states
-shift_states        = frozenset([ 'SHIFT', 'STATION', 'CETERA', 'ARRIVAL_GATE', 'DEPARTURE_GATE' ])
+accepting_state_tags    = frozenset([ 'ACCEPT', 'REDUCE' ])
+superposable_state_tags = frozenset([ 'SHIFT', 'SHIFT_RAW', 'LOOKAHEAD1', 'CETERA', 'STATION', 'ARRIVAL_GATE', 'DEPARTURE_GATE' ])
+state_tags = accepting_state_tags | superposable_state_tags
+shift_state_tags        = frozenset([ 'SHIFT', 'STATION', 'CETERA', 'ARRIVAL_GATE', 'DEPARTURE_GATE' ])
 
 priority_symbol = ANON( 'priority' )
 def nfa2dfa( nfa_initial_state ):
 	debug_n2d = silence
 	dfa_states_by_superposition = {}
-	def dfa( nfa_states ):
+	def deterministic_state( nfa_states ):
 		superposition = frozenset( nfa_states )
 		try:
 			return dfa_states_by_superposition[ superposition ]
 		except KeyError:
-			debug_n2d( "Computing dfa( %r )", nfa_states )
+			debug_n2d( "Computing deterministic_state( %r )", nfa_states )
 			debug_indent()
 			states = list( superposition )
-			if len( states ) == 1 and tag( states[0] ) in accepting_states:
+			if len( states ) == 1 and tag( states[0] ) in accepting_state_tags:
 				result = states[0] # Use the actual object since we're not going to change it anyway
 			else:
 				states.sort( by_priority_descending )
@@ -1182,14 +1194,14 @@ def nfa2dfa( nfa_initial_state ):
 				top_priority = primary_state.get( priority_symbol, 0 )
 				top_priority_states = prefix_where( lambda s: s.get( priority_symbol, 0 ) >= top_priority, states )
 				result_tag = tag( primary_state )
-				if result_tag in shift_states:
+				if result_tag in shift_state_tags:
 					result_tag = 'SHIFT'
 				result = Object( result_tag )
 				debug_n2d( "DFA state is %r", result )
 				if result_tag == 'REDUCE':
 					result.action_symbol = primary_state.action_symbol
 				for state in top_priority_states:
-					if tag( state ) in superposable_states and tag( result ) in superposable_states:
+					if tag( state ) in superposable_state_tags and tag( result ) in superposable_state_tags:
 						pass
 					elif tag( state ) != tag( result ):
 						raise ConflictError( "Conflict between %s and %s at %d %d" % ( result, state, state.get( priority_symbol, 0 ), top_priority ) )
@@ -1227,33 +1239,49 @@ def nfa2dfa( nfa_initial_state ):
 
 	debug_n2d( "nfa2dfa on the following NFA:\n%s", nfa_initial_state._description() )
 	debug_indent()
-	initial_superposition = closure([ nfa_initial_state ])
-	debug_n2d( "initial_superposition: %r", initial_superposition )
-	work_stack = [ initial_superposition ] # invariant: work_stack contains only closed superpositions
-	symbols_not_in_dfa = frozenset([ epsilon, eta ])
+	initial_state_set = closure([ nfa_initial_state ])
+	debug_n2d( "initial_state_set: %r", initial_state_set )
+	work_stack = [ initial_state_set ] # invariant: work_stack contains only closed superpositions
+	edges_not_in_dfa = frozenset([ epsilon, eta ])
 	while work_stack:
-		superposition = work_stack.pop()
-		dfa_state = dfa( superposition )
+		state_set = work_stack.pop()
+		dfa_state = deterministic_state( state_set )
 		if tag( dfa_state ) in superposable_states:
-			debug_n2d( "Visiting %r: %s", dfa_state, list( superposition ) )
+			debug_n2d( "Visiting %r: %s", dfa_state, list( state_set ) )
 			debug_indent()
-			unique_keys = union([ frozenset( nfa_state._iterkeys() ) - symbols_not_in_dfa for nfa_state in superposition ])
+			unique_keys = union([ frozenset( nfa_state._iterkeys() ) - edges_not_in_dfa for nfa_state in state_set ])
 			for key in unique_keys:
 				debug_indent()
-				next_superposition = closure([ nfa_state[ key ] for nfa_state in superposition if key in nfa_state ])
-				debug_n2d( "%r[ %r ] contains %r", dfa_state, key, next_superposition )
-				if next_superposition:
-					if next_superposition not in dfa_states_by_superposition:
-						work_stack.append( next_superposition )
-					dfa_state[ key ] = dfa( next_superposition )
-					debug_n2d( "%r[ %r ] = %r  <==> %r[ %r ] = %r", dfa_state, key, dfa_state[ key ], list( superposition ), key, list( next_superposition ) )
+				next_state_set = closure([ nfa_state[ key ] for nfa_state in state_set if key in nfa_state ])
+				debug_n2d( "%r[ %r ] contains %r", dfa_state, key, next_state_set )
+				if next_state_set:
+					if next_state_set not in dfa_states_by_superposition:
+						work_stack.append( next_state_set )
+					dfa_state[ key ] = deterministic_state( next_state_set )
+					debug_n2d( "%r[ %r ] = %r  <==> %r[ %r ] = %r", dfa_state, key, dfa_state[ key ], list( state_set ), key, list( next_state_set ) )
 				debug_indent(-1)
 		debug_indent(-1)
 	debug_indent(-1)
-	return dfa( initial_superposition )
+	return deterministic_state( initial_state_set )
 
 def by_priority_descending( s1, s2 ):
 	return -cmp( s1.get( priority_symbol, 0 ), s2.get( priority_symbol, 0 ) )
+
+def grouped( collection, order ):
+	s = sorted( collection, order )
+	if s:
+		result = []
+		current_group = [ s[0] ]
+		for ( index, item ) in enumerate( s[1:] ):
+			if item > current_group[0]:
+				result.append( current_group )
+				current_group = [ item ]
+			else:
+				current_group.append( item )
+		result.append( current_group )
+		return result
+	else:
+		return []
 
 def prefix_where( condition, lst ):
 	for ( i, item ) in enumerate( lst ):
