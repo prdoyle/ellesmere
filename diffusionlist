@@ -1,0 +1,599 @@
+#! /usr/bin/python
+
+from sys import stdout, stderr
+
+indent_level = 0
+
+def silence( string, *args ): pass
+def verbose( string, *args ):
+	if args:
+		string = string % args
+	stdout.write( indent_level * '  ' + string + '\n' )
+
+debug = verbose
+
+def debug_indent( delta=1 ):
+	global indent_level
+	indent_level += delta
+
+class diffusionlist:
+
+	# Primitive operations on an entry
+
+	def _is_occupied( self, index ):
+		return is_occupied( self._entries[ index ] )
+
+	def _is_empty( self, index ):
+		"""
+		As a convenience, returns False for indexes immediately outside the
+		valid range.  This means descrptors are identified concisely as empty
+		items pointing at non-empty items.
+		"""
+		if index == 0 or index == len( self._entries ):
+			return False
+		else:
+			return is_empty( self._entries[ index ] )
+
+	def _get( self, index ):
+		return self._entries[ index ] >> 1
+
+	def _set( self, index, value ):
+		self._entries[ index ] = occupied( value )
+
+	def _set_empty( self, index, value ):
+		self._entries[ index ] = empty( value )
+
+	def _is_descriptor( self, index ):
+		if self._is_empty( index ):
+			target = self._get( index )
+			# Descriptors point at occupied items, or they point past the ends of the array
+			return not self._is_empty( target )
+		else:
+			return False
+
+	def _is_right_descriptor( self, index ):
+		return self._is_descriptor( index ) and self._get( index ) > index
+
+	def _locate_right_descriptor( self, gap_index ):
+		debug( "_locate_right_descriptor( %d )", gap_index )
+		try:
+			debug_indent()
+			assert( self._is_empty( gap_index ) )
+			if self._is_right_descriptor( gap_index ):
+				debug( "right descriptor" )
+				return gap_index
+			elif self._is_descriptor( gap_index ): # it's the left descriptor
+				debug( "left descriptor" )
+				return gap_index + 1
+			else:
+				return self._locate_right_descriptor( self._get( gap_index ) )
+		finally:
+			debug_indent( -1 )
+
+	# Validity invariants
+
+	def _check_validity( self ):
+		debug( "check_validity(%s)", self )
+
+		#1: Occupied entries are sorted
+		prev = -1e9999
+		for i in xrange(len( self._entries )):
+			if self._is_occupied( i ):
+				item = self._get( i )
+				assert prev <= item, "Entries must be sorted (%d <= %d)" % ( prev, item )
+				prev = item
+		
+		#2: Every gap has exactly one descriptor (or a right-half descriptor for a unit gap)
+		i = 0
+		while i < len( self._entries ):
+			(start,stop) = self.gap( i )
+			if start < stop:
+				if start+1 == stop:
+					# unit gap
+					assert self._get( start ) == stop, "Unit gap at %d must point at stop %d" % (start, stop)
+				else:
+					left_descriptor = None
+					right_descriptor = None
+					for j in range( start, stop ):
+						value = self._get( j )
+						if not self._is_empty( value ):
+							if value < j:
+								assert left_descriptor is None, "Gap must have one descriptor (%d and %d)" % ( left_descriptor, j )
+								left_descriptor = j
+							else:
+								assert right_descriptor is None, "Gap must have one descriptor (%d and %d)" % ( right_descriptor, j )
+								right_descriptor = j
+					assert left_descriptor+1 == right_descriptor, "Descriptor must comprise two adjacent entries (%d and %d)" % ( left_descriptor, right_descriptor )
+			i = stop+1
+
+		#3: No cycles in gaps
+		# TODO
+
+		return True
+
+	# Gap traversal
+
+	def _gap_start( self, index ):
+		# TODO: This is awkward.  Zero-sized gaps don't have a "start".  We need a more uniform way to deal with them -- maybe using book-ending occupied items or something.
+		debug = silence
+		debug( 'gap_start( %d )', index )
+		try:
+			debug_indent()
+			if not self._is_empty( index ):
+				# Note: this is not right for a zero-sized gap.  That's the only case in which _gap_start(x) for occupied x should point at x!
+				return index+1
+			next_index = self._get( index )
+			if next_index < index or self._is_empty( next_index ):
+				return self._gap_start( next_index )
+			else:
+				# index is the right-descriptor; look at the left
+				return self._gap_start( index-1 )
+		finally:
+			debug_indent(-1)
+
+	def _gap_stop( self, index ):
+		debug = silence
+		debug( 'gap_start( %d )', index )
+		try:
+			debug_indent()
+			if not self._is_empty( index ):
+				return index
+			next_index = self._get( index )
+			if next_index > index or self._is_empty( next_index ):
+				return self._gap_stop( next_index )
+			else:
+				# index is the left-descriptor; look at the right
+				return self._gap_stop( index+1 )
+		finally:
+			debug_indent(-1)
+
+	def _index_of_nearest_gap( self, index ):
+		distance = 0
+		while True:
+			if index < distance and index + distance >= len( self._entries ):
+				return len( self._entries )
+			elif distance <= index and self._is_empty( index-distance ):
+				return index-distance
+			elif index + distance < len( self._entries ) and self._is_empty( index+distance ):
+				return index+distance
+			else:
+				distance += 1
+
+	def _gap_size( self, gap_index ):
+		assert self._is_empty( gap_index ), "index (%d) must be in a gap" % gap_index
+		( start, stop ) = self.gap( gap_index )
+		return stop-start
+
+	def _encroach_left( gap_index, num_entries_required ):
+		"""
+		Consider num_entries_required no longer to belong to the gap.
+		If the descriptor is in this range, some occupied items will be moved
+		from the left to the right; this returns how many items were moved, and
+		removes that many fewer entries from the gap.  In other words, the caller's
+		requirement is satisfied by a combination of moving occupied items and
+		removing empty items from the gap; and this function returns how many
+		items were moved.
+		"""
+		( gap_start, gap_stop ) = self.gap( gap_index )
+		gap_size = gap_stop - gap_start
+		gap_size_after_clobber = gap_size - num_entries_required
+		assert gap_size_after_clobber >= 0, "Cannot request more clobberable entries %d than gap size %d" % ( num_entries_required, gap_size )
+		if gap_size_after_clobber == 0:
+			return 0 # Always ok to clobber the whole gap.  Don't worry about this case.
+		elif gap_size_after_clobber == 1:
+			# Easy case -- just make half a descriptor and be done with it
+			self._set_empty( gap_stop-1, gap_stop )
+			return 0
+		assert gap_size_after_clobber >= 2, "At this point, we'll be leaving a complete descriptor"
+		assert gap_size >= 2, "The gap already has a complete descriptor"
+		left_descriptor = self._locate_right_descriptor( gap_index ) - 1
+		already_clobberable = left_descriptor - gap_start
+		if already_clobberable >= num_entries_required:
+			return 0
+		num_entries_to_move = num_entries_required - already_clobberable
+		assert left_descriptor+1 + num_entries_to_move < gap_stop, "The right side of the gap must accommodate the entries we're moving"
+		for i in range( num_entries_to_move ):
+			gap_start -= 1
+			gap_stop -= 1
+			self._set( gap_stop, self._get( gap_start ) )
+		self._set_empty( left_descriptor,   gap_start-1 )
+		self._set_empty( left_descriptor+1, gap_stop    )
+		return num_entries_to_move
+
+	def _diffuse_right_1( self, start_index, gap_index ):
+		# This isn't quite right.  It should work like this:
+		# 1. Find the nearest gap.  Distance to that gap is budget B
+		# 2. Go B more spaces in that direction (possibly limited by the endpoints of the array)
+		# 3. Dither all the spaces you find evenly along that distance
+		# If you end in a gap that's bigger than you need, then work out how to
+		# allocate N spaces from that gap, and dither into those.
+		debug = verbose
+		debug( "diffuse_right( %d, %d )", start_index, gap_index )
+		try:
+			debug_indent()
+			( gap_start, gap_stop ) = self.gap( gap_index )
+			gap_size = gap_stop - gap_start
+			assert gap_size >= 1, "gap_index (%d) must be in a gap" % gap_index
+			num_entries = gap_start - start_index
+			if self._is_descriptor( gap_start ):
+				descriptor_start = gap_start
+			else:
+				descriptor_start = self._get( gap_start )
+			if num_entries+1 >= gap_size:
+				debug( "Dithering %d into small gap %d", num_entries, gap_size )
+				debug_indent()
+				divisor = num_entries + gap_size
+				remainder = divisor-1 # Puts a gap at the leftmost end
+				source = gap_start-1
+				target = gap_stop-1
+				for i in range( divisor ):
+					remainder += num_entries
+					if remainder >= divisor:
+						debug( "Copy %d to %d", source, target )
+						self._set( target, self._get( source ) )
+						remainder -= divisor
+						source -= 1
+					else:
+						debug( "Empty at %d", target )
+						self._set_empty( target, target+1 )
+					target -= 1
+				debug_indent( -1 )
+			else:
+				debug( "Diffusing %d into large gap %d", num_entries, gap_size )
+				debug_indent()
+				assert gap_size >= num_entries+2, "Gap can accommodate diffusion without affecting descriptor"
+				assert gap_size >= 2, "This case is not meant for unit gaps"
+				source = start_index + ( num_entries-1 )
+				target = source + num_entries
+				while target >= descriptor_start:
+					debug( "Jump descriptor to copy %d to %d", source, target+2 )
+					# These items must jump the descriptor, so add 2
+					self._set( target+2, self._get( source ) )
+					self._set_empty( target+1, target+2 ) # This might overwrite the existing descriptor, but does so correctly
+					source -= 1
+					target -= 2
+				while target > source:
+					debug( "Copy %d to %d", source, target )
+					self._set( target, self._get( source ) )
+					self._set_empty( target-1, target )
+					source -= 1
+					target -= 2
+				debug_indent( -1 )
+			self._check_validity()
+		finally:
+			debug_indent( -1 )
+
+	def _diffuse_right( self, start_index ):
+		# This is a limited diffusion that only looks right.  Ideally it would look both ways.
+		debug = verbose
+		debug( "diffuse_right( %d )", start_index )
+		debug_indent()
+		# Look for the next gap to the right
+		budget = 1
+		while start_index+budget < len( self._entries ) and self._is_occupied( start_index + budget ):
+			budget += 1
+		domain = 2*budget
+		stop_index = start_index + domain
+		if stop_index > len( self._entries ):
+			# We don't have enough empties; add a gap at the end
+			gap_size = stop_index - len( self._entries )
+			if gap_size < 2:
+				gap_size = 2
+			new_descriptor_index = len( self._entries ) + gap_size - 2 # Stick the descriptor at the end
+			# Note that len( self._entries ) will keep changing from now on
+			self._entries.extend( [ empty(new_descriptor_index) ] * (gap_size-2) ) # All entries except the descriptor
+			self._entries.append(empty( len( self._entries ) - 1 )) # Left descriptor
+			self._entries.append(empty( len( self._entries ) + 1 )) # Right descriptor
+			debug( "Added %d entries to the end", gap_size )
+			debug_indent()
+			self._check_validity()
+			debug_indent( -1 )
+		# Count how many empties we have to spread
+		num_items = 0
+		for i in range( domain ):
+			if self._is_occupied( start_index+i ):
+				num_items += 1
+		# Initialize dithering indexes
+		target = stop_index - 1
+		( source, _ ) = self.gap( target )
+		if self._is_empty( source ):
+			source -= 1
+		debug( "budget:%d domain:%d source:%d target:%d", budget, domain, source, target )
+		# Characterize the last gap - it's special because we might not use all of it
+		( last_gap_start, last_gap_stop ) = self.gap( start_index + domain - 1 )
+		if last_gap_stop - last_gap_start <= 2:
+			# Tiny gaps need no special descriptor handling
+			debug( "Tiny gap" )
+			last_gap_descriptor_start = None
+		elif target >= last_gap_stop-1:
+			# We're consuming the whole gap -- don't worry about it
+			debug( "Consuming the whole gap" )
+			last_gap_descriptor_start = None
+		elif target == last_gap_stop-2:
+			# If we don't handle this case, we can end up with the situation where
+			# we want to consume N-1 entries from a N-entry gap, necessitating
+			# special handling around the descriptor.  We peel off a unit gap at
+			# the right extreme, and then consume the rest of the gap.
+			debug( "Funky - stuffing a unit gap at the end" )
+			self._set_empty( last_gap_stop-1, last_gap_stop )
+			last_gap_descriptor_start = None
+		else:
+			last_gap_descriptor_start = self._locate_right_descriptor( last_gap_start ) - 1
+			debug( "last_gap_descriptor_start = %d", last_gap_descriptor_start )
+		# Start a-ditherin'
+		remainder = domain-1 # Ensures we end up with a gap at the left end, which is where we wanted it in the first place
+		debug_indent()
+		for i in range( domain ):
+			assert self._is_occupied( source )
+			remainder += num_items
+			if remainder >= domain:
+				debug( "Copy %d to %d", source, target )
+				self._set_dither_item( target, self._get( source ), last_gap_descriptor_start )
+				source -= 1
+				while self._is_empty( source ):
+					source -= 1 # TODO: Skip gaps more efficiently than scanning them linearly
+				remainder -= domain
+			else:
+				debug( "Empty at %d", target )
+				self._set_dither_item( target, None, last_gap_descriptor_start )
+			target -= 1
+		debug_indent( -1 )
+		# The final gap could be bookended by single-entry gaps at this point.  Fold them into the gap.
+		if last_gap_descriptor_start is not None:
+			debug( "Checking for annexation of last gap at %d", last_gap_descriptor_start )
+			debug_indent()
+			debug( "Starting with: %s", self )
+			supposed_left = self._get( last_gap_descriptor_start )
+			supposed_stop = self._get( last_gap_descriptor_start+1 )
+			if self._is_empty( supposed_left ):
+				debug( "annex left at %d", supposed_left )
+				self._set_empty( supposed_left, last_gap_descriptor_start )
+				actual_left = supposed_left - 1
+				self._set_empty( last_gap_descriptor_start, actual_left )
+			else:
+				debug( "left ok at %d", supposed_left )
+				actual_left = supposed_left
+			if self._is_empty( supposed_stop ):
+				debug( "annex stop at %d", supposed_stop )
+				self._set_empty( supposed_stop, last_gap_descriptor_start )
+				actual_stop = supposed_stop + 1
+				self._set_empty( last_gap_descriptor_start+1, actual_stop )
+			else:
+				debug( "stop ok at %d", supposed_stop )
+				actual_stop = supposed_stop
+			debug_indent( -1 )
+		self._check_validity()
+		debug_indent( -1 )
+
+	def _set_dither_item( self, abstract_location, value, last_gap_descriptor_start ):
+		"""
+		Abstracts the gymnastics we need to do around the final gap's
+		descriptor.  Caller can dither items in an abstract location-space as
+		though it's allowed to dither right into the final gap.  This function
+		will take care of computing the actual locations for items within the
+		final gap.  Dithering is already complex enough without worrying about this.
+
+		A value of None corresponds to a 1-entry gap.  Larger gaps are not supported.
+
+		A last_gap_descriptor_start of None indicates that the final gap needs no
+		special processing.  This convention is awkward -- it would be nice to
+		find a cleaner convention, like just use last_gap_descriptor_start =
+		Infinity.
+		"""
+		# TODO: This would be more efficient, and possibly simpler, if it didn't
+		# continually update the descriptor.  Could we calculate the new descriptor
+		# once and forget about it?
+		debug = verbose
+		debug( "_set_dither_item( %s, %s, %s )", abstract_location, value, last_gap_descriptor_start )
+		debug_indent()
+		if last_gap_descriptor_start is not None and abstract_location >= last_gap_descriptor_start:
+			# On the right side of the descriptor, we just lop off the rightmost entry
+			gap_stop = self._get( last_gap_descriptor_start+1 )
+			concrete_location = gap_stop - 1
+			assert concrete_location > last_gap_descriptor_start+1, "Must not eat into the right descriptor"
+			debug( "Right side of descriptor: gap_stop:%d concrete_location:%d", gap_stop, concrete_location )
+			self._set_empty( last_gap_descriptor_start+1, concrete_location )
+		else:
+			debug( "Normal dither" )
+			concrete_location = abstract_location
+			if last_gap_descriptor_start is not None and self._get( last_gap_descriptor_start ) < concrete_location:
+				self._set_empty( last_gap_descriptor_start, concrete_location )
+		if value is None:
+			value = empty( concrete_location + 1 )
+			debug( "Single-entry gap at %d pointing at %d", concrete_location, concrete_location+1 )
+		else:
+			value = occupied( value )
+		self._entries[ concrete_location ] = value
+		debug_indent( -1 )
+
+	# Public interface
+
+	def gap( self, index ):
+		if self._is_occupied( index ):
+			return ( index, index )
+		else:
+			return ( self._gap_start( index ), self._gap_stop( index ) )
+
+	def locate( self, item ):
+		return self._locate( item, 0, len( self._entries ) )
+
+	def _locate( self, item, start, stop ):
+		debug( "locate( %d, [%d,%d] )", item, start, stop )
+		try:
+			debug_indent()
+			if stop <= start:
+				return start
+			( pivot_left, pivot_right ) = self.gap( (start+stop) / 2 )
+			#debug( "pivot: (%d,%d)" % ( pivot_left, pivot_right ) )
+			entry_right = self._get( pivot_right )
+			if entry_right == item:
+				result = pivot_right
+			elif entry_right < item:
+				result = self._locate( item, pivot_right+1, stop )
+			else:
+				result = self._locate( item, start, pivot_left )
+			debug( "result: %d", result )
+			return result
+			# Note that when this lands in a gap, it often lands at the left end
+			# of the gap, which is a great place to land because an item can
+			# always be added at that location without modifying any other entry
+			# and without violating the diffusionlist's invariant.  I'm not entirely
+			# sure yet why the algorithm seems to work this way.  It may be
+			# because of our emphasis on pivot_right.
+		finally:
+			debug_indent(-1)
+
+	def put( self, value ):
+		location = self.locate( value )
+		if self._is_empty( location ):
+			self._set( location, value )
+		elif self._get( location ) != value:
+			# gotta make room
+			gap_index = self._index_of_nearest_gap( location )
+			shifting_left = ( gap_index < location )
+			( gap_start, gap_stop ) = self.gap( gap_index )
+			gap_size = gap_stop - gap_start
+			if shifting_left:
+				gap_distance = location - gap_stop + 1
+			else:
+				gap_distance = gap_start - location
+			num_empties = min( gap_distance, gap_size )
+			# 1 Shift the gap so there are clobberable entries on the proper side of the gap
+			if shifting_left:
+				raise AssertionError( "Not yet implemented" )
+			else:
+				num_empties -= _encroach_left( gep_index, num_empties )
+			( gap_start, gap_stop ) = self.gap( gap_index ) # gap could have moved
+			# 2 Use Bresenham's algorithm to spread the empties, being sure to
+			#   leave an empty at the point where we want to insert the new value
+			if shifting_left:
+				raise AssertionError( "Not yet implemented" )
+			else:
+				bresenham_counter = 0
+				#WHAT NEXT
+			# 3 Add our new item
+
+	# Testing
+
+	def __init__( self, schema ):
+		self._entries = []
+		counter = 10
+		# Build the list
+		for (i,x) in enumerate( schema ):
+			if x is '.':
+				self._entries.append(occupied( counter ))
+				counter += 10
+				last_occupied_item = i
+			elif x is 'L':
+				self._entries.append(empty( last_occupied_item ))
+				last_descriptor = i
+			elif x is 'l':
+				self._entries.append(empty( last_descriptor ))
+			elif x is 'r':
+				self._entries.append( 10001 )
+			elif x is 'R':
+				self._entries.append( 10002 )
+				#last_descriptor = i
+		# Backpatch
+		last_occupied_item = last_descriptor = None
+		del last_occupied_item
+		del last_descriptor
+		for ( i, x ) in reverse_enumerate( schema ):
+			if x is '.':
+				last_occupied_item = i
+			elif x is 'L':
+				last_descriptor = i
+			elif x is 'R':
+				self._entries[ i ] = empty( last_occupied_item )
+				last_descriptor = i
+			elif x is 'r':
+				self._entries[ i ] = empty( last_descriptor )
+		debug( "diffusionlist( %r )", schema )
+		self._check_validity()
+
+	def __repr__( self ):
+		result = '[ '
+		for (i,x) in enumerate( self._entries ):
+			value = x >> 1
+			if is_empty(x):
+				result += "%d_%d " % ( i, value )
+			else:
+				result += "%d:%d " % ( i, value )
+		return result + ']'
+
+
+def reverse_enumerate( obj ):
+	for index in xrange( len(obj)-1, -1, -1 ):
+		yield index, obj[ index ] 
+
+def empty( value ):
+	return ( value << 1 ) + 0
+
+def is_empty( value ):
+	return value % 2 == 0
+
+def occupied( value ):
+	return ( value << 1 ) + 1
+
+def is_occupied( value ):
+	return value % 2 == 1
+
+def test():
+	check( all_gaps( diffusionlist('.R.') ), ( (0,0), (1,2), (2,2) ) )
+	check( all_gaps( diffusionlist('.LR.') ), ( (0,0), (1,3), (1,3), (3,3) ) )
+	check( all_gaps( diffusionlist('.rLRl.') ), ( (0,0), (1,5), (1,5), (1,5), (1,5), (5,5) ) )
+	x = diffusionlist('.R.R.rLR..')
+	print x
+	check( all_gaps( x ), ( (0,0), (1,2), (2,2), (3,4), (4,4), (5,8), (5,8), (5,8), (8,8), (9,9) ) )
+	for i in range( 5, 60, 5 ):
+		x.locate(i)
+
+def check( left, right ):
+	for (i,l) in enumerate( left ):
+		if l != right[i]:
+			raise AssertionError( "Mismatch @ %d: %s != %s" % ( i, l, right[i] ) )
+
+def all_gaps( sl ):
+	return map( lambda i: sl.gap(i), xrange(len( sl._entries )) )
+
+def test_dither( n, d ):
+	remainder = 0
+	for i in range(d):
+		remainder += n
+		if remainder >= d:
+			print "+"
+			remainder -= d
+		else:
+			print "-"
+
+def test_diffuse( x, i ):
+	for gap_start in range( i, len(x._entries) ):
+		if x._is_empty( gap_start ):
+			break
+	print x
+	x._diffuse_right( i )
+	print x
+
+def test_diffusion():
+	test_diffuse( diffusionlist('.......LR...'), 1 )
+	test_diffuse( diffusionlist('....rrrrrrrLRlllll...'), 1 )
+	test_diffuse( diffusionlist('....rrrLRlllll...'), 1 )
+	test_diffuse( diffusionlist('....rrLRlllll...'), 1 )
+	test_diffuse( diffusionlist('....rLRlllll...'), 1 )
+	test_diffuse( diffusionlist('....LRlllll...'), 1 )
+	test_diffuse( diffusionlist('....LRllll...'), 1 )
+	test_diffuse( diffusionlist('....LRlll...'), 1 )
+	test_diffuse( diffusionlist('....LRll...'), 1 )
+	test_diffuse( diffusionlist('....LRl...'), 1 )
+	test_diffuse( diffusionlist('....rrrrrrrLRlll...'), 1 )
+	test_diffuse( diffusionlist('....rrrrrrrLRll...'), 1 )
+	test_diffuse( diffusionlist('....rrrrrrrLRl...'), 1 )
+	test_diffuse( diffusionlist('....rrrrrrrLR...'), 1 )
+	test_diffuse( diffusionlist('....rrrLR...'), 1 )
+	test_diffuse( diffusionlist('....rrLR...'), 1 )
+	test_diffuse( diffusionlist('....rLR...'), 1 )
+	test_diffuse( diffusionlist('....LR...'), 1 )
+
+test()
+test_diffusion()
+
